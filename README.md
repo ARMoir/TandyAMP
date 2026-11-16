@@ -44,6 +44,8 @@ The ZIP contains only **`TANDYAMP.EXE`, `DEMO.MID`, and `LICENSE`**; Markdown do
 | `/NODRUM16` | Treat channel 16 as melody |
 | `/AUTODRUM16` | Use conservative channel-16 drum detection (default) |
 | `/NOMOUSE` | No DOS mouse initialization or on-screen mouse pointer |
+| `/SPK4` | Enable optional fourth pitched note via the PC speaker and PIT channel 2 (default OFF) |
+| `/NOSPK4` | Disable the extra speaker voice |
 | `/HELP`, `-H`, `/?` | Print command-line help |
 
 Options can be used with either an explicitly named song or the automatically discovered directory playlist. `/TXT` is useful for debugging or displays without Tandy graphics.
@@ -60,10 +62,11 @@ Options can be used with either an explicitly named song or the automatically di
 | `E` | Toggle playlist / PSG voice monitor | VIS |
 | `L` | Toggle playlist looping | LOOP |
 | `D` | Cycle legacy channel-16 drums: AUTO → ON → OFF; restarts the current song | DRUM |
+| `K` | Toggle the fourth PC-speaker voice without restarting playback | SPK4 (top title bar) |
 | `+` / `-` | Increase / decrease master volume without restarting | Keyboard only |
 | `Q` / `Esc` | Silence PSG and quit to DOS | Keyboard only |
 
-The eight buttons use a **36-pixel-wide** layout with centered labels. The lower pane shows up to seven visible playlist rows around the active song or a **three-tone voice monitor**; it is **not an audio equalizer**. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
+The eight original transport buttons use a **36-pixel-wide** layout; the ninth **SPK4** button is a separate 52-pixel title-bar control with centered labels. The lower pane shows up to seven visible playlist rows around the active song or a **three-tone voice monitor**; it is **not an audio equalizer**. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
 
 ## Serial mouse on the EX
 
@@ -74,7 +77,7 @@ CTMOUSE /S14 /M
 TANDYAMP
 ```
 
-Only use that CuteMouse command if it matches your actual serial port/driver setup. The GUI displays **MOUSE OK** if an INT 33h driver is detected, or **NO MOUSE** otherwise. TandyAMP draws its own 8×11 software arrow in Tandy mode 09h, avoids trails via save/restore of covered pixels, auto-checks 320-versus-640 X coordinate reporting, and accepts left-clicks on all eight transport buttons. A driver may be present without its serial mouse actually functioning; **MOUSE OK only confirms that the interface was detected**, not verified movement. The current code's mouse behavior is CI-tested but still requires final physical EX testing. To bypass it use `/NOMOUSE`.
+Only use that CuteMouse command if it matches your actual serial port/driver setup. The GUI displays **MOUSE OK** if an INT 33h driver is detected, or **NO MOUSE** otherwise. TandyAMP draws its own 8×11 software arrow in Tandy mode 09h, avoids trails via save/restore of covered pixels, auto-checks 320-versus-640 X coordinate reporting, and accepts left-clicks on all nine buttons (eight transport controls plus SPK4 in the title bar). A driver may be present without its serial mouse actually functioning; **MOUSE OK only confirms that the interface was detected**, not verified movement. The current code's mouse behavior is CI-tested but still requires final physical EX testing. To bypass it use `/NOMOUSE`.
 
 ## MIDI features and technical limits
 
@@ -84,7 +87,7 @@ Only use that CuteMouse command if it matches your actual serial port/driver set
 | Size | At most **45,056 bytes (44 KiB)** per file |
 | Tracks | At most **24** tracks per MIDI file |
 | Playlist | **64** filenames max, 63 characters per stored name; automatic scan is current-directory only |
-| Music | Three simultaneous SN76489-compatible tone outputs; fourth noise channel for drums |
+| Music | Three simultaneous SN76489-compatible tone outputs; fourth PSG noise channel for drums; **optional fourth pitched PC-speaker voice** (PIT2) with `/SPK4` or the SPK4 button |
 | Arrangement | Tracks up to **32 active MIDI notes** in software; tone choices prioritize melody/bass, avoid duplicate hardware pitches, and can restore held notes after a voice becomes free; increased voice-continuity weighting reduces unnecessary switching |
 | MIDI controls | Note-on/off, velocity, volume CC7, expression CC11, sustain CC64, pitch bend, stop/all-notes-off |
 | Percussion | General MIDI channel 10 uses the noise channel; optional auto/forced legacy channel-16 drums |
@@ -111,6 +114,7 @@ The authoritative source is on **[GitHub](https://github.com/ARMoir/TandyAMP)**:
 | `tests/midi_test.c` | MIDI format, drum and parser regression tests |
 | `tests/playback_test.c` / `tests/mixer_test.c` | Note/event ordering, voice allocation and mix-level checks |
 | `tests/expressive_test.c` | Program-change envelopes, controller 1 vibrato, envelope timing and note-off regressions |
+| `tests/speaker_test.c` | Fourth PIT2 voice selection, live toggle, note-off, pause/stop and master-mute tests |
 | `tests/ui_test.c` | Pixel-font bounds, button hit areas, software cursor, minimal redraws and directory playlist discovery |
 | `tests/check_docs.py` | Checks documentation links, feature limits and release packaging against source |
 | `.github/workflows/build-dos.yml` | Test, compile, package and publish DOS builds |
@@ -146,3 +150,11 @@ TandyAMP code and its generated demo are MIT licensed; see [LICENSE](LICENSE). I
 No preconversion is required: ordinary `.MID` files play directly on the EX. When a file sends a MIDI **Program Change**, piano/keyboard and guitar/plucked families receive a gentle stepped decay, bass/wind families a slower stepped decay, and sustained families keep their note level. Files that do not specify a program retain the older sustained tone behavior. MIDI **CC1 modulation-wheel** messages now apply a small integer pitch vibrato to already-playing notes. Note-offs remain immediate to avoid stuck notes. These effects cost at most a small amount of integer work every ~27 ms, plus occasional port writes. Some instrument/program mappings are necessarily approximate on three square-wave channels.
 
 The three-voice selector now more strongly favors keeping the same audible notes when musical importance is similar. Final PSG I/O is cached: unchanged registers are not resent; new drum hits still retrigger the noise latch. These changes are not a wavetable/sound-font renderer, cannot create more than three simultaneous tone voices, and remain **hardware-audio-unverified** until listened to on the real EX.
+
+## Optional fourth pitched voice — SPK4
+
+**Default OFF.** The **SPK4** button appears in the player's title bar, separately from the eight existing transport buttons, and is clickable using the serial mouse. Press **K** to toggle it with the keyboard, or launch with `TANDYAMP /SPK4` (also works when auto-loading all `*.MID` files). Use `/NOSPK4` or press K again to turn it off. Toggle changes take effect **without restarting** a song.
+
+When the three PSG tone channels are occupied and the MIDI contains an additional distinct note, the player can route an overflow tone through **PIT channel 2** (the traditional PC speaker circuit), potentially giving four simultaneous pitched sounds **plus the PSG noise percussion channel**. The extra note is biased toward bass and stops immediately when released, paused, muted, switched off or when the player exits. The MIDI timing PIT channel 0 remains at its normal frequency. This is an implementation inspired by the independent fourth-track mechanism documented in [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker); no original tracker code was copied.
+
+**Important hardware difference:** PIT2 has **no independent volume register or instrument timbre**. An extra tone is therefore gated on only when its computed attenuation is sufficiently strong, but when on it can sound harsher or louder than PSG notes. On the Tandy 1000 EX the PIT2 source can mix with the PSG; output through particular external audio connections can depend on port 61h routing. TandyAMP intentionally changes **only speaker gate bits 0–1** of port 61h and leaves other audio-route bits intact; it does not override the motherboard's routing to force an external output. The physical EX sound balance must still be checked. Disable with K if the extra note is distracting.

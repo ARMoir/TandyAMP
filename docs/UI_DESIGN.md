@@ -10,13 +10,13 @@ The owner supplied an original classic Winamp player/equalizer/playlist screensh
 | Clock | inset near x=7–116, y=19–63; shows elapsed minutes/seconds |
 | Track display | x≈123–312, y=19–63; track filename and mode/volume |
 | Activity marker | y≈68; 12-pixel moving indicator only — **not** a seek bar |
-| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index |
+| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index; **ninth SPK4 52-pixel title-bar button** at x=151, y=3–16 |
 | Lower panel | y≈101–198; either playlist or **three-tone monitor** |
 | Playlist | up to seven visible entries around the active item, in a list of up to **64** |
 | Voice monitor | three bars driven from software voice note/velocity/activity, not audio FFT |
 | Software cursor | original 8×11 black/white sprite, drawn in banked graphics memory |
 
-Actual button labels (left to right): **PREV, PLAY, PAUSE, STOP, NEXT, VIS, LOOP, DRUM**. The previous seven-button layout was revised to accommodate DRUM. Each 5×7 glyph uses a six-pixel advance and is horizontally centered so it does not obscure neighboring bevels.
+Actual bottom-row button labels (left to right): **PREV, PLAY, PAUSE, STOP, NEXT, VIS, LOOP, DRUM**. The new ninth **SPK4** titlebar button independently toggles an optional fourth PIT2 PC-speaker tone; its pressed state reflects the feature and its shortcut is **K**. The previous seven-button layout was revised to accommodate DRUM. Each 5×7 glyph uses a six-pixel advance and is horizontally centered so it does not obscure neighboring bevels.
 
 The original 267×422 stacked Winamp screenshot cannot be fitted literally onto 320×200 without illegible controls, so the lower region **switches modes** with `E` / VIS rather than opening a second window. There is no functional equalizer, 10-band EQ slider, drag seek bar, file browser or resizable skin yet.
 
@@ -55,3 +55,7 @@ Originally the player frequently repainted most of the song display and entire v
 - [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md): audio and UI data flow
 - [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md): specific Winamp source units reviewed and licensing
 - Owner-provided classic Winamp screenshot; intentionally not redistributed
+
+## Optional fourth voice UI
+
+The eight existing 36-pixel transport buttons are **unchanged**. The additional **52×13 SPK4 button** is centered between the title and mouse-status indicator in the titlebar (x=151..202, y=3..15). It uses the same original 5×7 font and pressed/unpressed palette as the row buttons; no existing label is squeezed or clipped. A click or **K** calls the same `ta_set_speaker()` engine control and marks only the button, track display and optional monitor pane dirty. The switch is available during playback, paused or stopped, with no forced MIDI replay. The lower monitor text indicates when the extra channel is enabled, although only the three PSG tones have true volume meters.

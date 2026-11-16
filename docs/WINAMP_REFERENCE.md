@@ -35,3 +35,7 @@ Source reviewed: [alexfreud/winamp](https://github.com/alexfreud/winamp), `commu
 See [UI_DESIGN.md](UI_DESIGN.md) for geometry and [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md) for actual code architecture.
 
 **Research documentation only.** This source review is not a claim that Winamp itself runs on DOS or that its code was ported.
+
+## PIT2 optional speaker control
+
+The ninth button is **SPK4** in the title bar, not another crowded transport button. It is an original UI adaptation: the eight 36-pixel row controls remain readable. The K shortcut and `/SPK4` option select the same real MIDI-engine state. This is not a new PSG oscillator; it uses the separate PC speaker circuit only when the three Tandy tone outputs are already occupied and a fourth useful note is available.

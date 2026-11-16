@@ -41,7 +41,10 @@ demand("#define MAX_SONGS 64" in CODE and "64" in README, "Playlist capacity und
 demand("#define PATHLEN 64" in CODE and "63 characters" in README, "Filename limit undocumented")
 demand("#define TA_MAX_TRACKS 24" in MIDI and "24" in README, "Track limit undocumented")
 demand("#define TA_MAX_FILE 45056U" in MIDI and "45,056" in README, "44 KiB file limit undocumented")
-demand("#define UI_BUTTON_COUNT 8U" in CODE and "eight" in UI, "Button count mismatch")
+demand("#define UI_BUTTON_COUNT 9U" in CODE and "ninth" in UI, "Button count mismatch")
+demand("UI_ROW_BUTTONS 8U" in CODE, "Transport row geometry changed")
+demand('"/SPK4"' in CODE and '"/NOSPK4"' in CODE, "Missing speaker CLI options")
+demand("ta_set_speaker" in CODE and "SPK4" in README, "Speaker toggle undocumented")
 demand("#define UI_BUTTON_WIDTH 36U" in CODE and "36-pixel" in UI, "Button width mismatch")
 demand("playlist_find_current_directory" in CODE and "current working directory" in README,
        "Automatic MIDI directory discovery undocumented")

@@ -7,6 +7,7 @@ static ta_u8 levels[4]={15,15,15,15};
 void ta_psg_tone(int s,ta_u16 p,ta_u8 a){periods[s]=p;levels[s]=a;}
 void ta_psg_noise(ta_u8 m,ta_u8 a){(void)m;levels[3]=a;}
 void ta_psg_noise_level(ta_u8 a){levels[3]=a;}
+void ta_pc_speaker(ta_u16 divider){(void)divider;}
 void ta_psg_silence(void){unsigned i;for(i=0;i<4;i++)levels[i]=15;}
 static unsigned voices(void){unsigned i,n=0;for(i=0;i<3;i++)if(levels[i]<15)n++;return n;}
 static void check_mix(void)

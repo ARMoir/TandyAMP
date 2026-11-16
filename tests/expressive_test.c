@@ -13,6 +13,7 @@ void ta_psg_tone(int s,ta_u16 p,ta_u8 a){
 }
 void ta_psg_noise(ta_u8 m,ta_u8 a){assert(m<=7 && a<=15);levels[3]=a;}
 void ta_psg_noise_level(ta_u8 a){assert(a<=15);levels[3]=a;}
+void ta_pc_speaker(ta_u16 divider){(void)divider;}
 void ta_psg_silence(void){
     unsigned i;for(i=0;i<4;i++)levels[i]=15;
 }

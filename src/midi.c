@@ -12,6 +12,7 @@ static void silence_noise(void);
 static const char *last_error="OK";
 static ta_u8 synth_dirty=0, controllers_dirty=0;
 static ta_u16 output_period[TA_VOICES];
+static ta_u16 speaker_output=0;
 static ta_u16 release_clock=0;
 static ta_u16 envelope_clock=0, vibrato_clock=0;
 static ta_u8 vibrato_phase=0;
@@ -101,6 +102,11 @@ static void clear_synth(void)
         ta.voices[v].level=15;
         output_period[v]=0;
     }
+    ta.speaker_voice.source=-1;
+    ta.speaker_voice.note=-1;
+    ta.speaker_voice.level=15;
+    ta_pc_speaker(0);
+    speaker_output=0;
     ta.noise_left=0;
     ta.noise_length=0;
     ta.noise_last=15;
@@ -139,6 +145,8 @@ void ta_stop(void)
     ta.playing=0;
     ta.paused=0;
     silence_noise();
+    ta_pc_speaker(0);
+    speaker_output=0;
     ta_psg_silence();
 }
 void ta_pause(void)
@@ -148,6 +156,8 @@ void ta_pause(void)
     if(ta.paused){
         unsigned i;
         ta_psg_silence();
+        ta_pc_speaker(0);
+        speaker_output=0;
         for(i=0;i<TA_VOICES;i++)ta.voices[i].level=15;
         noise_output=15;
     }
@@ -159,6 +169,7 @@ void ta_pause(void)
             if(v->note>=0)render_voice(i);
         }
         if(ta.noise_left){noise_trigger=1;flush_mix();}
+        if(ta.speaker_enabled){controllers_dirty=1;flush_mix();}
     }
 }
 /* MIDI note 0..127 to SN76489 divider at 3.579545 MHz / 32.
@@ -250,6 +261,48 @@ static ta_s32 note_priority(const TAActiveNote *n)
     score-=(ta_s32)n->env_step*12L; /* Prefer still-prominent parts. */
     return score;
 }
+/* Standard 1.193182MHz PIT channel 2 versus 3.579545MHz PSG/32.
+   A 10-bit PSG period converts to approximately period*32/3. */
+static ta_u16 speaker_divider_for(ta_u16 period)
+{
+    ta_u32 d=((ta_u32)period*32UL+1UL)/3UL;
+    if(d<18UL)d=18UL;
+    if(d>65535UL)d=65535UL;
+    return (ta_u16)d;
+}
+static void render_speaker(void)
+{
+    TAVoice *v=&ta.speaker_voice;
+    ta_u16 divisor=0;
+    if(ta.speaker_enabled && ta.playing && !ta.paused &&
+       v->source>=0 && v->note>=0){
+        TAActiveNote *n=&ta.notes[v->source];
+        unsigned att=(unsigned)n->attenuation+
+            ta.mix_attenuation+ta.master_attenuation;
+        /* No volume register on PIT2. Don't let quiet notes sound loud:
+           gate the fourth voice out when software attenuation is high. */
+        if(n->note>=0 && att<=8U)
+            divisor=speaker_divider_for(n->period);
+    }
+    if(divisor!=speaker_output){
+        ta_pc_speaker(divisor);
+        speaker_output=divisor;
+    }
+}
+void ta_set_speaker(unsigned enabled)
+{
+    ta.speaker_enabled=(ta_u8)(enabled!=0U);
+    if(!ta.speaker_enabled){
+        ta.speaker_voice.source=-1;
+        ta.speaker_voice.note=-1;
+        if(speaker_output){
+            ta_pc_speaker(0);
+            speaker_output=0;
+        }
+    }
+    synth_dirty=controllers_dirty=1;
+    if(ta.playing && !ta.paused)flush_mix();
+}
 static void rebuild_voices(void)
 {
     signed short selected[TA_VOICES];
@@ -294,6 +347,41 @@ static void rebuild_voices(void)
             ta.voices[i].source=-1;
             ta.voices[i].note=-1;
         }
+    }
+    /* Overflow selection leaves the original three PSG choices intact.
+       Speaker only sounds when all three PSG slots have valid notes and
+       a fourth distinct, sufficiently audible note is available. */
+    {
+        signed short candidate=-1;
+        ta_s32 best=-200000L,score;
+        if(ta.speaker_enabled &&
+           selected[0]>=0 && selected[1]>=0 && selected[2]>=0){
+            for(i=0;i<TA_ACTIVE_NOTES;i++){
+                TAActiveNote *n=&ta.notes[i];
+                int duplicate=0;
+                if(n->note<0 || n->attenuation>=15)continue;
+                for(j=0;j<TA_VOICES;j++)
+                    if(selected[j]>=0 &&
+                       (selected[j]==(signed short)i ||
+                        ta.notes[selected[j]].period==n->period))
+                        duplicate=1;
+                if(duplicate)continue;
+                score=note_priority(n);
+                if(n->note>=36 && n->note<60)score+=220L;
+                if(ta.speaker_voice.source==(signed short)i)score+=130L;
+                if(score>best){best=score;candidate=(signed short)i;}
+            }
+        }
+        ta.speaker_voice.source=candidate;
+        if(candidate>=0){
+            TAActiveNote *n=&ta.notes[candidate];
+            ta.speaker_voice.note=n->note;
+            ta.speaker_voice.channel=n->channel;
+            ta.speaker_voice.velocity=n->velocity;
+            ta.speaker_voice.held=n->held;
+            ta.speaker_voice.sustained=n->sustained;
+            ta.speaker_voice.stamp=n->stamp;
+        }else ta.speaker_voice.note=-1;
     }
     for(k=0;k<TA_VOICES;k++){
         TAActiveNote *n;
@@ -350,6 +438,7 @@ static void flush_mix(void)
         ta.mix_attenuation--;release_clock=0;
     }
     for(i=0;i<TA_VOICES;i++)render_voice(i);
+    render_speaker();
     a=raw[3]+ta.mix_attenuation+ta.master_attenuation;
     if(a>15 || ta.paused)a=15;
     if(noise_trigger && ta.noise_left && !ta.paused)
@@ -364,6 +453,7 @@ void ta_set_volume(unsigned volume)
     ta.master_attenuation=(ta_u8)(15-volume);
     if(!ta.playing || ta.paused)return;
     for(i=0;i<TA_VOICES;i++)render_voice(i);
+    render_speaker();
     a=ta.noise_last+ta.mix_attenuation+ta.master_attenuation;
     if(a>15 || !ta.noise_left)a=15;
     if(noise_output!=a)ta_psg_noise_level((ta_u8)a);

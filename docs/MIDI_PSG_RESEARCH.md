@@ -105,3 +105,9 @@ All sources below are for **independent algorithm study**. Check and honor licen
 - Any future offline converter should not distribute copyrighted user MIDI, SoundFonts, tracker modules, Winamp skin resources or emulator ROMs.
 
 See [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md) for the code architecture and [README](../README.md) for supported command-line options and current limits.
+
+## PIT2 fourth voice — now implemented as opt-in
+
+Inspired by [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker)'s independent PC-speaker track, TandyAMP now has optional **`/SPK4`** and **K** / **SPK4 title-bar button**. With all three PSG voices occupied, an extra eligible distinct MIDI note can be assigned to PIT channel 2 for a fourth pitched voice. This uses only integer period conversion and direct port 42h/43h/61h operations. The option is OFF by default; listen carefully on the EX because the speaker tone is **not independently volume-controlled** and may have a different balance. No preconversion or extra hardware is needed. A fourth PSG tone oscillator has *not* been added: this is a separate timer voice; the noise channel is still available for drums.
+
+The implementation and unit tests are in `src/midi.c`, `src/main.c` and `tests/speaker_test.c`. It has not yet been verified acoustically on the physical EX. Relevant Tandy audio-mux reference: [PCjr/Tandy multiplexer engineering](https://nerdlypleasures.blogspot.com/2013/06/ibm-pcjr-and-tandy-1000-sound.html).

@@ -68,7 +68,7 @@ New live expressive engine: Program Change events are stored per MIDI channel; s
 
 ### Visuals, controls and serial mouse
 
-- Eight **36-pixel transport buttons**: PREV / PLAY / PAUSE / STOP / NEXT / VIS / LOOP / DRUM. Their actions share the keyboard input dispatcher.
+- Eight **36-pixel transport buttons**: PREV / PLAY / PAUSE / STOP / NEXT / VIS / LOOP / DRUM, plus a separate **52-pixel SPK4 titlebar button** for the extra PIT2 tone. K toggles the same setting. Their actions share the keyboard input dispatcher.
 - Upper area: filename, elapsed-time clock, playback state, drum detection mode, master volume and animated *activity marker*. The marker is not a scrub/seek bar.
 - Lower pane shows a seven-row window onto the **64-entry** playlist or a **three-tone voice monitor**; it is not an FFT spectrum or equalizer.
 - Dirty-region renderer updates only changed clock digits, labels, selection, activity dots, meters or buttons rather than redrawing the whole image every timer pass.
@@ -97,3 +97,9 @@ New live expressive engine: Program Change events are stored per MIDI channel; s
 - [UI design](UI_DESIGN.md): screen geometry, cursor/redraw details, and changes documented from the real EX recording.
 - [README](../README.md): user instructions, commands and current limitations.
 - [MIDI/PSG implementation audit and new resources](MIDI_PSG_RESEARCH.md): detailed implemented/partial/pending findings and prioritized experiments.
+
+## Optional hardware PC-speaker voice (SPK4)
+
+The player retains three PSG tone channels and their noise channel. When users opt in with **`/SPK4`**, the **SPK4** titlebar button or **K**, the allocator may assign a fourth distinct *overflow* note to PIT channel 2. The original three PSG choices are not replaced. Candidate selection favors bass and avoids duplicate periods. The converted PIT2 counter value is approximately `PSG_divider × 32/3` because the clocks are 1.193182 MHz (PIT) and 3.579545 MHz (PSG/32). The physical backend writes mode 3 to port 43h, counter low/high bytes to port 42h, and read-modify-writes **only bits 0–1 of port 61h** to enable/disable the speaker. **PIT0 timing and BIOS tick configuration are unchanged.**
+
+Because the PC-speaker channel has no per-voice attenuation, TandyAMP gates quiet extra notes rather than forcing them at full level. Toggle OFF, note release, pause, stop, exit and master mute turn off the extra tone. The option is OFF by default and preserved between songs if enabled. Testing uses a mocked PIT2 output for note allocation and switch state, but the actual acoustic blend and port 61h routing require hardware validation on the real EX.

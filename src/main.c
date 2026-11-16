@@ -38,7 +38,10 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_BUTTON_X 8U
 #define UI_BUTTON_STEP 38U
 #define UI_BUTTON_WIDTH 36U
-#define UI_BUTTON_COUNT 8U
+#define UI_BUTTON_COUNT 9U
+#define UI_ROW_BUTTONS 8U
+#define UI_SPK_BUTTON_X 151U
+#define UI_SPK_BUTTON_W 52U
 static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
 static ta_u32 ui_last_seconds=0xffffffffUL;
 static signed short meter_last_note[3]={-2,-2,-2};
@@ -65,6 +68,29 @@ static unsigned long ui_pixels_written=0UL;
 static unsigned char far * const vram=(unsigned char far *)MK_FP(0xB800,0);
 static volatile ta_u32 far * const bios_tick=(volatile ta_u32 far*)MK_FP(0x40,0x6c);
 static void put_sound(ta_u8 value){outp(0xc0,value);}
+/* Optional PIT channel 2 fourth tone. PIT0 scheduler stays untouched.
+   Only bits 0/1 of EX port 61h are changed, preserving audio routing. */
+static ta_u16 pit2_current=0;
+void ta_pc_speaker(ta_u16 divisor)
+{
+    unsigned char p;
+    if(divisor==pit2_current)return;
+    if(!divisor){
+        if(pit2_current){
+            p=(unsigned char)inp(0x61);
+            outp(0x61,(unsigned char)(p&0xfcU));
+        }
+    }else{
+        outp(0x43,0xb6);
+        outp(0x42,(unsigned char)(divisor&255U));
+        outp(0x42,(unsigned char)(divisor>>8));
+        if(!pit2_current){
+            p=(unsigned char)inp(0x61);
+            outp(0x61,(unsigned char)(p|0x03U));
+        }
+    }
+    pit2_current=divisor;
+}
 static void timer_start(void)
 {
     /* Mode 3 counts down twice per BIOS tick. Use a single mode-2 ramp
@@ -120,6 +146,18 @@ static ta_u32 get_clock_q8(void){return (fake_clock++)<<8;}
 static void set_mode(unsigned char mode){(void)mode;}
 static int key_ready(void){return 0;}
 static int next_key(void){return 'q';}
+#endif
+
+#ifndef __WATCOMC__
+static ta_u16 test_pc_speaker_divisor=0;
+static unsigned test_pc_speaker_writes=0;
+void ta_pc_speaker(ta_u16 divisor)
+{
+    if(divisor!=test_pc_speaker_divisor){
+        test_pc_speaker_divisor=divisor;
+        test_pc_speaker_writes++;
+    }
+}
 #endif
 
 /* Track only *actual* I/O state. A frequency change costs two PSG
@@ -305,16 +343,16 @@ static const char *leaf(const char *name)
     while(*p){if(*p=='/'||*p=='\\'||*p==':')a=p+1;p++;}
     return a;
 }
-/* Eight tight but legible buttons, including a legacy-drums override. */
+/* Keep all existing button widths; the ninth switch is in titlebar. */
 static const char *button_labels[UI_BUTTON_COUNT]={
-    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM"
+    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM","SPK4"
 };
 static void draw_buttons(void)
 {
     unsigned i,x,w,tx;
     ta_u8 face,ink;
     int pressed;
-    for(i=0;i<UI_BUTTON_COUNT;i++){
+    for(i=0;i<UI_ROW_BUTTONS;i++){
         x=UI_BUTTON_X+i*UI_BUTTON_STEP;
         pressed=(i==1 && ta.playing && !ta.paused)
             ||(i==2 && ta.playing && ta.paused)
@@ -330,19 +368,23 @@ static void draw_buttons(void)
         tx=x+(UI_BUTTON_WIDTH-w)/2U;
         label(tx,80,button_labels[i],ink,5);
     }
+    frame(UI_SPK_BUTTON_X,3,UI_SPK_BUTTON_W,13,
+          (ta_u8)(ta.speaker_enabled?1:7));
+    label(UI_SPK_BUTTON_X+14,6,"SPK4",
+          (ta_u8)(ta.speaker_enabled?15:0),4);
 }
 static void draw_base(void)
 {
     box(0,0,320,200,8);
     frame(1,1,318,98,8);
-    header(3,"TANDYAMP 3-VOICE MIDI");
+    header(3,"TANDYAMP MIDI PLAYER");
     frame(7,19,109,44,0);
     frame(123,19,189,44,0);
     /* Inset song activity line, not a fake seek bar. */
     box(8,67,302,3,0);
     box(10,68,298,1,8);
     frame(1,101,318,97,8);
-    label(8,188,"+/- VOL D DRUMS SPACE PAUSE N NEXT Q QUIT",7,47);
+    label(8,188,"K SPK4 D DRUM SPACE PAUSE N NEXT Q QUIT",7,47);
 }
 static void draw_playlist(void)
 {
@@ -374,7 +416,8 @@ static void draw_panel(void)
         return;
     }
     box(3,116,314,70,0);
-    label(8,118,"3 PSG TONE CHANNELS",7,35);
+    label(8,118,ta.speaker_enabled?
+          "3 PSG TONES + PC SPEAKER":"3 PSG TONE CHANNELS",7,35);
     for(i=0;i<3;i++){
         unsigned x=26+i*95;
         char n[4];
@@ -645,6 +688,8 @@ static void usage(void)
     puts("         /GUI      Tandy 320x200 16-color screen (default)");
     puts("         /LOOP     repeat the entire playlist");
     puts("         /NOMOUSE  disable DOS mouse detection / pointer");
+    puts("         /SPK4     enable fourth PC speaker tone");
+    puts("         /NOSPK4   disable PC speaker tone (default)");
     puts("         /DRUM16   force legacy channel 16 drums on");
     puts("         /NODRUM16 force channel 16 drums off");
     puts("         /AUTODRUM16 auto drum routing (default)");
@@ -653,6 +698,7 @@ static void usage(void)
     puts("Auto level limiting always on. No playlist recursion or seek.");
     puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
     puts("      E voice monitor, L loop, D drums AUTO/ON/OFF");
+    puts("      K toggle fourth PC speaker voice (SPK4 button)");
     puts("      + or - change volume; Q or ESC quit.");
     puts("Playlist: 64 files max, alphabetical if auto-discovered.");
     puts("MIDI format 0/1, up to 24 tracks, up to 44 KB per file.");
@@ -705,6 +751,11 @@ static void input_key(int key)
     case 'P':next_song(1);break;
     case 'L':loop_mode=!loop_mode;ui_dirty|=UI_BUTTONS;break;
     case 'E':show_equalizer=!show_equalizer;ui_dirty|=UI_PANEL|UI_BUTTONS|UI_METERS;break;
+    case 'K':
+        ta_set_speaker(!ta.speaker_enabled);
+        if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
+        ui_dirty|=UI_BUTTONS|UI_TRACK|UI_PANEL;
+        break;
     case 'D':
         ta.drum_mode=(ta_u8)((ta.drum_mode+1U)%3U);
         if(song_count)start_song(song_current);
@@ -717,8 +768,10 @@ static void input_key(int key)
 static int button_at(unsigned x,unsigned y)
 {
     unsigned i,left;
+    if(y>=3U && y<16U && x>=UI_SPK_BUTTON_X &&
+       x<UI_SPK_BUTTON_X+UI_SPK_BUTTON_W)return 8;
     if(y<74U || y>=94U)return -1;
-    for(i=0;i<UI_BUTTON_COUNT;i++){
+    for(i=0;i<UI_ROW_BUTTONS;i++){
         left=UI_BUTTON_X+i*UI_BUTTON_STEP;
         if(x>=left && x<left+UI_BUTTON_WIDTH)return (int)i;
     }
@@ -736,6 +789,7 @@ static void click_button(int id)
     else if(id==5)input_key('E');
     else if(id==6)input_key('L');
     else if(id==7)input_key('D');
+    else if(id==8)input_key('K');
 }
 /* Same button/cursor behavior in native DOS and host regressions.
    INT 33h AX=5 remembers quick presses between position polls. */
@@ -835,6 +889,8 @@ int main(int argc,char **argv)
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
         if(same(s,"/NOMOUSE")){mouse_enabled=0;continue;}
+        if(same(s,"/SPK4")){ta_set_speaker(1);continue;}
+        if(same(s,"/NOSPK4")){ta_set_speaker(0);continue;}
         if(same(s,"/DRUM16")){ta.drum_mode=TA_DRUM_ON;continue;}
         if(same(s,"/NODRUM16")){ta.drum_mode=TA_DRUM_OFF;continue;}
         if(same(s,"/AUTODRUM16")){ta.drum_mode=TA_DRUM_AUTO;continue;}
@@ -942,6 +998,7 @@ int main(int argc,char **argv)
     mouse_shutdown();
     timer_stop();
     ta_stop();
+    ta_pc_speaker(0);
     set_mode(3);
     if(text_mode)puts("\nTandyAMP stopped.");
     return 0;

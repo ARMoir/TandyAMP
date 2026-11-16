@@ -49,6 +49,10 @@ jobs:
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/expressive_test tests/expressive_test.c
           ./tests/expressive_test
+      - name: Verify optional PC speaker fourth voice
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/speaker_test tests/speaker_test.c
+          ./tests/speaker_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:

@@ -13,7 +13,8 @@
 | `tests/midi_test.c` | MIDI parser and format/boundary tests |
 | `tests/playback_test.c` | Event ordering and note/voice behavior |
 | `tests/mixer_test.c` | Mix model and volume/attenuation tests |
-| `tests/ui_test.c` | Simulated Tandy VRAM drawing, eight-button layout, software mouse, minimal repaint and directory playlist auto-discovery |
+| `tests/ui_test.c` | Simulated Tandy VRAM drawing, nine-button layout (SPK4 title bar), software mouse, minimal repaint and directory playlist auto-discovery |
+| `tests/speaker_test.c` | Optional fourth PIT2 voice allocation, live toggle and mute/stop regressions |
 | `tools/make_demo.py` | Produces an original 16-second `DEMO.MID` |
 | `.github/workflows/build-dos.yml` | Primary DOS build, tests, package, release and cleanup |
 | `.github/workflows/blank.yml` | Older placeholder CI workflow (echo-only); **does not build TandyAMP** |
@@ -43,6 +44,8 @@ gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/playback_test tests/playback_t
 ./tests/playback_test
 gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/mixer_test tests/mixer_test.c
 ./tests/mixer_test
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/speaker_test tests/speaker_test.c
+./tests/speaker_test
 python3 tests/check_docs.py
 ```
 
@@ -78,3 +81,7 @@ Documentation files are kept in the repository, **not copied into the DOS releas
 ## Preservation and attribution
 
 TandyAMP's own code is MIT licensed. The legacy Miles `TANDY.ADV` and original Winamp source/assets were used only for independent technical/design study, not redistributed. See [TANDY_ADV_ANALYSIS.md](TANDY_ADV_ANALYSIS.md) and [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md).
+
+## Fourth speaker tone rollout
+
+The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the host tests. Build and automated tests **do not reproduce real Tandy EX speaker balance**. The ordinary three-voice mode is default and should be compared with the same MIDI track after toggling SPK4 on via the K key or clicking the small titlebar button. If the extra voice is harsh or inaudible through a particular output, disable it without rebooting; no change to the existing Windows image, AUTOEXEC.BAT or PIT channel 0 hardware timing is made.

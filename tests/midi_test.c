@@ -25,6 +25,7 @@ void ta_psg_noise_level(ta_u8 attenuation)
     if(attenuation>15)abort();
     if(attenuation==15)noise_mute_count++;
 }
+void ta_pc_speaker(ta_u16 divider){(void)divider;}
 void ta_psg_silence(void){mute_count++;}
 
 int main(int argc,char **argv)

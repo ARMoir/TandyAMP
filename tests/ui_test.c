@@ -45,8 +45,9 @@ int main(void)
     song_ticks=0;
     draw_all();
 
-    /* All eight 5x7 labels fit WITHIN the button's inside bevel. */
-    for(i=0;i<UI_BUTTON_COUNT;i++){
+    /* Keep the original eight 5x7 labels within their unchanged buttons.
+       The ninth SPK4 button lives in the title bar. */
+    for(i=0;i<UI_ROW_BUTTONS;i++){
         x=UI_BUTTON_X+i*UI_BUTTON_STEP;
         textw=(unsigned)strlen(reference[i])*6U-1U;
         start=x+(UI_BUTTON_WIDTH-textw)/2U;
@@ -54,11 +55,27 @@ int main(void)
         assert(start>x+1 && start+textw<x+UI_BUTTON_WIDTH-1);
         assert(colored_pixels(start,80,textw,7,(i==1)?15:0)>4);
         assert(color_at(x+UI_BUTTON_WIDTH-1,80)==0);
-        if(i+1<UI_BUTTON_COUNT)assert(color_at(x+UI_BUTTON_WIDTH,80)==8);
+        if(i+1<UI_ROW_BUTTONS)assert(color_at(x+UI_BUTTON_WIDTH,80)==8);
         assert(button_at(x+UI_BUTTON_WIDTH/2,80)==(int)i);
     }
-    assert(UI_BUTTON_X+(UI_BUTTON_COUNT-1)*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
+    assert(UI_BUTTON_X+(UI_ROW_BUTTONS-1)*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
+    assert(UI_BUTTON_COUNT==9U);
+    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,9)==8);
+    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,17)==-1);
     assert(button_at(2,80)==-1);
+    /* Click the upper-titlebar switch: state must change without
+       restarting the MIDI clock, and repeated clicks must toggle back. */
+    {
+        ta_u32 clock=ta.clock_q8;
+        assert(ta.speaker_enabled==0);
+        click_button(8);
+        assert(ta.speaker_enabled==1 && ta.clock_q8==clock);
+        ui_dirty|=UI_BUTTONS;
+        draw_dirty();
+        assert(colored_pixels(UI_SPK_BUTTON_X+14,6,23,7,15)>4);
+        click_button(8);
+        assert(ta.speaker_enabled==0 && ta.clock_q8==clock);
+    }
     assert(button_at(20,100)==-1);
 
     /* Mode indicator/button repaints don't require a full-screen redraw. */
@@ -238,7 +255,7 @@ int main(void)
     }
 
     printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
-           "and 8 clickable labels, DRUM mode, song title, zero-write idle, "
+           "and 9 clickable labels including SPK4, DRUM mode, song title, zero-write idle, "
            "clock-only refresh, per-voice meters, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;

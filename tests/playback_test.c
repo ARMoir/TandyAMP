@@ -7,6 +7,7 @@ void ta_psg_tone(int s,ta_u16 p,ta_u8 a)
 { assert(s>=0 && s<3 && p>=1 && p<=1023 && a<=15);writes++; }
 void ta_psg_noise(ta_u8 m,ta_u8 a){assert(m<=7 && a<=15);}
 void ta_psg_noise_level(ta_u8 a){assert(a<=15);}
+void ta_pc_speaker(ta_u16 divider){(void)divider;}
 void ta_psg_silence(void){}
 static int sounding(int channel,int note)
 {

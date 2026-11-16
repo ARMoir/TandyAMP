@@ -45,6 +45,7 @@ typedef struct {
     ta_u16 bytes, division, track_count, format;
     TATrack tracks[TA_MAX_TRACKS];
     TAVoice voices[TA_VOICES];
+    TAVoice speaker_voice; /* Optional PIT2 fourth pitched voice. */
     TAActiveNote notes[TA_ACTIVE_NOTES];
     ta_u8 cc_volume[TA_CHANNELS], cc_expression[TA_CHANNELS];
     ta_u8 cc_sustain[TA_CHANNELS];
@@ -60,6 +61,7 @@ typedef struct {
     ta_u8 drum_detected; /* File-scanning decision before override. */
     ta_u8 loaded, playing, paused;
     ta_u8 master_attenuation, mix_attenuation;
+    ta_u8 speaker_enabled; /* Preserved across tracks; default off. */
 } TAEngine;
 
 extern TAEngine ta;
@@ -71,12 +73,14 @@ void ta_advance(ta_u16 elapsed_q8); /* Units of 1/256 BIOS tick. */
 void ta_pause(void);
 void ta_noteoff_all(void);
 void ta_set_volume(unsigned volume); /* 0=mute, 15=full; leveling stays on. */
+void ta_set_speaker(unsigned enabled); /* Optional fourth tone via PIT2. */
 ta_u32 ta_elapsed_seconds(void);
 const char *ta_error(void);
 
 /* Platform-specific, zero-based tone slot; attenuation: 0 loudest, 15 mute. */
 void ta_psg_tone(int slot, ta_u16 divider, ta_u8 attenuation);
 void ta_psg_silence(void);
+void ta_pc_speaker(ta_u16 pit_divisor); /* 0=mute, else PIT2 tone */
 void ta_psg_noise(ta_u8 mode, ta_u8 attenuation);
 void ta_psg_noise_level(ta_u8 attenuation);
 
