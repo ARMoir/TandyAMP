@@ -1,0 +1,7 @@
+-r requirements.txt
+# Optional, heavy AI transcription. Python 3.10/3.11 recommended.
+# See README.md for machine-specific compatibility of TensorFlow / ONNX / Torch.
+basic-pitch[onnx]
+librosa
+# Demucs is only necessary when --stems is selected.
+demucs
