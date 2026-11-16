@@ -53,12 +53,14 @@ Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI
 | `L` | Toggle playlist loop |
 | `Q` or `Esc` | Quit, silence chip, return to DOS |
 
-The Winamp-style control buttons are **visual in v0.1**; use the keyboard. Serial-mouse support, clickable controls, a file picker, seeking, and a genuine equalizer are not yet implemented. The equalizer-inspired panel currently displays **three live channel levels**, not frequency-domain audio bands.
+The Winamp-style control buttons are **visual in v0.1**; use the keyboard. The revised Tandy EX layout uses seven uniform 42-pixel buttons with individually centered labels, so PREV/PLAY/PAUSE/STOP/NEXT/VIS/LOOP no longer cross into adjacent button borders. Serial-mouse support, clickable controls, a file picker, seeking, and a genuine equalizer are not yet implemented. The equalizer-inspired panel currently displays **three live channel levels**, not frequency-domain audio bands.
 
 ## Current implementation
 
 - Real 8086-compatible, small-model DOS MZ executable, built with `wcl -bt=dos -0 -ms`.
 - Direct Tandy mode `09h`, 320×200, 16 colors, four-bank video memory, and a compact 5×7 pixel font (no VGA requirement).
+- **Real-EX UI cleanup:** precisely centered, non-overlapping 42-pixel transport labels; now-playing title displayed prominently; seven-button row uses the complete width without clipped words.
+- **Dirty-region screen updates:** static background is drawn once; clock changes redraw only its digits, song/title and playlist update on track changes, playback indicators change on input, the activity marker erases only its old 12-pixel segment, and each voice meter redraws only when its note or level changes. Avoids periodic full-screen/panel redraws on the 7 MHz V20.
 - Standard MIDI File type 0/1 parser; variable-length delta times, multi-track playback, running status, tempo changes.
 - Three PSG tone channels with 32 active MIDI notes remembered; melody/bass-aware allocation means temporarily stolen notes can return after release.
 - General MIDI channel 10 percussion uses independent SN76489 noise channel with short volume envelopes. Optional `/DRUM16` also treats channel 16 as percussion for old MIDI arrangements.
@@ -81,7 +83,7 @@ Code and scripts are all in this repository:
 | `tests/midi_test.c` | Verifies parser and PSG behavior using host output stubs |
 | `.github/workflows/build-dos.yml` | Open Watcom 8086 DOS build and CI test artifacts |
 
-GitHub Actions compiles the MIDI engine under GCC/C89, runs the synthetic MIDI tests, installs Open Watcom and produces a real-mode MZ DOS executable. After **every successful run on main**, it publishes a downloadable GitHub release tagged `tandyamp-build-N`. Only after validating the published release does it delete previous `tandyamp-build-*` releases/tags and older `TandyAMP-DOS-*` Actions artifacts. The current release and current run's artifact are retained; unrelated GitHub releases, run histories/logs, and source commits are not deleted. **Passing CI does not establish actual audio, graphics or timing performance on a physical EX**, which remains the immediate next test.
+GitHub Actions compiles the MIDI engine under GCC/C89, runs the synthetic MIDI and host framebuffer regression tests (including zero-write idle and small redraw budgets), installs Open Watcom and produces a real-mode MZ DOS executable. After **every successful run on main**, it publishes a downloadable GitHub release tagged `tandyamp-build-N`. Only after validating the published release does it delete previous `tandyamp-build-*` releases/tags and older `TandyAMP-DOS-*` Actions artifacts. The current release and current run's artifact are retained; unrelated GitHub releases, run histories/logs, and source commits are not deleted. **Passing CI does not establish actual audio, graphics or timing performance on a physical EX**, which remains the immediate next test.
 
 ## TANDY.ADV reverse-engineering reference
 

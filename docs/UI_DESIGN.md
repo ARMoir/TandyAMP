@@ -41,3 +41,20 @@ Owner-provided Winamp 2-era screenshot in the conversation, used as a visual ref
 ## Winamp source-code UI research
 
 The original [Winamp classic player repository](https://github.com/alexfreud/winamp) has been reviewed for conceptual ideas: main player, playlist, equalizer display, button event handling and spectrum visualizer. For a file-by-file analysis and the restrictions against copying the original code or bitmaps, see [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md). The three Tandy tone channels need a lightweight voice monitor, **not** Winamp's PCM FFT spectrum code.
+
+## Physical EX UI review and redraw fixes
+
+The owner's real-hardware video `3578.mp4` showed transport labels spilling into adjacent narrow button borders. In the original source, 33-pixel buttons were spaced 37 pixels apart, but labels were placed at hard-coded x positions independent of each button's text width. Several labels ran into their neighbor's vertical bevel, visibly obscuring text.
+
+The revised implementation uses **7 × 42-pixel** buttons, each spaced 44 pixels from the next starting at x=8, with text centered using `(button_width - (length*6-1))/2`. The longest label, `PAUSE`, occupies only 29 pixels, leaving at least 6 pixels of inset on either side. `VIS` replaces the ambiguous `EQ` button because the lower panel monitors real PSG voice activity, rather than offering an equalizer.
+
+The video also confirmed that periodic status refreshes were clearing 100×34 and 179×35 display panes, redrawing a full 298-pixel progress line, and rebuilding the entire visualizer every few clock ticks. The revised dirty-region renderer now updates only:
+
+- **Clock:** the 95×10-digit strip, and only when the displayed second changes.
+- **Title/metadata:** the upper-right display only when a song changes (rather than every 5 ticks).
+- **Play/pause/stop indicators:** the left 95×13 strip and the seven button faces only after a transport command.
+- **Playlist:** the lower pane only when the track selection changes or the panel is toggled.
+- **Voice meters:** a single 40×42 rectangle only when that specific note, velocity or activity state changes.
+- **Activity line:** the previous and next 12×1 pixel markers only when the indicator moves.
+
+No full-screen erase occurs in the normal playback timer loop. On the host build, `tests/ui_test.c` renders the actual four-bank 16-color framebuffer and asserts that button glyph pixels do not overflow, the song title appears, repeated unchanged status draws cause **zero video writes**, and normal clock/meter updates stay far below full-screen redraw costs. This test runs before publishing each GitHub release. The actual performance improvement on the Tandy EX remains to be measured on hardware.
