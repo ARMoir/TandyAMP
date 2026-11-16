@@ -122,6 +122,11 @@ static int key_ready(void){return 0;}
 static int next_key(void){return 'q';}
 #endif
 
+/* Track only *actual* I/O state. A frequency change costs two PSG
+   bytes; volume-only one; unchanged parameters zero. */
+static ta_u16 last_hw_divider[3]={0,0,0};
+static ta_u8 last_hw_attenuation[3]={255,255,255};
+static ta_u8 last_hw_noise_attenuation=255;
 void ta_psg_tone(int slot,ta_u16 divider,ta_u8 attenuation)
 {
     ta_u8 latch,volume;
@@ -131,26 +136,42 @@ void ta_psg_tone(int slot,ta_u16 divider,ta_u8 attenuation)
     if(attenuation>15)attenuation=15;
     latch=(ta_u8)(0x80+(slot<<5));
     volume=(ta_u8)(0x90+(slot<<5));
-    put_sound((ta_u8)(latch|(divider&15)));
-    put_sound((ta_u8)((divider>>4)&63));
-    put_sound((ta_u8)(volume|attenuation));
+    if(last_hw_divider[slot]!=divider){
+        put_sound((ta_u8)(latch|(divider&15)));
+        put_sound((ta_u8)((divider>>4)&63));
+        last_hw_divider[slot]=divider;
+    }
+    if(last_hw_attenuation[slot]!=attenuation){
+        put_sound((ta_u8)(volume|attenuation));
+        last_hw_attenuation[slot]=attenuation;
+    }
 }
 void ta_psg_noise_level(ta_u8 attenuation)
 {
     if(attenuation>15)attenuation=15;
-    put_sound((ta_u8)(0xf0|attenuation));
+    if(last_hw_noise_attenuation!=attenuation){
+        put_sound((ta_u8)(0xf0|attenuation));
+        last_hw_noise_attenuation=attenuation;
+    }
 }
 void ta_psg_noise(ta_u8 mode,ta_u8 attenuation)
 {
+    /* Deliberately reset the LFSR even for successive same-mode drums. */
     put_sound((ta_u8)(0xe0|(mode&7)));
     ta_psg_noise_level(attenuation);
 }
 void ta_psg_silence(void)
 {
+    unsigned i;
     put_sound(0x9f);
     put_sound(0xbf);
     put_sound(0xdf);
     put_sound(0xff);
+    for(i=0;i<3;i++){
+        last_hw_divider[i]=0;
+        last_hw_attenuation[i]=15;
+    }
+    last_hw_noise_attenuation=15;
 }
 
 /* 5-column public-domain-style geometric pixel font, generated independently.
