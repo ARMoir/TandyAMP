@@ -1,5 +1,7 @@
 # TandyAMP — implementation blueprint
 
+> **Implementation status (v0.1):** The initial Standard MIDI File type 0/1 parser, three-tone PSG renderer, Open Watcom 8086 MZ build, MIDI tests, original demo, DOS command-line options, and the 320×200 Winamp-inspired GUI now exist in `src/midi.c`, `src/main.c`, `tools/make_demo.py`, and `.github/workflows/build-dos.yml`. The original sections below describe the longer-term architecture. Current limitations: BIOS 18.2 Hz timing, 28 KB / 12-track limit, no mouse or seek UI, no file picker, limited instrument timbre. **Physical Tandy EX testing remains pending.** See [UI_DESIGN.md](UI_DESIGN.md) for the reference-image adaptation.
+
 This is a proposal for a new program, **not a description of software already implemented**.
 
 ## Target and overall flow
