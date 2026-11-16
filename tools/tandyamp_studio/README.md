@@ -44,6 +44,18 @@ Future `requirements-audio.txt` installs include the temporary setuptools compat
 
 TandyAMP Studio now accepts a **single YouTube video URL** in both the GUI input box and the CLI. This uses [yt-dlp](https://github.com/yt-dlp/yt-dlp)'s embedded Python API and FFmpeg to extract an MP3 first, then feeds it to the optional Basic Pitch / Demucs transcription pipeline. The downloader does **not** use a YouTube API key, save login cookies, scrape playlists, or bypass DRM/paywalls. Download only audio you own or are permitted to download, and follow the site's terms.
 
+### Reuse cached YouTube MP3 files
+
+Studio now **checks for an existing MP3 before downloading** a YouTube video. Its stable cache is under your user's OS temporary directory:
+
+`%TEMP%\tandyamp-youtube-cache\VIDEO_ID-192.mp3`
+
+The cache key is the **YouTube video ID and selected MP3 bitrate**, so a `watch?v=...` URL and a `youtu.be/...` URL match correctly, while `--mp3-quality 256` has its own MP3. An intact cached MP3 is reused without calling YouTube, yt-dlp or FFmpeg again. Studio logs **Using cached YouTube MP3** so you know it skipped downloading. The GUI also avoids offering FFmpeg installation if the requested MP3 is already in the cache.
+
+New downloads are checked for a plausible MP3 header/size and published to the cache using atomic file replacement. A truncated or obviously invalid cached file is ignored and replaced after a new download. This is a basic integrity check rather than a full audio decode. The cache is outside each run's temporary work directory, so it survives normal program exits; Windows Disk Cleanup or manual removal may still delete it. Earlier versions of Studio removed their temporary downloads, so only downloads **saved by this version onward** are guaranteed to be reusable.
+
+`--keep-mp3` continues to copy a source MP3 into the MIDI output folder, and `--mp3-only` still saves a titled MP3 under `-o`. Both can reuse the cache. To force a fresh download, remove the matching `VIDEO_ID-BITRATE.mp3` and its `.json` metadata from the cache. This cache reduces repeated downloads, **not** the separate Demucs/Basic Pitch processing time.
+
 ### Guided FFmpeg setup inside Studio
 
 The new **Check / Install FFmpeg** button detects whether both ffmpeg.exe and ffprobe.exe are on PATH. If either is missing, the GUI shows the Windows command (winget install --id Gyan.FFmpeg --exact), asks for **explicit permission** to install a third-party tool, and runs winget in the background only if approved. It never runs an installer at startup or without approval. The Convert button offers the same guided setup before a YouTube download when FFmpeg is missing.
@@ -108,7 +120,7 @@ convert_cli.bat "https://youtu.be/dQw4w9WgXcQ" --mp3-only
 | `--mp3-quality 128|192|256|320` | FFmpeg MP3 extraction bitrate; default 192 kbps |
 | `--help` | List all arguments |
 
-**Output:** YouTube MIDI conversions use a separate safe folder with the video's title and ID, containing compact `*.MID` segments and `PLAY.BAT`. Temporary MP3s are deleted unless `--keep-mp3` is specified. `--mp3-only` writes a single `<title>_<video-id>.mp3` file under the selected output folder. Existing files are not silently overwritten. Single-video links are supported; playlists, channels, search pages, and arbitrary web URLs are deliberately not followed. If YouTube makes a video unavailable, the program reports the yt-dlp error.
+**Output:** YouTube MIDI conversions use a separate safe folder with the video's title and ID, containing compact `*.MID` segments and `PLAY.BAT`. The per-run download workspace is deleted, but the validated source MP3 remains in the reusable OS Temp cache; `--keep-mp3` also copies it into the MIDI output folder. `--mp3-only` writes a single `<title>_<video-id>.mp3` file under the selected output folder. Existing files are not silently overwritten. Single-video links are supported; playlists, channels, search pages, and arbitrary web URLs are deliberately not followed. If YouTube makes a video unavailable, the program reports the yt-dlp error.
 
 ## Command line examples
 
@@ -118,7 +130,7 @@ py -3.11 studio.py "C:\Music\song.mp3" --spk4 bass --stems --preset quality
 py -3.11 studio.py "C:\Music\song.wav" --spk4 off --preset performance
 ```
 
-Output goes under `TANDY_OUT\<input>_TANDY` by default or under `-o YOUR_OUTPUT\<input>_TANDY`. Output MIDI names are DOS 8.3-safe (six-letter stem + `01.MID`, `02.MID`, etc.). The DOS `PLAY.BAT` uses `/NOSPK4`, `/SPK4`, or `/SPK4:ADAPT` as selected. **BASS and ADAPT create the same note arrangement; the TandyAMP runtime decides which octave SPK4 plays**, so use the generated `PLAY.BAT` or set the button to the matching mode. The `--preview` WAV is a bounded PSG/PIT2/noise approximation with note envelopes; **not** a hardware-accurate emulator.
+Output goes under `TANDY_OUT\<input>_TANDY` by default or under `-o YOUR_OUTPUT\<input>_TANDY`. Output MIDI names are DOS 8.3-safe (six-letter stem + `01.MID`, `02.MID`, etc.). The DOS `PLAY.BAT` uses `/NOSPK4`, `/SPK4`, or `/SPK4:ADAPT` as selected. **BASS and ADAPT arrange speaker bass differently**: ADAPT can reserve bass with two other distinct pitched notes, while BASS requires three, so use the generated `PLAY.BAT` or set the button to the matching mode. The `--preview` WAV is a bounded PSG/PIT2/noise approximation with note envelopes; **not** a hardware-accurate emulator.
 
 ## Optimization rules
 

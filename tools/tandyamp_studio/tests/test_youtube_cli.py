@@ -56,7 +56,7 @@ class DownloaderTests(unittest.TestCase):
     def test_missing_ffmpeg_reports_installation(self):
         with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'FFmpeg and ffprobe'):
-                download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td))
+                download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td), cache_dir=Path(td)/'cache')
 
     def test_downloader_uses_one_video_and_mp3_postprocess(self):
         captured = {}
@@ -70,11 +70,11 @@ class DownloaderTests(unittest.TestCase):
             def extract_info(self, url, download):
                 captured['url'] = url
                 captured['download'] = download
-                Path(captured['opts']['outtmpl'].replace('%(ext)s', 'mp3')).write_bytes(b'ID3test')
+                Path(captured['opts']['outtmpl'].replace('%(ext)s', 'mp3')).write_bytes(b'ID3' + b'\0'*2048)
                 return {'title': 'Demo / Track', 'id': 'dQw4w9WgXcQ'}
         fake = types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)
         with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value='/usr/bin/ffmpeg'), patch.dict(sys.modules, {'yt_dlp': fake}):
-            result = download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td), '256')
+            result = download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td), '256', cache_dir=Path(td)/'cache')
             self.assertTrue(result.audio_path.is_file())
             self.assertEqual(result.video_id, 'dQw4w9WgXcQ')
             self.assertTrue(captured['download'])
@@ -88,7 +88,7 @@ class DownloaderTests(unittest.TestCase):
         # missing tools fail before importing yt-dlp; no import side-effects
         with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value=None):
             with self.assertRaises(RuntimeError):
-                download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td))
+                download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td), cache_dir=Path(td)/'cache')
 
 
 class CommandLineTests(unittest.TestCase):

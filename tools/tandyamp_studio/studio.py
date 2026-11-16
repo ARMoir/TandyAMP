@@ -9,7 +9,7 @@ import tempfile
 
 from arranger import PRESETS, export, load_midi, prepare
 from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
-from youtube import download_youtube_mp3, is_youtube_url, safe_name
+from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, safe_name
 
 
 def _convert_local(input_file: Path, output_dir: Path, target_name: str,
@@ -65,8 +65,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
             spk4: str = 'bass', stems: bool = False, preview: bool = False,
             *, keep_mp3: bool = False, mp3_only: bool = False,
             mp3_quality: str = '192') -> list[Path]:
-    """Noninteractive pipeline. YouTube downloads live only in a temporary folder
-    unless --keep-mp3 or --mp3-only is requested.
+    """Noninteractive pipeline; a validated YouTube MP3 is reused from
+    the persistent OS temp cache whenever possible. Outputs are unchanged.
     """
     if preset not in PRESETS:
         raise ValueError(f'Unknown preset: {preset}')
@@ -190,8 +190,14 @@ def gui(initial_input: str = '') -> None:
             messagebox.showerror('Missing input', 'Select a file or paste a YouTube URL first.')
             return
         if is_youtube_url(path.get()) and missing_ffmpeg():
-            offer_ffmpeg_install()
-            return
+            # A cache hit needs neither an active YouTube connection nor FFmpeg.
+            try:
+                reuse = cached_youtube_mp3(path.get()) is not None
+            except ValueError:
+                reuse = False
+            if not reuse:
+                offer_ffmpeg_install()
+                return
         run_button.config(state='disabled')
         message.set('Working... YouTube download or AI transcription can take several minutes.')
         future = pool.submit(
