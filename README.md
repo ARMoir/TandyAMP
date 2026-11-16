@@ -6,8 +6,8 @@ The first version is a **compiled and automatically tested prototype**. It has *
 
 ## Download / install
 
-1. Open the latest **[TandyAMP DOS build](https://github.com/ARMoir/TandyAMP/actions/workflows/build-dos.yml)**.
-2. Download the `TandyAMP-DOS-v0.1` artifact ZIP.
+1. Open the **[latest TandyAMP release](https://github.com/ARMoir/TandyAMP/releases/latest)** (a successful GitHub Actions build is published automatically).
+2. Download the `TandyAMP-DOS-build-N.zip` asset, or download `TANDYAMP.EXE` and `DEMO.MID` individually.
 3. Extract `TANDYAMP.EXE` and `DEMO.MID` to the **same directory** on your Tandy's CF card.
 4. Reboot into plain DOS first if the SimCity `SCEXSND` TSR is installed: the music player needs exclusive access to the sound chip.
 5. Run:
@@ -76,7 +76,7 @@ Code and scripts are all in this repository:
 | `tests/midi_test.c` | Verifies parser and PSG behavior using host output stubs |
 | `.github/workflows/build-dos.yml` | Open Watcom 8086 DOS build and CI test artifacts |
 
-GitHub Actions compiles the MIDI engine under GCC/C89, runs the synthetic MIDI tests, installs Open Watcom and produces a real-mode MZ DOS executable. **Passing CI does not establish actual audio, graphics or timing performance on a physical EX**, which remains the immediate next test.
+GitHub Actions compiles the MIDI engine under GCC/C89, runs the synthetic MIDI tests, installs Open Watcom and produces a real-mode MZ DOS executable. After **every successful run on main**, it publishes a downloadable GitHub release tagged `tandyamp-build-N`. Only after validating the published release does it delete previous `tandyamp-build-*` releases/tags and older `TandyAMP-DOS-*` Actions artifacts. The current release and current run's artifact are retained; unrelated GitHub releases, run histories/logs, and source commits are not deleted. **Passing CI does not establish actual audio, graphics or timing performance on a physical EX**, which remains the immediate next test.
 
 ## TANDY.ADV reverse-engineering reference
 

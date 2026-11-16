@@ -13,7 +13,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # publish and prune only TandyAMP build releases
+  actions: write    # prune previous CI build artifacts
+
+# Multiple pushes must never race while publishing/cleaning releases.
+concurrency:
+  group: tandyamp-release-main
+  cancel-in-progress: false
 
 jobs:
   test-and-build:
@@ -44,10 +50,68 @@ jobs:
           mkdir -p dist
           cp TANDYAMP.EXE DEMO.MID README.md LICENSE dist/
           cp docs/TANDY_ADV_ANALYSIS.md docs/PLAYER_ARCHITECTURE.md docs/UI_DESIGN.md dist/
-      - name: Upload DOS executable
+      - name: Create self-contained ZIP
+        run: |
+          cd dist
+          zip -9 "TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip" \
+            TANDYAMP.EXE DEMO.MID README.md LICENSE \
+            TANDY_ADV_ANALYSIS.md PLAYER_ARCHITECTURE.md UI_DESIGN.md
+      - name: Upload current build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TandyAMP-DOS-v0.1
-          path: dist/
+          name: TandyAMP-DOS-build-${{ github.run_number }}
+          path: dist/TandyAMP-DOS-build-${{ github.run_number }}.zip
           retention-days: 60
           if-no-files-found: error
+      - name: Publish latest successful DOS build as GitHub Release
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="tandyamp-build-${GITHUB_RUN_NUMBER}"
+          bundle="dist/TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip"
+          test -s "$bundle"
+          gh release create "$tag" "$bundle" dist/TANDYAMP.EXE dist/DEMO.MID \
+            --target "$GITHUB_SHA" \
+            --title "TandyAMP DOS Build #${GITHUB_RUN_NUMBER}" \
+            --notes "Automatic 16-bit DOS build from commit ${GITHUB_SHA}. Includes TANDYAMP.EXE, original DEMO.MID, documentation and license. Compiled with Open Watcom and passed MIDI regression tests. Real Tandy 1000 EX playback is not yet hardware-verified." \
+            --latest
+          # Do NOT remove earlier builds unless this release is readable and has assets.
+          gh release view "$tag" --json tagName,isDraft,assets \
+            --jq 'select(.isDraft == false and (.assets | length) >= 3) | .tagName' \
+            | grep -Fx "$tag"
+      - name: Delete older TandyAMP releases and CI build artifacts
+        if: success() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="tandyamp-build-${GITHUB_RUN_NUMBER}"
+          # Safeguard against accidental deletion if publication did not complete.
+          gh release view "$tag" --json tagName,isDraft,assets \
+            --jq 'select(.isDraft == false and (.assets | length) >= 3) | .tagName' \
+            | grep -Fx "$tag"
+
+          # Only releases created by this workflow's unique tag prefix.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | .tag_name | select(startswith("tandyamp-build-"))' \
+            > "${RUNNER_TEMP}/tandyamp-release-tags.txt"
+          while IFS= read -r old_tag; do
+            [[ -z "$old_tag" || "$old_tag" == "$tag" ]] && continue
+            echo "Deleting superseded release and tag: $old_tag"
+            gh release delete "$old_tag" --yes --cleanup-tag
+          done < "${RUNNER_TEMP}/tandyamp-release-tags.txt"
+
+          # Retain only this run's ZIP; older TandyAMP-DOS-v0.1 artifacts
+          # are also removed. Other workflows and unrelated artifacts are untouched.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.name | startswith(\"TandyAMP-DOS-\")) | select(.workflow_run.id != ${GITHUB_RUN_ID}) | .id" \
+            > "${RUNNER_TEMP}/tandyamp-old-artifact-ids.txt"
+          while IFS= read -r old_id; do
+            [[ -z "$old_id" ]] && continue
+            echo "Deleting superseded Actions artifact ID: $old_id"
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/$old_id"
+          done < "${RUNNER_TEMP}/tandyamp-old-artifact-ids.txt"
+
+          echo "Published $tag; kept current build, removed older TandyAMP builds."
