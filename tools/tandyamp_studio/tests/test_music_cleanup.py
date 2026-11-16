@@ -14,7 +14,8 @@ import mido
 from arranger import Note, normalize, prepare, select_voices, make_midi
 from postprocess import (classify_drum_bands, classify_drum_transient,
                          clean_stem_notes, drum_velocity, join_bass_fragments,
-                         normalize_drum_fluxes, refine_drum_hits)
+                         normalize_drum_fluxes, refine_drum_hits,
+                         recover_high_hats)
 from preview import assign_preview_voices, preview_wav
 
 
@@ -65,6 +66,37 @@ class SpectralDrumTests(unittest.TestCase):
         self.assertEqual(len(kept), 1)
         self.assertEqual(kept[0].pitch, 38)
 
+    def test_independent_high_band_onses_recover_hats_without_a_beat_grid(self):
+        existing = [Note(0.0, .07, 36, 90, 'drums')]
+        attacks = [(.24, 4.0, .15, .25, 2.8),
+                   (.49, 4.0, .17, .23, 2.7)]
+        hats = recover_high_hats(attacks, existing, style='rock')
+        self.assertEqual([n.pitch for n in hats], [42, 42])
+        self.assertEqual([round(n.start, 2) for n in hats], [.24, .49])
+        self.assertTrue(all(n.velocity < 90 for n in hats))
+
+    def test_high_band_needs_actual_spectral_attack_evidence(self):
+        # A kick with a bit of high-frequency energy is not a hat.
+        lows = [(.25, 4.0, 4.0, 1.0, .25),
+                (.50, 4.0, 5.0, 1.0, .30)]
+        self.assertEqual(recover_high_hats(lows, [], style='rock'), [])
+        self.assertEqual(recover_high_hats([], [], style='rock'), [])
+
+    def test_hats_cannot_steal_single_noise_channel_from_snare(self):
+        existing = [Note(.50, .57, 38, 95, 'drums')]
+        attacks = [(.52, 3.0, .1, .2, 3.0)]
+        self.assertEqual(recover_high_hats(attacks, existing, 'rock'), [])
+
+    def test_rock_mode_more_sparing_kicks_and_stronger_snares(self):
+        dense = [Note(i*.21, i*.21+.07, 36, 80, 'drums')
+                 for i in range(16)]
+        regular = refine_drum_hits(dense, style='auto')
+        rock = refine_drum_hits(dense, style='rock')
+        self.assertGreater(len(regular), len(rock))
+        kick = Note(0, .07, 36, 75, 'drums')
+        snare = Note(.03, .10, 38, 88, 'drums')
+        self.assertEqual(refine_drum_hits([kick, snare], style='rock')[0].pitch, 38)
+
     def test_snare_chatter_is_rejected(self):
         events = [
             Note(0.00, .08, 38, 90, 'drums'),
@@ -110,6 +142,14 @@ class StemCleanupTests(unittest.TestCase):
         self.assertEqual(len(result), 3)
         self.assertAlmostEqual(result[0].end, .4)
         self.assertEqual([n.pitch for n in result], [40, 40, 38])
+
+    def test_quiet_bass_velocities_no_longer_have_64_floor(self):
+        notes = [Note(0, .2, 40, 50, 'bass'),
+                 Note(.3, .5, 40, 55, 'bass'),
+                 Note(.6, .8, 38, 62, 'bass')]
+        normalized = normalize(notes, 'balanced')
+        self.assertEqual([n.velocity for n in normalized], [50, 55, 62])
+        self.assertEqual([n.pitch for n in normalized], [40, 40, 38])
 
     def test_removes_short_harmonic_artifact_without_losing_lead(self):
         melody = [

@@ -42,7 +42,7 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass') -> tuple[list[
         required = 2 if spk4 == 'adapt' else 3
         for n in pitched:
             if (n.part != 'bass' or not BASS_MIN <= n.pitch <= BASS_MAX
-                    or n.velocity < 65):
+                    or n.velocity < 58):
                 continue
             others = {_freq(k.pitch) for k in pitched if k is not n and k.pitch != n.pitch}
             if len(others) >= required:
@@ -86,6 +86,10 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
     drum: Note | None = None
     pos = 0
     rng = random.Random(1234)
+    # Simulate the analog bandwidth and soften digital edges, not an exact
+    # SN76489 filter. The actual 1-bit PIT2 still cannot adjust volume.
+    smooth = 0.0
+    lowpass_alpha = 1.0 - math.exp(-2*math.pi*2050/RATE)
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(output), 'wb') as wav:
@@ -134,8 +138,9 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                     noise = .55*noise + .45*math.sin(2*math.pi*75*t)
                 mix += level*noise
             # Fixed headroom rather than a hard digital clip on every chord.
-            mix = max(-.94, min(.94, mix))
-            buffer.extend(struct.pack('<h', int(mix*32767)))
+            smooth += lowpass_alpha*(mix-smooth)
+            sample = max(-.94, min(.94, smooth))
+            buffer.extend(struct.pack('<h', int(sample*32767)))
             if len(buffer) >= 16384:
                 wav.writeframesraw(buffer)
                 buffer.clear()

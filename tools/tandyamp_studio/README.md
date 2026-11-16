@@ -13,7 +13,23 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **SPK4 behavior:** BASS remains conservative and requires **three other distinct pitched notes** before assigning low bass to PIT2. ADAPT now allows the speaker bass alongside **two** other distinct pitched notes; one other pitch, high note overflow and unison duplicates are still excluded. The MIDI and the 16-bit DOS runtime were updated together. ADAPT may sound louder because PC speaker output is inherently on/off, so use BASS if it dominates the mix. The new preview approximates PSG pitch quantization, three PSG tone channels, drum decays/envelopes and optional PIT2 bass; it remains **non-cycle-accurate**, and actual Tandy/monitor sound will differ.
 
-**Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
+**Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. Rock drum analysis requires `--stems`. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
+
+## Rock rhythm improvements (experimental)
+
+The Studio GUI now has a **Drums** selector: **auto** (existing style, default) or **rock**. The CLI equivalent is `--drum-style rock`, and it only affects drum transcription when you use `--stems`. Neither mode alters an existing user-supplied MIDI file or the pitched guitar melody.
+
+The new isolated-drum-stem analysis runs **two onset detectors**: full-spectrum kicks/snares and a separate high-frequency (6–10.4 kHz) spectral-novelty detector. Independent, sufficiently strong high-band attacks may become MIDI hi-hat 42. Hats are **not added merely because they're missing**; there is no generated metronome/cymbal pattern. A recovered hat is suppressed if the PSG's one noise channel is already occupied by a nearby kick/snare. The rock option is more receptive to genuine high-band attacks, dampens repetitive kick retriggers, and allows a strong snare transient to win an overlapping noise-channel collision.
+
+Bass notes are no longer flattened to a minimum MIDI velocity of 64: quieter notes retain their source dynamics (with a safety floor of 46). Quiet bass may deliberately fail the DOS PC-speaker gating threshold, because PIT2 has no volume register. The preview now runs a mild one-pole low-pass after mixing to soften sharp digital sample edges; this is an approximate laptop listening aid, **not a modification of the Tandy hardware or DOS sound driver**.
+
+A useful rock recording test with the latest source is:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --stems --drum-style rock --preset balanced --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_V4"
+```
+
+The existing YouTube MP3 cache will be reused if present, but Demucs/Basic Pitch still need to process the audio. The output log prints **independent high-band attacks**, **recovered hats**, the final kick/snare/hat counts and the bass velocity range. If hi-hats remain scarce, the underlying separated drum stem might not contain enough usable evidence; the program will not invent them to reach a target ratio. Compare the new preview and MIDI with the V3 versions by ear before judging improvement.
 
 ## Audio quality: balanced drums and bass
 
@@ -114,6 +130,7 @@ convert_cli.bat "https://youtu.be/dQw4w9WgXcQ" --mp3-only
 | `--preset quality|balanced|performance` | Offline voice-optimizing strategy |
 | `--spk4 off|bass|adapt` | Speaker-mode selection in generated DOS `PLAY.BAT` |
 | `--stems` | Optional Demucs separation before transcription |
+| `--drum-style auto|rock` | Drum onset cleanup strategy when using `--stems`; default auto |
 | `--preview` | Export an approximate 30-second WAV |
 | `--mp3-only` | Download MP3 to `-o` and exit; **no AI or MIDI conversion** |
 | `--keep-mp3` | Keep `SOURCE.MP3` in the resulting DOS-MIDI folder |

@@ -198,18 +198,70 @@ def classify_drum_bands(low: float, mid: float, high: float) -> int | None:
     return None
 
 
-def refine_drum_hits(notes: list[Note], beats: list[float] | None = None) -> list[Note]:
+
+def recover_high_hats(events: list[tuple[float, float, float, float, float]],
+                      existing: list[Note], style: str = 'auto') -> list[Note]:
+    """Recover real *independent* cymbal attacks from high-band onset evidence.
+
+    Event format: (time_sec, high-band onset strength, calibrated low,
+    calibrated mid, calibrated high). Never create a regular beat grid or
+    fill in hats where the isolated drum stem shows no detected attack.
+    Distinct high-band onsets matter because full-spectrum onset tracking
+    is often dominated by kick/snare energy.
+    """
+    if style not in ('auto', 'rock'):
+        raise ValueError('Drum style must be auto or rock')
+    if not events:
+        return []
+    strengths = sorted(max(0.0, e[1]) for e in events)
+    floor = strengths[int((len(strengths)-1) * (.55 if style == 'rock' else .65))]
+    floor = max(floor, strengths[-1] * .045, 1e-10)
+    result: list[Note] = []
+    minimum_gap = .115 if style == 'rock' else .14
+    high_fraction = .42 if style == 'rock' else .49
+    for at, strength, low, mid, high in sorted(events):
+        if strength < floor:
+            continue
+        energy = max(0.0, low) + max(0.0, mid) + max(0.0, high)
+        if energy <= 0:
+            continue
+        # A real high-frequency transient must dominate its local spectrum;
+        # a little presence above 6 kHz in a kick is not a hi-hat.
+        if high/energy < high_fraction or high < .78*max(low, mid):
+            continue
+        if result and at-result[-1].start < minimum_gap:
+            continue
+        # Tandy has only ONE noise oscillator: don't add an inaudible hat
+        # on top of a kick/snare with a nearly simultaneous attack.
+        if any(abs(n.start-at) < .090 for n in existing):
+            continue
+        if any(abs(n.start-at) < .090 for n in result):
+            continue
+        relative = min(1.0, max(0.0, strength / max(strengths[-1], 1e-10)))
+        velocity = round(52 + 28*relative)
+        result.append(Note(at, at+.045, 42, velocity, 'drums', 0))
+    return result
+
+
+
+def refine_drum_hits(notes: list[Note], beats: list[float] | None = None,
+                     style: str = 'auto') -> list[Note]:
     """Beat-aware debounce for the Tandy's *one* noise channel.
 
     Align hits only when very near a reliable tracked beat, keeping guitar
     riffs off the drum channel. Prevent sub-100 ms snare chatter and avoid
     masking kicks with frequent snare triggers.
     """
+    if style not in ('auto', 'rock'):
+        raise ValueError('Drum style must be auto or rock')
     if not notes:
         return []
     from bisect import bisect_left
     beats = sorted(beats or [])
-    minimum = {36: .18, 38: .28, 42: .105}
+    # Rock mode deliberately reduces dense kick chatter, but retains actual
+    # backbeats and cymbal attacks (no invented quarter/eighth-note hats).
+    minimum = ({36: .28, 38: .25, 42: .11} if style == 'rock'
+               else {36: .20, 38: .28, 42: .105})
     last_type: dict[int, float] = {}
     result: list[Note] = []
     typical = median(n.velocity for n in notes)
@@ -243,8 +295,13 @@ def refine_drum_hits(notes: list[Note], beats: list[float] | None = None) -> lis
             continue
         if result and t - result[-1].start < .085:
             old = result[-1]
-            importance = {36: 3, 38: 2, 42: 1}
-            if importance[n.pitch] <= importance[old.pitch]:
+            # Previous fixed ordering made *every* kick trump a snare, even
+            # when the snare transient was much louder. A single noise voice
+            # must choose the stronger event, with only a modest tie-break.
+            bonus = ({36: 3, 38: 9, 42: 0} if style == 'rock'
+                     else {36: 5, 38: 4, 42: 0})
+            score = lambda hit: hit.velocity + bonus[hit.pitch]
+            if score(n) <= score(old):
                 continue
             result.pop()
         end = t + {36: .075, 38: .060, 42: .048}[n.pitch]
