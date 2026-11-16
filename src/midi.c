@@ -151,13 +151,12 @@ static const ta_u16 note_period[128]={
 };
 static ta_u16 period_for(ta_u8 note, signed short bend)
 {
-    ta_u16 p;
+    ta_u16 p,edge;
+    ta_s32 result,d;
     /* Hardware cannot make pitches below ~109 Hz. Fold bass up octaves
        instead of rendering all low notes as one indistinct 109 Hz buzz. */
     while(note<45)note=(ta_u8)(note+12);
     p=note_period[note];
-    ta_u16 edge;
-    ta_s32 result,d;
     if(bend>0)edge=note_period[note<125?note+2:127];
     else edge=note_period[note>1?note-2:0];
     d=(ta_s32)((signed short)edge-(signed short)p)*(ta_s32)(bend>=0?bend:-bend);
