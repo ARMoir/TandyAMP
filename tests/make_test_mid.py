@@ -53,3 +53,16 @@ mel16=(tempo+note(0,0x9f,60,105)+note(12,0x9f,62,105)+
 Path("tests/melody16.mid").write_bytes(header(0,1)+chunk(b"MTrk",mel16))
 Path("tests/bad.mid").write_bytes(b"MThd"+b"\x00"*12)
 print("PASS: generated deterministic MIDI inputs")
+
+# Track order is not event order: off at tick 2 must follow on at tick 1.
+a=note(2,0x80,72,0)+vlq(94)+b"\xff\x2f\x00"
+b=note(1,0x90,72,100)+vlq(95)+b"\xff\x2f\x00"
+Path("tests/ordered.mid").write_bytes(header(1,2)+chunk(b"MTrk",a)+chunk(b"MTrk",b))
+# Dense same-timestamp chord must select only once, after all notes arrive.
+chord=b"".join(note(0,0x90,60+i,80+i) for i in range(12))
+Path("tests/chord.mid").write_bytes(header(0,1)+chunk(b"MTrk",chord+note(96,0xb0,120,0)+ending))
+muted=(note(0,0xb0,11,0)+note(0,0x90,76,127)+note(0,0x91,72,90)
+       +note(0,0x92,48,90)+note(0,0x93,64,90)+note(1,0xb0,11,127)
+       +note(96,0xb0,120,0)+ending)
+Path("tests/muted.mid").write_bytes(header(0,1)+chunk(b"MTrk",muted))
+

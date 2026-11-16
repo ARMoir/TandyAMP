@@ -10,6 +10,7 @@ static void render_voice(unsigned i);
 static void rebuild_voices(void);
 static void silence_noise(void);
 static const char *last_error="OK";
+static ta_u8 synth_dirty=0, controllers_dirty=0;
 
 static ta_u16 rd16(ta_u16 p)
 {
@@ -64,6 +65,7 @@ static void clear_synth(void)
 {
     unsigned c,v;
     ta.sequence=1;
+    synth_dirty=controllers_dirty=0;
     for(c=0;c<TA_CHANNELS;c++){
         ta.cc_volume[c]=127;
         ta.cc_expression[c]=127;
@@ -190,7 +192,7 @@ static ta_s32 note_priority(const TAActiveNote *n)
 {
     ta_s32 score;
     if(n->note<0)return -100000L;
-    score=(n->held?1000L:200L)+(ta_s32)n->velocity*3L;
+    score=(n->held?1000L:200L)+(ta_s32)n->gain*3L;
     if(n->note>=60 && n->note<=96)score+=180L;
     if(n->note>=44 && n->note<60)score+=70L;
     if(n->note<36 || n->note>104)score-=90L;
@@ -209,6 +211,7 @@ static void rebuild_voices(void)
         for(i=0;i<TA_ACTIVE_NOTES;i++){
             TAActiveNote *n=&ta.notes[i];
             if(n->note<0)continue;
+            if(n->attenuation==15)continue;
             already=0;
             for(j=0;j<k;j++)if(selected[j]==(signed short)i)already=1;
             if(already)continue;
@@ -316,9 +319,14 @@ static void update_noise(ta_u16 elapsed_q8)
 static void render_channel(ta_u8 channel)
 {
     unsigned i;
-    for(i=0;i<TA_VOICES;i++)
-        if(ta.voices[i].note>=0 && ta.voices[i].channel==channel)
-            render_voice(i);
+    for(i=0;i<TA_ACTIVE_NOTES;i++){
+        TAActiveNote *n=&ta.notes[i];
+        if(n->note<0 || n->channel!=channel)continue;
+        n->gain=(ta_u8)((ta_u32)n->velocity*ta.cc_volume[channel]
+                       *ta.cc_expression[channel]/16129UL);
+        n->attenuation=attenuation(channel,n->velocity);
+    }
+    synth_dirty=controllers_dirty=1;
 }
 static void off(ta_u8 channel,ta_u8 note)
 {
@@ -332,7 +340,7 @@ static void off(ta_u8 channel,ta_u8 note)
             else {n->note=-1;n->sustained=0;}
         }
     }
-    rebuild_voices();
+    synth_dirty=1;
 }
 static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
 {
@@ -361,10 +369,13 @@ static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
     ta.notes[i].note=note;
     ta.notes[i].channel=channel;
     ta.notes[i].velocity=vel;
+    ta.notes[i].gain=(ta_u8)((ta_u32)vel*ta.cc_volume[channel]
+                           *ta.cc_expression[channel]/16129UL);
+    ta.notes[i].attenuation=attenuation(channel,vel);
     ta.notes[i].held=1;
     ta.notes[i].sustained=0;
     ta.notes[i].stamp=ta.sequence++;
-    rebuild_voices();
+    synth_dirty=1;
 }
 static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
 {
@@ -378,13 +389,13 @@ static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
             if(n->note>=0 && n->channel==c && n->sustained && !n->held)
                 n->note=-1;
         }
-        rebuild_voices();
+        synth_dirty=1;
     }
     if(cc==120 || cc==123){
         for(i=0;i<TA_ACTIVE_NOTES;i++)
             if(ta.notes[i].note>=0 && ta.notes[i].channel==c)
                 ta.notes[i].note=-1;
-        rebuild_voices();
+        synth_dirty=1;
         if(c==9 || (c==15 && ta.drum16))silence_noise();
     }
 }
@@ -577,26 +588,43 @@ int ta_load(const char *filename)
 }
 void ta_advance(ta_u16 elapsed_q8)
 {
-    unsigned i,remaining=384;
-    int active;
-    ta_u32 motion;
+    unsigned i;
+    int active,found;
+    ta_u32 motion,next,group=0;
     if(!ta.playing || ta.paused || !elapsed_q8)return;
     update_noise(elapsed_q8);
     /* Q8 MIDI time, with another Q8 carry for sub-BIOS-tick scheduling. */
     motion=ta.step_q8*(ta_u32)elapsed_q8+ta.clock_carry;
     ta.clock_q8+=motion>>8;
     ta.clock_carry=(ta_u16)(motion&255UL);
-    do{
-        active=0;
-        for(i=0;i<ta.track_count && remaining;i++){
-            TATrack *t=&ta.tracks[i];
-            if(t->active && t->next_tick<=(ta.clock_q8>>8)){
-                consume_event(t);
-                remaining--;
-                active=1;
+    /* Merge tracks by absolute event time, not track index. All events at
+       one timestamp update the note pool before choosing hardware voices.
+       Input is bounded by TA_MAX_FILE; every event advances or ends a track. */
+    for(;;){
+        found=-1;
+        next=0xffffffffUL;
+        for(i=0;i<ta.track_count;i++){
+            if(ta.tracks[i].active && ta.tracks[i].next_tick<=next){
+                if(found<0 || ta.tracks[i].next_tick<next){
+                    next=ta.tracks[i].next_tick;
+                    found=(int)i;
+                }
             }
         }
-    }while(active && remaining);
+        if(found<0 || next>(ta.clock_q8>>8))break;
+        if(next!=group){
+            if(synth_dirty)rebuild_voices();
+            if(controllers_dirty)
+                for(i=0;i<TA_VOICES;i++)render_voice(i);
+            synth_dirty=controllers_dirty=0;
+            group=next;
+        }
+        consume_event(&ta.tracks[found]);
+    }
+    if(synth_dirty)rebuild_voices();
+    if(controllers_dirty)
+        for(i=0;i<TA_VOICES;i++)render_voice(i);
+    synth_dirty=controllers_dirty=0;
     active=0;
     for(i=0;i<ta.track_count;i++)if(ta.tracks[i].active)active=1;
     if(!active)ta_stop();
@@ -612,3 +640,4 @@ ta_u32 ta_elapsed_seconds(void)
     return (quarters*(ta.tempo_us/1000UL))/1000UL;
 }
 const char *ta_error(void){return last_error;}
+

@@ -37,6 +37,10 @@ jobs:
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/ui_test tests/ui_test.c src/midi.c
           ./tests/ui_test
+      - name: Verify musical event ordering and voice allocation
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/playback_test tests/playback_test.c src/midi.c
+          ./tests/playback_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:
@@ -123,3 +127,4 @@ jobs:
           done < "${RUNNER_TEMP}/tandyamp-old-artifact-ids.txt"
 
           echo "Published $tag; kept current build, removed older TandyAMP builds."
+

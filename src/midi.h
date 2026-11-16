@@ -33,6 +33,7 @@ typedef struct {
 typedef struct {
     signed short note;
     ta_u8 channel, velocity, held, sustained;
+    ta_u8 gain, attenuation; /* Cached for cheap 8086 voice selection. */
     ta_u32 stamp;
 } TAActiveNote;
 
@@ -73,3 +74,4 @@ void ta_psg_noise(ta_u8 mode, ta_u8 attenuation);
 void ta_psg_noise_level(ta_u8 attenuation);
 
 #endif
+

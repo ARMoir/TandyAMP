@@ -1,6 +1,6 @@
 # TandyAMP v0.1
 
-**A Winamp-inspired MIDI player for the original Tandy 1000 EX** — real-mode DOS, 16-bit Open Watcom C, and the computer's onboard SN76489-compatible three-voice sound generator at port `0xC0`.
+**A Winamp-inspired MIDI player for the original Tandy 1000 EX** - real-mode DOS, 16-bit Open Watcom C, and the computer's onboard SN76489-compatible three-voice sound generator at port `0xC0`.
 
 The project is a **compiled and automatically tested prototype**. It has **not yet been tested on the physical 7 MHz NEC V20 Tandy EX**. The graphical design is inspired by the reference Winamp screenshot supplied by the project owner; the program uses its own pixel font, UI layout, and original code/assets.
 
@@ -34,7 +34,7 @@ TANDYAMP /HELP
 
 | Option | What it does |
 | --- | --- |
-| `/GUI` or `-G` | Default Tandy 320×200, 16-color graphical player |
+| `/GUI` or `-G` | Default Tandy 320x200, 16-color graphical player |
 | `/TXT` or `-T` | Text-mode player, useful in DOSBox or on other text displays |
 | `/LOOP` or `-L` | Loop the complete playlist |
 | `/HELP`, `-H`, `/?` | Show usage and keyboard controls |
@@ -55,15 +55,15 @@ Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI
 | `P` | Previous track |
 | `E` | Toggle playlist / three-channel visualizer |
 | `L` | Toggle playlist loop |
-| `D` | Cycle channel 16 drums: AUTO → ON → OFF; restart current song |
+| `D` | Cycle channel 16 drums: AUTO  ON  OFF; restart current song |
 | `Q` or `Esc` | Quit, silence chip, return to DOS |
 
-The compact interface now has **eight 36-pixel buttons**, including DRUM. Press **D** or click DRUM with a compatible DOS INT 33h mouse driver to cycle AUTO → ON → OFF. The selected and resolved state appear next to the song title. Changing modes restarts the song for consistent playback. Mouse clicks are implemented for the other seven buttons as well, but cursor display and input on the physical EX/Tandy mode 09h are not yet verified. In plain DOS, use CTMOUSE with the appropriate serial configuration before TandyAMP. A file picker, seeking, and a genuine equalizer are not yet implemented. The visualizer displays three live channel levels, not frequency-domain audio bands.
+The compact interface now has **eight 36-pixel buttons**, including DRUM. Press **D** or click DRUM with a compatible DOS INT 33h mouse driver to cycle AUTO  ON  OFF. The selected and resolved state appear next to the song title. Changing modes restarts the song for consistent playback. Mouse clicks are implemented for the other seven buttons as well, but cursor display and input on the physical EX/Tandy mode 09h are not yet verified. In plain DOS, use CTMOUSE with the appropriate serial configuration before TandyAMP. A file picker, seeking, and a genuine equalizer are not yet implemented. The visualizer displays three live channel levels, not frequency-domain audio bands.
 
 ## Current implementation
 
 - Real 8086-compatible, small-model DOS MZ executable, built with `wcl -bt=dos -0 -ms`.
-- Direct Tandy mode `09h`, 320×200, 16 colors, four-bank video memory, and a compact 5×7 pixel font (no VGA requirement).
+- Direct Tandy mode `09h`, 320x200, 16 colors, four-bank video memory, and a compact 5x7 pixel font (no VGA requirement).
 - **Real-EX UI cleanup:** eight compact, centered and non-overlapping 36-pixel controls, including DRUM; the now-playing area also reports automatic or forced drum routing.
 - **Dirty-region screen updates:** static background is drawn once; clock changes redraw only its digits, song/title and playlist update on track changes, playback indicators change on input, the activity marker erases only its old 12-pixel segment, and each voice meter redraws only when its note or level changes. Avoids periodic full-screen/panel redraws on the 7 MHz V20.
 - Standard MIDI File type 0/1 parser; variable-length delta times, multi-track playback, running status, tempo changes.
@@ -105,3 +105,27 @@ The original Winamp source in [alexfreud/winamp](https://github.com/alexfreud/wi
 ## License
 
 The newly written TandyAMP code and generated demo are MIT-licensed; see [LICENSE](LICENSE). No third-party MIDI player code has yet been copied into the project.
+
+# Playback timing and dense arrangements
+
+The playback engine now merges MIDI tracks in timestamp order and chooses
+the three tone voices once per event timestamp. This avoids transient notes
+and repeated PSG writes while assembling a dense chord. Channel volume and
+expression affect voice priority; muted notes remain tracked but cannot take
+a hardware voice away from an audible part. Raising their volume can restore
+them without another note-on. Selection weights are cached for the 8086.
+
+The DOS timer uses PIT channel 0 mode 2 with divisor 65536 while the player
+runs. This keeps the normal BIOS IRQ rate but supplies one countdown per
+tick. The previous subtick reader assumed that behavior while the default
+mode 3 counts down twice per tick, causing time to jump backward mid-tick.
+Normal mode 3 is restored on exit. No new interrupt handler is installed.
+
+Validation covers synthetic multi-track ordering, dense chord write counts,
+volume/expression voice recovery, the existing MIDI suite and UI redraw tests.
+The supplied 23,066-byte `01 - Trip Through the Grand Canyon.mid` was located
+but its download failed in the review environment, so these changes are not
+claimed to have been verified against that exact arrangement or real hardware.
+Use `TANDYAMP CANYON.MID` after giving your local copy a DOS-compatible name;
+automatic channel-16 percussion detection and the D override remain available.
+

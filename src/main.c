@@ -50,6 +50,20 @@ static unsigned long ui_pixels_written=0UL;
 static unsigned char far * const vram=(unsigned char far *)MK_FP(0xB800,0);
 static volatile ta_u32 far * const bios_tick=(volatile ta_u32 far*)MK_FP(0x40,0x6c);
 static void put_sound(ta_u8 value){outp(0xc0,value);}
+static void timer_start(void)
+{
+    /* Mode 3 counts down twice per BIOS tick. Use a single mode-2 ramp
+       with the SAME 65536 divisor and IRQ rate for monotonic subticks. */
+    _disable();
+    outp(0x43,0x34);outp(0x40,0);outp(0x40,0);
+    _enable();
+}
+static void timer_stop(void)
+{
+    _disable();
+    outp(0x43,0x36);outp(0x40,0);outp(0x40,0);
+    _enable();
+}
 /* Read free-running PIT channel 0: no new IRQ, no BIOS tick rate change.
    256 subunits per 54.9ms tick (~0.215ms timer resolution). */
 static ta_u32 get_clock_q8(void)
@@ -79,6 +93,8 @@ static int next_key(void){return getch();}
 static unsigned char host_screen[32768];
 static unsigned char * const vram=host_screen;
 static ta_u32 fake_clock=0;
+static void timer_start(void){}
+static void timer_stop(void){}
 static void put_sound(ta_u8 value){(void)value;}
 static ta_u32 get_clock_q8(void){return (fake_clock++)<<8;}
 static void set_mode(unsigned char mode){(void)mode;}
@@ -596,6 +612,7 @@ int main(int argc,char **argv)
         draw_all();
         mouse_initialize();
     }else usage();
+    timer_start();
     then=get_clock_q8();
     while(!program_exit){
         now=get_clock_q8();
@@ -661,8 +678,10 @@ int main(int argc,char **argv)
 #endif
     }
     mouse_shutdown();
+    timer_stop();
     ta_stop();
     set_mode(3);
     if(text_mode)puts("\nTandyAMP stopped.");
     return 0;
 }
+
