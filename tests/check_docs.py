@@ -56,7 +56,7 @@ demand("TA_SPK_BASS_MIN 24" in MIDI_SOURCE and "TA_SPK_BASS_MAX 52" in MIDI_SOUR
        and "24–52" in README, "SPK4 bass-only note range undocumented")
 demand("speaker_divider_for" in MIDI_SOURCE and "1.193182" in README,
        "PIT2 true-octave note mapping undocumented")
-demand("#define UI_BUTTON_WIDTH 58U" in CODE and "58 pixels" in UI,
+demand("#define UI_BUTTON_WIDTH 58U" in CODE and "58×17 pixels" in UI,
        "Two-row button width mismatch")
 demand("playlist_find_current_directory" in CODE and "current working directory" in README,
        "Automatic MIDI directory discovery undocumented")
