@@ -5,6 +5,8 @@ on:
     paths:
       - 'src/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'LICENSE'
       - '.github/workflows/build-dos.yml'
       - 'README.md'
   workflow_dispatch:
@@ -34,10 +36,12 @@ jobs:
           wcl -bt=dos -0 -ms -os -s -zq -fe=TANDYAMP.EXE src/main.c src/midi.c
           test -s TANDYAMP.EXE
           file TANDYAMP.EXE
+      - name: Generate original three-voice MIDI demo
+        run: python3 tools/make_demo.py
       - name: Package TandyAMP build and documentation
         run: |
           mkdir -p dist
-          cp TANDYAMP.EXE README.md dist/
+          cp TANDYAMP.EXE DEMO.MID README.md LICENSE dist/
           cp docs/TANDY_ADV_ANALYSIS.md docs/PLAYER_ARCHITECTURE.md dist/
       - name: Upload DOS executable
         uses: actions/upload-artifact@v4
@@ -45,3 +49,4 @@ jobs:
           name: TandyAMP-DOS-v0.1
           path: dist/
           retention-days: 60
+          if-no-files-found: error
