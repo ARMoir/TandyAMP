@@ -6,6 +6,7 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'tools/**'
+      - 'docs/**'
       - 'LICENSE'
       - '.github/workflows/build-dos.yml'
       - 'README.md'
@@ -42,7 +43,7 @@ jobs:
         run: |
           mkdir -p dist
           cp TANDYAMP.EXE DEMO.MID README.md LICENSE dist/
-          cp docs/TANDY_ADV_ANALYSIS.md docs/PLAYER_ARCHITECTURE.md dist/
+          cp docs/TANDY_ADV_ANALYSIS.md docs/PLAYER_ARCHITECTURE.md docs/UI_DESIGN.md dist/
       - name: Upload DOS executable
         uses: actions/upload-artifact@v4
         with:
