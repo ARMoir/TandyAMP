@@ -1,0 +1,47 @@
+name: TandyAMP DOS 8086 build and MIDI tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/build-dos.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate original MIDI tests
+        run: python3 tests/make_test_mid.py
+      - name: Compile and test MIDI engine on host
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/midi_test tests/midi_test.c src/midi.c
+          ./tests/midi_test tests/test0.mid tests/test1.mid tests/bad.mid
+      - name: Set up Open Watcom for 16-bit DOS
+        uses: open-watcom/setup-watcom@v1
+        with:
+          version: '2.0'
+          target: dos
+      - name: Compile native 8086 DOS executable
+        run: |
+          wcl -bt=dos -0 -ms -os -s -zq -fe=TANDYAMP.EXE src/main.c src/midi.c
+          test -s TANDYAMP.EXE
+          file TANDYAMP.EXE
+      - name: Package TandyAMP build and documentation
+        run: |
+          mkdir -p dist
+          cp TANDYAMP.EXE README.md dist/
+          cp docs/TANDY_ADV_ANALYSIS.md docs/PLAYER_ARCHITECTURE.md dist/
+      - name: Upload DOS executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: TandyAMP-DOS-v0.1
+          path: dist/
+          retention-days: 60
