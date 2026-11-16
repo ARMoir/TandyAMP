@@ -25,7 +25,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
-    arranged = prepare(notes, preset, spk4 != 'off')
+    arranged = prepare(notes, preset, spk4)
     print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
     target = output_dir / (target_name + '_TANDY')
     if saved_mp3 is not None and (target / 'SOURCE.MP3').exists():
@@ -37,7 +37,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     (target / 'PLAY.BAT').write_bytes(('@ECHO OFF\r\nTANDYAMP ' + playmode + '\r\n').encode('ascii'))
     if preview:
         from preview import preview_wav
-        wav = preview_wav(arranged, target / 'PREVIEW.WAV')
+        wav = preview_wav(arranged, target / 'PREVIEW.WAV', spk4=spk4)
         print(f'Approximate 30-second square-wave preview: {wav}', flush=True)
     if saved_mp3 is not None:
         shutil.copyfile(saved_mp3, target / 'SOURCE.MP3')

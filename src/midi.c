@@ -341,12 +341,14 @@ static int speaker_note_audible(const TAActiveNote *n)
     return n->note>=TA_SPK_BASS_MIN && n->note<=TA_SPK_BASS_MAX &&
            attenuation<=8U;
 }
-/* Reserve a low-bass note only if THREE OTHER distinct playable PSG
-   pitches exist. Otherwise leave normal three-tone playback untouched.
-   This also ensures SPK4 is never handed a high melody overflow. */
+/* Preserve conservative BASS: three other distinct PSG pitches required.
+   ADAPT can take bass with TWO distinct other pitches, freeing the PSG for
+   lead/harmony during smaller arrangements. Both modes prohibit high notes,
+   unisons and doubling the same bass on the PSG. */
 static signed short choose_speaker_bass(void)
 {
     unsigned i,j,k;
+    unsigned required=(ta.speaker_enabled==TA_SPK_ADAPT)?2U:3U;
     signed short best=-1;
     ta_s32 best_score=-200000L;
     if(!ta.speaker_enabled || !ta.playing || ta.paused)return -1;
@@ -365,7 +367,7 @@ static signed short choose_speaker_bass(void)
                 if(distinct[k]==other->period)duplicate=1;
             if(!duplicate)distinct[count++]=other->period;
         }
-        if(count<3)continue;
+        if(count<required)continue;
         score=(ta_s32)(TA_SPK_BASS_MAX-n->note)*1000L+
               note_priority(n)/4L;
         if(ta.speaker_voice.source==(signed short)i)score+=300L;

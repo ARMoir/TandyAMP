@@ -166,6 +166,23 @@ int main(void)
     assert(choose_adaptive_octave(36)==0);
     ta.voices[1].note=48;ta.voices[1].level=0;
     assert(choose_adaptive_octave(36)==0); /* overlap with raised C3 */
+    /* ADAPT uses PIT2 with bass + two distinct PSG tones;
+       BASS still requires three other tones for conservative operation. */
+    clear_synth();ta.playing=1;
+    on(0,72,127);on(1,64,127);on(3,48,127);
+    flush_mix();
+    check_bass_exclusive(48,9121);
+    ta_set_speaker(TA_SPK_BASS);
+    assert(pit_divider==0 && ta.speaker_voice.source<0);
+    ta_set_speaker(TA_SPK_ADAPT);
+    check_bass_exclusive(48,9121);
+    /* One other tone is insufficient, even for ADAPT. */
+    off(0,72);flush_mix();
+    assert(pit_divider==0 && ta.speaker_voice.source<0);
+    clear_synth();ta.playing=1;
+    on(0,72,127);on(1,72,127);on(3,48,127);flush_mix();
+    assert(pit_divider==0 && ta.speaker_voice.source<0);
+
     /* Non-bass source notes remain strictly excluded in adaptive mode. */
     play_four(60);
     assert(!ta.speaker_divider && ta.speaker_voice.source<0);

@@ -102,7 +102,10 @@ def normalize(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
     config = PRESETS[preset]
     result = []
     for n in notes:
-        if n.end - n.start < config['min_duration'] or n.velocity < 12:
+        # Noise hits are intentionally shorter than pitched notes. Preserve
+        # hats across all presets instead of discarding them as tiny pitches.
+        min_duration = .025 if n.part == 'drums' else config['min_duration']
+        if n.end - n.start < min_duration or n.velocity < 12:
             continue
         p = n.pitch
         if n.part == 'drums':
