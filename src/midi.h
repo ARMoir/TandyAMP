@@ -61,6 +61,7 @@ typedef struct {
     ta_u8 drum_detected; /* File-scanning decision before override. */
     ta_u8 loaded, playing, paused;
     ta_u8 master_attenuation, mix_attenuation;
+    ta_u8 master_boost; /* 0..5 extra attenuation steps recovered at 16..20. */
     ta_u8 speaker_enabled; /* Preserved across tracks; default off. */
 } TAEngine;
 
@@ -72,7 +73,8 @@ void ta_tick(void); /* Legacy 1-BIOS-tick API for tests. */
 void ta_advance(ta_u16 elapsed_q8); /* Units of 1/256 BIOS tick. */
 void ta_pause(void);
 void ta_noteoff_all(void);
-void ta_set_volume(unsigned volume); /* 0=mute, 15=full; leveling stays on. */
+void ta_set_volume(unsigned volume); /* 0=mute, 15=normal, 20=boost. */
+unsigned ta_get_volume(void); /* User-facing 0..20 master setting. */
 void ta_set_speaker(unsigned enabled); /* Optional fourth tone via PIT2. */
 ta_u32 ta_elapsed_seconds(void);
 const char *ta_error(void);

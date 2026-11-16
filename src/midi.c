@@ -24,6 +24,25 @@ static void flush_mix(void);
 static const ta_u16 power_level[16]={
     4096,2584,1631,1029,649,410,258,163,103,65,41,26,16,10,6,0
 };
+/* Previous mixer target 1024 was quieter than even ONE full-level note
+   (power 4096), imposing at least 8 dB attenuation at any loudness.
+   Target 6144 = 1.5 full-power channels: one loud note reaches PSG
+   attenuation 0; multiple loud voices still get bounded sum limiting.
+   This is a modeled *relative* level, not calibrated acoustic output. */
+#define TA_MIX_POWER_CEILING 6144U
+#define TA_MAX_VOLUME 20U
+#define TA_UNBOOSTED_VOLUME 15U
+/* Preserve genuine silence: raw 15 is the PSG's mute code and MUST NOT
+   be revived by software boost. Likewise master volume 0 stays silent. */
+static ta_u8 effective_atten(ta_u8 raw,unsigned mix)
+{
+    unsigned out;
+    if(raw>=15U || ta.master_attenuation>=15U)return 15;
+    out=(unsigned)raw+mix+ta.master_attenuation;
+    if(out<=ta.master_boost)return 0;
+    out-=ta.master_boost;
+    return (ta_u8)(out>15U?15U:out);
+}
 
 static ta_u16 rd16(ta_u16 p)
 {
@@ -238,9 +257,8 @@ static void render_voice(unsigned i)
             if(shifted>1023)shifted=1023;
             p=(ta_u16)shifted;
         }
-        a=ta.notes[v->source].attenuation+ta.mix_attenuation
-          +ta.master_attenuation;
-        if(a>15)a=15;
+        a=effective_atten(ta.notes[v->source].attenuation,
+                          ta.mix_attenuation);
     }
     if(v->level!=a || (a<15 && output_period[i]!=p)){
         ta_psg_tone(i,p,(ta_u8)a);
@@ -471,10 +489,10 @@ static void flush_mix(void)
     for(g=0;g<15;g++){
         sum=0;
         for(i=0;i<4;i++){
-            a=raw[i]+g;
-            sum+=power_level[a>15?15:a];
+            a=effective_atten(raw[i],g);
+            sum+=power_level[a];
         }
-        if(sum<=1024U)break;
+        if(sum<=TA_MIX_POWER_CEILING)break;
     }
     if(g>=ta.mix_attenuation){
         ta.mix_attenuation=(ta_u8)g;release_clock=0;
@@ -483,21 +501,30 @@ static void flush_mix(void)
     }
     for(i=0;i<TA_VOICES;i++)render_voice(i);
     render_speaker();
-    a=raw[3]+ta.mix_attenuation+ta.master_attenuation;
-    if(a>15 || ta.paused)a=15;
+    a=effective_atten(raw[3],ta.mix_attenuation);
+    if(ta.paused)a=15;
     if(noise_trigger && ta.noise_left && !ta.paused)
         ta_psg_noise(ta.noise_mode,(ta_u8)a);
     else if(noise_output!=a)ta_psg_noise_level((ta_u8)a);
     noise_output=(ta_u8)a;noise_trigger=0;
 }
+unsigned ta_get_volume(void)
+{
+    return TA_UNBOOSTED_VOLUME-ta.master_attenuation+ta.master_boost;
+}
 void ta_set_volume(unsigned volume)
 {
-    if(volume>15)volume=15;
-    ta.master_attenuation=(ta_u8)(15-volume);
+    if(volume>TA_MAX_VOLUME)volume=TA_MAX_VOLUME;
+    if(volume<=TA_UNBOOSTED_VOLUME){
+        ta.master_attenuation=(ta_u8)(TA_UNBOOSTED_VOLUME-volume);
+        ta.master_boost=0;
+    }else{
+        ta.master_attenuation=0;
+        ta.master_boost=(ta_u8)(volume-TA_UNBOOSTED_VOLUME);
+    }
     if(!ta.playing || ta.paused)return;
-    /* Re-evaluate fourth-bass eligibility when the master level changes:
-       otherwise lowering volume could mute PIT2 and lose the bass note
-       that had been reserved from the PSG allocation. */
+    /* Re-evaluate limiter and fourth-bass eligibility. A boosted voice
+       still cannot exceed the PSG's actual maximum register level. */
     synth_dirty=controllers_dirty=1;
     flush_mix();
 }

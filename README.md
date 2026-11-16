@@ -39,7 +39,7 @@ The ZIP contains only **`TANDYAMP.EXE`, `DEMO.MID`, and `LICENSE`**; Markdown do
 | `/GUI`, `-G` | 320×200 16-color Tandy GUI (default) |
 | `/TXT`, `-T`, `/TEXT` | Text-mode player; no mouse graphics |
 | `/LOOP`, `-L` | Repeat the playlist when its last song finishes |
-| `/VOL:0..15` | Set master output, from **0 = mute** to **15 = maximum** (default 15) |
+| `/VOL:0..20` | Master output: **0 = mute**, **15 = original full setting**, **16–20 = additional software gain** where PSG headroom exists (default 15) |
 | `/DRUM16` | Force legacy MIDI channel 16 to percussion |
 | `/NODRUM16` | Treat channel 16 as melody |
 | `/AUTODRUM16` | Use conservative channel-16 drum detection (default) |
@@ -93,14 +93,14 @@ Only use that CuteMouse command if it matches your actual serial port/driver set
 | MIDI controls | Note-on/off, velocity, volume CC7, expression CC11, sustain CC64, pitch bend, stop/all-notes-off |
 | Percussion | General MIDI channel 10 uses the noise channel; optional auto/forced legacy channel-16 drums |
 | Pitches | Integer divider table, pitch bending, octave folding for bass below the PSG's frequency floor |
-| Loudness | Master volume `0..15` and always-on conservative automatic peak leveling (not measured acoustic normalization) |
+| Loudness | Master volume `0..20` (15 normal, 16–20 extra PSG gain); corrected integer mix-power ceiling (6,144 instead of 1,024) with automatic peak leveling |
 | Timing | Foreground scheduling in ≤32/256 of a BIOS tick (~6.9 ms) using PIT channel 0; the normal BIOS IRQ rate is retained |
 | GUI | Tandy video mode `09h`, 320×200 × 16 colors; original 5×7 font; dirty-rectangle updates; optional INT 33h mouse |
 | Missing | SMPTE time division, more than three simultaneous tone voices, complete GM instruments, seeking, shuffle, file browser and a true EQ |
 
 On startup, the program uses PIT channel 0 **mode 2 with the standard 65536 divisor** for monotonic subticks and restores normal **mode 3** on normal program exit. It does not install an IRQ handler or change the 18.2 Hz BIOS tick frequency. GUI work can still delay events on a 7 MHz V20. Long MIDI files, unsupported formats, and corrupted tracks are reported as errors rather than silently treated as supported. Only the first song's load is checked before switching video mode; subsequent failing tracks can stop the sequence.
 
-**Auto-leveling** attenuates crowded mixes quickly and releases gain slowly; it does not boost quiet passages. Use `/VOL:12` or the `-` key if output is uncomfortable. The file `01 - Trip Through the Grand Canyon.mid` was tested in the host playback engine but is **not** included in the release.
+**Loudness correction:** Previous builds limited every mix against a modeled 1,024-power ceiling, even though **one full PSG channel alone** is modeled as 4,096. This unnecessarily reduced the loudness of solo melodies as well as dense arrangements. The ceiling is now **6,144**, so a solo full-velocity tone can reach native PSG register attenuation 0, while louder multi-part mixes still get automatic gain limiting. **Software volume 16–20** offsets up to five steps of MIDI/PSG attenuation (up to ~10 dB *where headroom exists*) but cannot exceed the actual hardware maximum, and the limiter prevents excessive modeled multi-channel output. True MIDI silence (PSG attenuation 15) remains silent even at /VOL:20. Note-on velocity and instrument-relative levels still matter. Use `/VOL:15` as the normal baseline, `/VOL:18` for stronger output, or `/VOL:20` for maximum available gain; reduce it if the internal speaker distorts. The file `01 - Trip Through the Grand Canyon.mid` was tested in the host playback engine but is **not** included in the release.
 
 ## Build, tests, and releases
 
@@ -166,4 +166,8 @@ SPK4 is **strictly bass-only**: it accepts MIDI notes **24–52 (C1–E3)**, nev
 
 All ten controls are **58×17 pixels** with five buttons in each row: **PREV / PLAY / PAUSE / STOP / NEXT** at y=72–88, and **VIS / LOOP / DRUM / SPK4 / MUTE** at y=91–107. This replaces the crowded single-row and separate title-bar SPK4 layouts. The lower panel starts at y=112 and **retains seven playlist entries**, using slightly tighter row spacing. Keyboard shortcuts and existing functionality remain intact.
 
-**MUTE** is functional, not a placeholder. Press **M** or click the far-right button in row two to silence the output; do it again to restore the previous audible master volume. The existing `+`/`-` keys and `/VOL:0..15` still work. Both SPK4 and MUTE have their own low-cost dirty redraw paths. The layout has automated framebuffer and mouse tests, but should be checked on the physical EX display for readability.
+**MUTE** is functional, not a placeholder. Press **M** or click the far-right button in row two to silence the output; do it again to restore the previous audible master volume. The existing `+`/`-` keys now span **0–20**, and `/VOL:0..20` is accepted. MUTE restores boosted volume settings as well. Both SPK4 and MUTE have their own low-cost dirty redraw paths. The layout has automated framebuffer and mouse tests, but should be checked on the physical EX display for readability.
+
+### Hardware volume limit and SPK4
+
+The SN76489's 4-bit attenuation register has a maximum level at **attenuation 0**; there is no extra physical volume register value beyond that. TandyAMP's volume settings 16–20 **undo software attenuation**, not add hardware amplification. Very loud or dense passages may reach the hardware ceiling and therefore change little. The separate PC-speaker SPK4 tone has **no programmable gain**, so this change boosts the three PSG voices and noise percussion, not the analog amplitude of PIT2.

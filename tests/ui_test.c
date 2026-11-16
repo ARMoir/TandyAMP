@@ -186,9 +186,12 @@ int main(void)
     for(i=0;i<30;i++)input_key('-');
     assert(ta.master_attenuation==15);
     for(i=0;i<30;i++)input_key('+');
-    assert(ta.master_attenuation==0);
+    assert(ta.master_attenuation==0 && ta.master_boost==5);
+    assert(ta_get_volume()==20U);
     input_key('M');assert(ta.master_attenuation==15);
+    assert(ta_get_volume()==0U);
     input_key('M');assert(ta.master_attenuation==0);
+    assert(ta_get_volume()==20U);
 
     /* Pointer is a software sprite over the actual banked framebuffer.
        Moving it must restore exactly the original pixels underneath. */

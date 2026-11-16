@@ -93,3 +93,7 @@ The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the ho
 ### Two rows of buttons: regression coverage
 
 Current host framebuffer tests validate both five-button rows, all ten 58×17 labels and mouse click hitboxes, SPK4's bass-only live toggle, the MUTE button's previous-volume restoration, zero-change redraw caching and the lower playlist's retained seven visible rows. Open Watcom DOS compilation follows the tests; playback on actual EX hardware remains necessary.
+
+### Loudness and volume-range regressions
+
+`tests/mixer_test.c` verifies the corrected 6,144-power mix ceiling (formerly 1,024), full-volume solo PSG output, safe four-channel power summing, gain above the normal level at `/VOL:20`, unchanged hard silence for MIDI-off notes, and master mute. `tests/ui_test.c` checks keyboard volume stepping and that the MUTE button restores a boosted volume. The DOS `/VOL:0..20` command line is documented in the README and independently checked against the current source. The volume change does not promise amplification beyond the SN76489 attenuation register's physical maximum; compare 15 and 20 on a known melody on the actual EX.

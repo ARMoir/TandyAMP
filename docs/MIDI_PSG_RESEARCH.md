@@ -117,3 +117,7 @@ The implementation and unit tests are in `src/midi.c`, `src/main.c` and `tests/s
 ### Balanced control grid
 
 As the native sound options grew, the former narrow transport row became crowded. The current interface has **two even rows of five 58×17 buttons**, with SPK4 next to DRUM and a functional MUTE button that restores the last audible master volume. Per-button redraw caching preserves V20 performance despite the larger controls.
+
+### 2026-11-16 gain-stage revision after real EX listening
+
+The owner reported that the former maximum volume 15 sounded quiet and values below 12 were barely audible. Code inspection found an important issue: the old automatic limiter targeted **1,024** modeled power even though a single full PSG tone represented **4,096**, unnecessarily lowering solo sound by at least four 2 dB register steps. This was corrected to a **6,144-power** ceiling with tests for both single-tone loudness and bounded multi-tone mixes. Master volume was also extended from **0–15 to 0–20**: levels 16–20 recover up to five software attenuation steps, subject to the still-active limiter and hardware saturation. Silence and mute remain hard zeros. This only uses existing 4-bit PSG hardware; SPK4 has no speaker volume register. Actual acoustic balance on the physical Tandy EX must still be checked.

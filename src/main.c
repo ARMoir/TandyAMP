@@ -509,7 +509,7 @@ static void draw_track_info(void)
     label(135,51,mode,7,15);
     {
         char volume[8];
-        sprintf(volume,"VOL %02u",15U-ta.master_attenuation);
+        sprintf(volume,"VOL %02u",ta_get_volume());
         label(250,51,volume,7,7);
     }
 }
@@ -735,7 +735,7 @@ static void usage(void)
     puts("         /DRUM16   force legacy channel 16 drums on");
     puts("         /NODRUM16 force channel 16 drums off");
     puts("         /AUTODRUM16 auto drum routing (default)");
-    puts("         /VOL:0..15 master volume, 0=mute (default 15)");
+    puts("         /VOL:0..20 master volume, 15=normal, 16-20=boost");
     puts("         /HELP     display this help");
     puts("Auto level limiting always on. No playlist recursion or seek.");
     puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
@@ -781,21 +781,18 @@ static void input_key(int key)
     if(key==0 || key==0xe0)return;
     switch(toupper(key&255)){
     case '+':case '=':
-        ta_set_volume(16U-ta.master_attenuation);
-        if(ta.master_attenuation<15U)
-            last_audible_volume=15U-ta.master_attenuation;
+        ta_set_volume(ta_get_volume()+1U);
+        if(ta_get_volume()>0U)last_audible_volume=ta_get_volume();
         ui_dirty|=UI_TRACK|UI_MUTE;break;
     case '-':case '_':
-        ta_set_volume(ta.master_attenuation<15U?
-                      14U-ta.master_attenuation:0U);
-        if(ta.master_attenuation<15U)
-            last_audible_volume=15U-ta.master_attenuation;
+        ta_set_volume(ta_get_volume()?ta_get_volume()-1U:0U);
+        if(ta_get_volume()>0U)last_audible_volume=ta_get_volume();
         ui_dirty|=UI_TRACK|UI_MUTE;break;
     case 'M':
-        if(ta.master_attenuation==15U)
+        if(ta_get_volume()==0U)
             ta_set_volume(last_audible_volume?last_audible_volume:15U);
         else{
-            last_audible_volume=15U-ta.master_attenuation;
+            last_audible_volume=ta_get_volume();
             ta_set_volume(0);
         }
         if(text_mode)printf("MUTE %s\n",
@@ -956,10 +953,12 @@ int main(int argc,char **argv)
            toupper(s[2])=='O' && toupper(s[3])=='L' && s[4]==':'){
             char *end;
             long volume=strtol(s+5,&end,10);
-            if(end==s+5 || *end || volume<0 || volume>15){
-                puts("Volume must be 0..15.");return 1;
+            if(end==s+5 || *end || volume<0 || volume>20){
+                puts("Volume must be 0..20.");return 1;
             }
-            ta_set_volume((unsigned)volume);continue;
+            ta_set_volume((unsigned)volume);
+            if(volume>0)last_audible_volume=(unsigned)volume;
+            continue;
         }
         if(s[0]=='-'||s[0]=='/'){printf("Unknown option: %s\n",s);usage();return 1;}
         if(song_count>=MAX_SONGS){puts("Maximum 64 playlist entries.");return 1;}

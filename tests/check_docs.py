@@ -64,8 +64,12 @@ demand("mouse_cursor_draw" in CODE and "/NOMOUSE" in README,
        "Mouse pointer and fallback undocumented")
 demand("TA_DRUM_AUTO" in MIDI and "/AUTODRUM16" in README,
        "Drum auto-detection undocumented")
-demand("ta_set_volume" in CODE and "/VOL:0..15" in README,
-       "Master volume option undocumented")
+demand("ta_set_volume" in CODE and "/VOL:0..20" in README,
+       "Master 0–20 volume option undocumented")
+demand("TA_MIX_POWER_CEILING 6144U" in MIDI_SOURCE and "6,144" in README,
+       "Loudness/limiter ceiling undocumented")
+demand("TA_MAX_VOLUME 20U" in MIDI_SOURCE and "volume>20" in CODE,
+       "Master boosted volume range mismatch")
 demand("timer_start" in CODE and "mode 2" in ARCH,
        "PIT scheduling undocumented")
 demand("tests/check_docs.py" in README and "tests/check_docs.py" in WORKFLOW,
