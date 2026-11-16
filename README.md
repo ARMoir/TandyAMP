@@ -24,7 +24,9 @@ The demo is an original 16-second MIDI tune generated from `tools/make_demo.py`.
 TANDYAMP DEMO.MID
 TANDYAMP SONG1.MID SONG2.MID SONG3.MID
 TANDYAMP /TXT DEMO.MID
+TANDYAMP CANYON.MID
 TANDYAMP /DRUM16 CANYON.MID
+TANDYAMP /NODRUM16 CANYON.MID
 TANDYAMP /LOOP DEMO.MID SONG2.MID
 TANDYAMP /GUI DEMO.MID
 TANDYAMP /HELP
@@ -36,7 +38,9 @@ TANDYAMP /HELP
 | `/TXT` or `-T` | Text-mode player, useful in DOSBox or on other text displays |
 | `/LOOP` or `-L` | Loop the complete playlist |
 | `/HELP`, `-H`, `/?` | Show usage and keyboard controls |
-| `/DRUM16` | Also treat channel 16 as percussion in early legacy MIDI files (try with original Windows 3.x CANYON.MID) |
+| `/DRUM16` | Force legacy channel 16 to percussion |
+| `/NODRUM16` | Force channel 16 to melodic notes |
+| `/AUTODRUM16` | Conservative automatic detection (default) |
 
 Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For this build, files must be **44 KB or smaller** and use MIDI **type 0 or 1**, with **24 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
 
@@ -51,19 +55,20 @@ Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI
 | `P` | Previous track |
 | `E` | Toggle playlist / three-channel visualizer |
 | `L` | Toggle playlist loop |
+| `D` | Cycle channel 16 drums: AUTO → ON → OFF; restart current song |
 | `Q` or `Esc` | Quit, silence chip, return to DOS |
 
-The Winamp-style control buttons are **visual in v0.1**; use the keyboard. The revised Tandy EX layout uses seven uniform 42-pixel buttons with individually centered labels, so PREV/PLAY/PAUSE/STOP/NEXT/VIS/LOOP no longer cross into adjacent button borders. Serial-mouse support, clickable controls, a file picker, seeking, and a genuine equalizer are not yet implemented. The equalizer-inspired panel currently displays **three live channel levels**, not frequency-domain audio bands.
+The compact interface now has **eight 36-pixel buttons**, including DRUM. Press **D** or click DRUM with a compatible DOS INT 33h mouse driver to cycle AUTO → ON → OFF. The selected and resolved state appear next to the song title. Changing modes restarts the song for consistent playback. Mouse clicks are implemented for the other seven buttons as well, but cursor display and input on the physical EX/Tandy mode 09h are not yet verified. In plain DOS, use CTMOUSE with the appropriate serial configuration before TandyAMP. A file picker, seeking, and a genuine equalizer are not yet implemented. The visualizer displays three live channel levels, not frequency-domain audio bands.
 
 ## Current implementation
 
 - Real 8086-compatible, small-model DOS MZ executable, built with `wcl -bt=dos -0 -ms`.
 - Direct Tandy mode `09h`, 320×200, 16 colors, four-bank video memory, and a compact 5×7 pixel font (no VGA requirement).
-- **Real-EX UI cleanup:** precisely centered, non-overlapping 42-pixel transport labels; now-playing title displayed prominently; seven-button row uses the complete width without clipped words.
+- **Real-EX UI cleanup:** eight compact, centered and non-overlapping 36-pixel controls, including DRUM; the now-playing area also reports automatic or forced drum routing.
 - **Dirty-region screen updates:** static background is drawn once; clock changes redraw only its digits, song/title and playlist update on track changes, playback indicators change on input, the activity marker erases only its old 12-pixel segment, and each voice meter redraws only when its note or level changes. Avoids periodic full-screen/panel redraws on the 7 MHz V20.
 - Standard MIDI File type 0/1 parser; variable-length delta times, multi-track playback, running status, tempo changes.
 - Three PSG tone channels with 32 active MIDI notes remembered; melody/bass-aware allocation means temporarily stolen notes can return after release.
-- General MIDI channel 10 percussion uses independent SN76489 noise channel with short volume envelopes. Optional `/DRUM16` also treats channel 16 as percussion for old MIDI arrangements.
+- General MIDI channel 10 percussion uses independent SN76489 noise channel with short volume envelopes. A conservative scan auto-detects likely old channel-16 percussion (repeat kick/snare and hi-hat patterns); `D`, DRUM button or CLI override ambiguous files. Standard channel 10 is always percussion.
 - Per-note velocity, MIDI CC7/CC11 volume, CC64 sustain, all-notes-off and pitch bend.
 - Fixed-point integer pitch-bend approximation using our independently computed 128-note divider table, derived from the 3.579545 MHz PSG clock.
 - Foreground playback reads the original BIOS tick and the latched PIT counter without installing an IRQ handler or altering BIOS/DOS time. Music is scheduled in at most ~6.9 ms slices instead of ~55 ms chunks. GUI drawing can still delay events on a 7 MHz V20; hardware timing needs another recording.
