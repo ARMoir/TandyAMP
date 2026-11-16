@@ -127,6 +127,7 @@ int main(void)
     prior=ui_pixels_written;
     draw_dirty();
     delta=ui_pixels_written-prior;
+    fprintf(stderr,"SPK4 UI pause repaint pixels: %lu\n",delta);
     assert(delta>0 && delta<20000UL);
 
     /* Volume changes while paused stay silent and repaint only track text. */
