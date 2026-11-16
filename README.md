@@ -86,6 +86,10 @@ The proprietary Miles `TANDY.ADV` driver and original SimCity assets are **not**
 
 See [docs/PLAYER_ARCHITECTURE.md](docs/PLAYER_ARCHITECTURE.md) for the longer-term design.
 
+## Classic Winamp source as a design reference
+
+The original Winamp source in [alexfreud/winamp](https://github.com/alexfreud/winamp) offers useful reference points for separate player/playlist drawing, keyboard and button dispatch, and compact visualization. See [docs/WINAMP_REFERENCE.md](docs/WINAMP_REFERENCE.md) for a source-file map, Tandy-specific UI plan, and important licensing boundaries. All TandyAMP code and graphics remain independently authored.
+
 ## License
 
 The newly written TandyAMP code and generated demo are MIT-licensed; see [LICENSE](LICENSE). No third-party MIDI player code has yet been copied into the project.
