@@ -30,7 +30,7 @@ void ta_psg_silence(void){mute_count++;}
 int main(int argc,char **argv)
 {
     unsigned n,i,live;
-    if(argc<6)return 2;
+    if(argc<8)return 2;
     for(n=1;n<3;n++){
         if(!ta_load(argv[n])){fprintf(stderr,"LOAD %s: %s\n",argv[n],ta_error());return 3;}
         if(ta.format!=n-1){fprintf(stderr,"Incorrect SMF format\n");return 4;}
@@ -42,7 +42,7 @@ int main(int argc,char **argv)
         if(live>3 || max_simultaneous>3){fprintf(stderr,"Too many hardware notes\n");return 6;}
     }
     if(ta_load(argv[3])){fprintf(stderr,"Malformed file accepted\n");return 7;}
-    ta.drum16=1; /* Legacy CANYON-style extra percussion channel. */
+    ta.drum_mode=TA_DRUM_ON; /* Explicit legacy override. */
     if(!ta_load(argv[4])){fprintf(stderr,"LOAD %s: %s\n",argv[4],ta_error());return 9;}
     ta_begin();
     ta_advance(32);
@@ -59,12 +59,28 @@ int main(int argc,char **argv)
     for(i=0;i<250 && ta.playing;i++)ta_advance(32);
     if(ta.playing){fprintf(stderr,"Dense MIDI did not terminate\n");return 12;}
     if(!noise_mute_count){fprintf(stderr,"Noise envelope never silenced\n");return 13;}
-    ta.drum16=0;
+    ta.drum_mode=TA_DRUM_AUTO;
     if(!ta_load(argv[5])){fprintf(stderr,"LOAD large MIDI: %s\n",ta_error());return 14;}
     ta_begin();
     for(i=0;i<120 && ta.playing;i++)ta_tick();
     if(ta.playing){fprintf(stderr,"Large MIDI did not terminate\n");return 15;}
+    ta.drum_mode=TA_DRUM_AUTO;
+    if(!ta_load(argv[6]) || !ta.drum_detected || !ta.drum16){
+        fprintf(stderr,"Legacy channel 16 percussion was not detected\n");return 16;
+    }
+    ta.drum_mode=TA_DRUM_OFF;
+    if(!ta_load(argv[6]) || ta.drum16 || !ta.drum_detected){
+        fprintf(stderr,"DRUM OFF override failed\n");return 17;
+    }
+    ta.drum_mode=TA_DRUM_AUTO;
+    if(!ta_load(argv[7]) || ta.drum16){
+        fprintf(stderr,"Melodic channel 16 wrongly classified as drums\n");return 18;
+    }
+    ta.drum_mode=TA_DRUM_ON;
+    if(!ta_load(argv[7]) || !ta.drum16){
+        fprintf(stderr,"DRUM ON override failed\n");return 19;
+    }
     if(!on_count || !mute_count){fprintf(stderr,"PSG had no notes or mute\n");return 8;}
-    printf("PASS: SMF0/1, dense melody/bass, 34KB MIDI, 4th noise channel, note releases, subtick scheduler; %u PSG writes\n",on_count);
+    printf("PASS: SMF0/1, auto/forced DRUM16, dense melody/bass, 34KB MIDI, 4th noise channel, note releases, subtick scheduler; %u PSG writes\n",on_count);
     return 0;
 }
