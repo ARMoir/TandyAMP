@@ -41,6 +41,17 @@ static signed short meter_last_note[3]={-2,-2,-2};
 static ta_u8 meter_last_velocity[3]={255,255,255};
 static ta_u8 meter_last_active[3]={255,255,255};
 static unsigned song_tick_part=0;
+/* Original 8x11 software arrow: native INT 33h cursors may not display
+   in Tandy mode 09h even when movement and button calls work. */
+#define TA_POINTER_W 8U
+#define TA_POINTER_H 11U
+static unsigned mouse_x=160U,mouse_y=100U,mouse_x_divisor=2U;
+static int mouse_present=0,mouse_enabled=1,mouse_was_down=0;
+static int mouse_cursor_visible=0;
+static ta_u8 mouse_under[TA_POINTER_H][TA_POINTER_W];
+static const ta_u8 mouse_shape[TA_POINTER_H]={
+    0x80,0xc0,0xe0,0xf0,0xf8,0xfc,0xfe,0xf0,0xd8,0x8c,0x84
+};
 #ifdef TANDYAMP_UI_TEST
 /* Host-only visual regression instrumentation; zero DOS binary overhead. */
 static unsigned long ui_pixels_written=0UL;
@@ -421,21 +432,92 @@ static void draw_progress(void)
         old_marker=marker;
     }
 }
+/* Software pointer: restore only the pixels actually covered.
+   Not dependent on the DOS mouse driver's graphics-cursor renderer. */
+static ta_u8 mouse_read_pixel(unsigned x,unsigned y)
+{
+    unsigned off=((y&3U)*VRAM_BANK)+((y>>2)*VRAM_STRIDE)+(x>>1);
+    ta_u8 b=vram[off];
+    return (ta_u8)((x&1U)?(b&15U):(b>>4));
+}
+static void mouse_cursor_remove(void)
+{
+    unsigned i,j;
+    if(!mouse_cursor_visible)return;
+    for(i=0;i<TA_POINTER_H;i++)
+        for(j=0;j<TA_POINTER_W;j++)
+            if(mouse_shape[i]&(0x80U>>j))
+                plot(mouse_x+j,mouse_y+i,mouse_under[i][j]);
+    mouse_cursor_visible=0;
+}
+static void mouse_cursor_draw(void)
+{
+    unsigned i,j;
+    if(!mouse_present || mouse_cursor_visible)return;
+    for(i=0;i<TA_POINTER_H;i++)
+        for(j=0;j<TA_POINTER_W;j++){
+            ta_u8 edge,mask=mouse_shape[i];
+            unsigned px=mouse_x+j,py=mouse_y+i;
+            if(!(mask&(0x80U>>j)))continue;
+            mouse_under[i][j]=mouse_read_pixel(px,py);
+            edge=(ta_u8)(j==0U || i==0U || j==7U ||
+                !(mask&(0x80U>>(j-1U))) ||
+                (j<7U && !(mask&(0x80U>>(j+1U)))) ||
+                (i<10U && !(mouse_shape[i+1U]&(0x80U>>j))));
+            plot(px,py,(ta_u8)(edge?0:15));
+        }
+    mouse_cursor_visible=1;
+}
+static void mouse_move_to(unsigned x,unsigned y)
+{
+    if(!mouse_present)return;
+    if(x>320U-TA_POINTER_W)x=320U-TA_POINTER_W;
+    if(y>200U-TA_POINTER_H)y=200U-TA_POINTER_H;
+    if(x==mouse_x && y==mouse_y && mouse_cursor_visible)return;
+    mouse_cursor_remove();
+    mouse_x=x;mouse_y=y;
+    mouse_cursor_draw();
+}
+static unsigned mouse_logical_x(unsigned raw)
+{
+    unsigned x=raw/mouse_x_divisor;
+    return x>319U?319U:x;
+}
+static int meter_changed(void)
+{
+    unsigned i;
+    if(!show_equalizer)return 0;
+    for(i=0;i<3;i++){
+        const TAVoice *v=&ta.voices[i];
+        ta_u8 active=(ta_u8)(ta.playing && !ta.paused && v->note>=0);
+        if(v->note!=meter_last_note[i] ||
+           v->velocity!=meter_last_velocity[i] ||
+           active!=meter_last_active[i])return 1;
+    }
+    return 0;
+}
 static void draw_dirty(void)
 {
     unsigned flags=ui_dirty;
+    int clock_changed,progress_changed;
     if(text_mode)return;
+    clock_changed=(ui_last_seconds!=song_ticks/18UL);
+    progress_changed=(ta.playing && !ta.paused &&
+        (unsigned)((song_ticks/6UL)%286UL)!=old_marker);
+    /* A no-op really is zero VRAM writes, including cursor updates. */
+    if(!flags && !clock_changed && !progress_changed && !meter_changed())
+        return;
+    /* Prevent cursor trails when dirty rectangles overlap the pointer. */
+    mouse_cursor_remove();
     if(flags&UI_PANEL)draw_panel();
     if(flags&UI_BUTTONS)draw_buttons();
     if(flags&UI_TRACK)draw_track_info();
-    if((flags&UI_CLOCK) || ui_last_seconds!=song_ticks/18UL)
-        draw_clock();
+    if((flags&UI_CLOCK) || clock_changed)draw_clock();
     if(flags&UI_STATE)draw_state();
-    if(flags&UI_PROGRESS || (ta.playing && !ta.paused &&
-       (unsigned)((song_ticks/6UL)%286UL)!=old_marker))
-        draw_progress();
+    if(flags&UI_PROGRESS || progress_changed)draw_progress();
     if(show_equalizer)draw_meters();
     ui_dirty=0;
+    mouse_cursor_draw();
 }
 static void draw_all(void)
 {
@@ -554,50 +636,90 @@ static void click_button(int id)
     else if(id==6)input_key('L');
     else if(id==7)input_key('D');
 }
-#ifdef __WATCOMC__
-static int has_mouse=0,mouse_was_down=0;
-static ta_u32 last_mouse_poll=0;
-static void mouse_command(unsigned cmd)
+/* Same button/cursor behavior in native DOS and host regressions.
+   INT 33h AX=5 remembers quick presses between position polls. */
+static void mouse_sample(unsigned x,unsigned y,int down,
+                         unsigned presses,unsigned pressed_x,unsigned pressed_y)
 {
-    union REGS r;
-    r.x.ax=cmd;
-    int86(0x33,&r,&r);
+    int id=-1;
+    if(!mouse_present)return;
+    mouse_move_to(x,y);
+    if(presses)id=button_at(pressed_x,pressed_y);
+    else if(down && !mouse_was_down)id=button_at(x,y);
+    if(id>=0)click_button(id);
+    mouse_was_down=down;
+}
+#ifdef __WATCOMC__
+static ta_u32 last_mouse_poll=0;
+static int mouse_vector_exists(void)
+{
+    const unsigned short far *v=(const unsigned short far*)MK_FP(0,0x00cc);
+    unsigned off=v[0],seg=v[1];
+    const unsigned char far *code;
+    if(!off && !seg)return 0;
+    code=(const unsigned char far*)MK_FP(seg,off);
+    return code[0]!=0xcfU;  /* uninstalled IRET vector */
+}
+static void mouse_call(union REGS *r)
+{
+    int86(0x33,r,r);
 }
 static void mouse_initialize(void)
 {
     union REGS r;
-    r.x.ax=0;
-    int86(0x33,&r,&r);
+    unsigned old_x,old_y,max_x;
+    if(!mouse_enabled || !mouse_vector_exists())return;
+    r.x.ax=0;mouse_call(&r); /* driver reset, cursor remains hidden */
     if(!r.x.ax)return;
-    has_mouse=1;
-    /* 320px graphics normally expose 0..639 horizontal mouse units. */
-    r.x.ax=7;r.x.cx=0;r.x.dx=639;int86(0x33,&r,&r);
-    r.x.ax=8;r.x.cx=0;r.x.dx=199;int86(0x33,&r,&r);
-    mouse_command(1);
+    r.x.ax=7;r.x.cx=0;r.x.dx=639;mouse_call(&r);
+    r.x.ax=8;r.x.cx=0;r.x.dx=199;mouse_call(&r);
+    r.x.ax=3;mouse_call(&r);
+    old_x=r.x.cx;old_y=r.x.dx;
+    /* Probe right edge to recognize both 0..639 and 0..319 drivers. */
+    r.x.ax=4;r.x.cx=639;r.x.dx=old_y;mouse_call(&r);
+    r.x.ax=3;mouse_call(&r);
+    max_x=r.x.cx;
+    mouse_x_divisor=max_x>400U?2U:1U;
+    if(mouse_x_divisor==1U){
+        r.x.ax=7;r.x.cx=0;r.x.dx=319;mouse_call(&r);
+        if(old_x>319U)old_x=319U;
+    }
+    r.x.ax=4;r.x.cx=old_x;r.x.dx=old_y;mouse_call(&r);
+    /* Do NOT use AX=1 (driver-drawn graphics cursor).  Mode 09h is a
+       Tandy-specific banked framebuffer that many drivers cannot draw. */
+    mouse_present=1;
+    r.x.ax=3;mouse_call(&r);
+    mouse_x=mouse_logical_x(r.x.cx);
+    if(mouse_x>320U-TA_POINTER_W)mouse_x=320U-TA_POINTER_W;
+    mouse_y=r.x.dx>200U-TA_POINTER_H?200U-TA_POINTER_H:r.x.dx;
+    mouse_was_down=(r.x.bx&1U)!=0;
+    mouse_cursor_draw();
 }
 static void mouse_poll(ta_u32 clock)
 {
-    union REGS r;
-    int down,id;
-    if(!has_mouse || clock-last_mouse_poll<128UL)return;
-    last_mouse_poll=clock;
-    r.x.ax=3;
-    int86(0x33,&r,&r);
-    down=(r.x.bx&1)!=0;
-    if(down && !mouse_was_down){
-        id=button_at((unsigned)(r.x.cx/2U),(unsigned)r.x.dx);
-        if(id>=0)click_button(id);
-    }
-    mouse_was_down=down;
+    union REGS pos,press;
+    unsigned presses,x,y;
+    int down;
+    if(!mouse_present || clock-last_mouse_poll<64UL)return;
+    last_mouse_poll=clock; /* ~14ms sampling, no extra IRQ */
+    pos.x.ax=3;mouse_call(&pos);
+    down=(pos.x.bx&1U)!=0;
+    press.x.ax=5;press.x.bx=0;mouse_call(&press);
+    presses=press.x.bx;
+    x=mouse_logical_x(pos.x.cx);
+    y=pos.x.dx>199U?199U:pos.x.dx;
+    mouse_sample(x,y,down,presses,mouse_logical_x(press.x.cx),
+                 press.x.dx>199U?199U:press.x.dx);
 }
 static void mouse_shutdown(void)
 {
-    if(has_mouse)mouse_command(2);
+    mouse_cursor_remove();
+    mouse_present=0;
 }
 #else
 static void mouse_initialize(void){}
 static void mouse_poll(ta_u32 clock){(void)clock;}
-static void mouse_shutdown(void){}
+static void mouse_shutdown(void){mouse_cursor_remove();mouse_present=0;}
 #endif
 
 int main(int argc,char **argv)
@@ -611,6 +733,7 @@ int main(int argc,char **argv)
         if(same(s,"/TXT")||same(s,"-T")||same(s,"/TEXT")){text_mode=1;continue;}
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
+        if(same(s,"/NOMOUSE")){mouse_enabled=0;continue;}
         if(same(s,"/DRUM16")){ta.drum_mode=TA_DRUM_ON;continue;}
         if(same(s,"/NODRUM16")){ta.drum_mode=TA_DRUM_OFF;continue;}
         if(same(s,"/AUTODRUM16")){ta.drum_mode=TA_DRUM_AUTO;continue;}
@@ -634,6 +757,12 @@ int main(int argc,char **argv)
         set_mode(9);
         draw_all();
         mouse_initialize();
+        /* Visible driver-status indicator (no need to guess if detected). */
+        mouse_cursor_remove();
+        box(217,7,70,8,1);
+        label(220,7,mouse_present?"MOUSE OK":"NO MOUSE",
+              mouse_present?10:14,8);
+        mouse_cursor_draw();
     }else usage();
     timer_start();
     then=get_clock_q8();

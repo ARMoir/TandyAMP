@@ -58,3 +58,15 @@ The video also confirmed that periodic status refreshes were clearing 100×34 an
 - **Activity line:** the previous and next 12×1 pixel markers only when the indicator moves.
 
 No full-screen erase occurs in the normal playback timer loop. On the host build, `tests/ui_test.c` renders the actual four-bank 16-color framebuffer and asserts that button glyph pixels do not overflow, the song title appears, repeated unchanged status draws cause **zero video writes**, and normal clock/meter updates stay far below full-screen redraw costs. This test runs before publishing each GitHub release. The actual performance improvement on the Tandy EX remains to be measured on hardware.
+
+## 2026-11-16 Tandy EX mouse-pointer compatibility update
+
+The initial graphical release used `INT 33h AX=0001h` to ask the DOS mouse driver to draw a graphics cursor. Bank-switched Tandy video mode `09h` is not necessarily recognized by the driver; this can leave the pointer invisible even when `INT 33h AX=3` reports valid mouse movement and buttons. It also **unconditionally halved CX**, which was wrong for drivers exposing actual 320-pixel horizontal coordinates.
+
+The new implementation keeps the mouse driver responsible only for **input** and draws an original 8×11 black/white arrow into the four-bank Tandy framebuffer. For each cursor movement, it saves the underlying pixels at cursor-mask positions, restores the previous position, and draws at the new location. Every UI dirty-region repaint first removes the cursor and reinstates it afterward, eliminating ghosted pixels and driver-drawn cursor corruption. With no mouse movement or UI changes, no VRAM writes occur.
+
+Startup now checks whether the INT 33h vector points to a real routine, resets the driver, and calibrates 320-versus-640 horizontal units using the standard position/position-read functions. DOS `INT 33h AX=5` is used to capture short left-button clicks even if the button was released between polls, and `AX=3` retains a fallback edge detector. The player displays `MOUSE OK` or `NO MOUSE` near the title bar. `/NOMOUSE` provides a keyboard-only fallback. Serial-mouse detection remains the responsibility of an installed DOS mouse TSR, such as `CTMOUSE /S14 /M` on the known EX COM1/IRQ4 setup.
+
+### Regression coverage
+
+`tests/ui_test.c` now checks software cursor save/restore against the full simulated 32 KB video framebuffer, cursor movement over a button and then a dirty redraw, zero-write idle behavior, X coordinate scaling, held-click debouncing, and press-count handling for very short clicks. The new pointer code has no driver graphics callback, no DOS interrupt handler, and should remain responsive without repainting the entire screen. **The source is hardware-unverified until tested with the physical mouse on the EX.**

@@ -29,6 +29,7 @@ TANDYAMP /DRUM16 CANYON.MID
 TANDYAMP /NODRUM16 CANYON.MID
 TANDYAMP /LOOP DEMO.MID SONG2.MID
 TANDYAMP /GUI DEMO.MID
+TANDYAMP /NOMOUSE DEMO.MID
 TANDYAMP /HELP
 ```
 
@@ -37,6 +38,7 @@ TANDYAMP /HELP
 | `/GUI` or `-G` | Default Tandy 320x200, 16-color graphical player |
 | `/TXT` or `-T` | Text-mode player, useful in DOSBox or on other text displays |
 | `/LOOP` or `-L` | Loop the complete playlist |
+| `/NOMOUSE` | Run keyboard-only without initializing INT 33h or drawing a pointer |
 | `/HELP`, `-H`, `/?` | Show usage and keyboard controls |
 | `/DRUM16` | Force legacy channel 16 to percussion |
 | `/NODRUM16` | Force channel 16 to melodic notes |
@@ -58,7 +60,7 @@ Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI
 | `D` | Cycle channel 16 drums: AUTO  ON  OFF; restart current song |
 | `Q` or `Esc` | Quit, silence chip, return to DOS |
 
-The compact interface now has **eight 36-pixel buttons**, including DRUM. Press **D** or click DRUM with a compatible DOS INT 33h mouse driver to cycle AUTO  ON  OFF. The selected and resolved state appear next to the song title. Changing modes restarts the song for consistent playback. Mouse clicks are implemented for the other seven buttons as well, but cursor display and input on the physical EX/Tandy mode 09h are not yet verified. In plain DOS, use CTMOUSE with the appropriate serial configuration before TandyAMP. A file picker, seeking, and a genuine equalizer are not yet implemented. The visualizer displays three live channel levels, not frequency-domain audio bands.
+The compact interface now has **eight 36-pixel buttons**, including DRUM. Press **D** or click DRUM with a compatible DOS INT 33h mouse driver to cycle AUTO  ON  OFF. The selected and resolved state appear next to the song title. Changing modes restarts the song for consistent playback. Mouse clicks are implemented for all eight buttons. TandyAMP now **draws its own 8×11 software mouse pointer** in Tandy mode 09h instead of asking the mouse driver to draw one (which often fails in banked Tandy modes). The program uses DOS INT 33h for movement and buttons, automatically checks 320-vs-640 X coordinate ranges, captures brief button presses, and shows `MOUSE OK` or `NO MOUSE` in the title bar. On the EX, load CuteMouse for your serial mouse before running TandyAMP, for example `CTMOUSE /S14 /M` if that is the configuration that works in DOS. The optional `/NOMOUSE` switch disables mouse input and the pointer. Actual EX mouse behavior still needs verification in hardware. A file picker, seeking, and a genuine equalizer are not yet implemented. The visualizer displays three live channel levels, not frequency-domain audio bands.
 
 ## Current implementation
 

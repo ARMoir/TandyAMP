@@ -122,8 +122,66 @@ int main(void)
     for(i=0;i<30;i++)input_key('+');
     assert(ta.master_attenuation==0);
 
+    /* Pointer is a software sprite over the actual banked framebuffer.
+       Moving it must restore exactly the original pixels underneath. */
+    {
+        static ta_u8 screenshot[32768];
+        draw_dirty();
+        memcpy(screenshot,host_screen,sizeof screenshot);
+        mouse_present=1;
+        mouse_cursor_visible=0;
+        mouse_x=160;mouse_y=100;
+        mouse_cursor_draw();
+        assert(mouse_cursor_visible);
+        assert(memcmp(screenshot,host_screen,sizeof screenshot)!=0);
+        mouse_cursor_remove();
+        assert(!memcmp(screenshot,host_screen,sizeof screenshot));
+
+        mouse_move_to(93,81);
+        assert(mouse_cursor_visible);
+        mouse_cursor_remove();
+        assert(!memcmp(screenshot,host_screen,sizeof screenshot));
+        mouse_move_to(93,81);
+        ui_dirty|=UI_BUTTONS;
+        draw_dirty();
+        assert(mouse_cursor_visible);
+        mouse_cursor_remove();
+        assert(!memcmp(screenshot,host_screen,sizeof screenshot));
+        mouse_cursor_draw();
+
+        /* No idle redraw, including no needless cursor erase/repaint. */
+        prior=ui_pixels_written;
+        draw_dirty();
+        assert(ui_pixels_written==prior);
+
+        /* Native drivers expose either 640-unit or 320-unit X values. */
+        mouse_x_divisor=2;
+        assert(mouse_logical_x(639)==319);
+        assert(mouse_logical_x(186)==93);
+        mouse_x_divisor=1;
+        assert(mouse_logical_x(319)==319);
+        mouse_x_divisor=2;
+
+        /* Holding a button is one click; fast press/release counted via
+           INT 33h AX=5 is not dropped between polling intervals. */
+        ta.playing=1;ta.paused=0;mouse_was_down=0;
+        mouse_sample(93,81,1,1,93,81);
+        assert(ta.paused==1);
+        mouse_sample(93,81,1,0,93,81);
+        assert(ta.paused==1);
+        mouse_sample(93,81,0,0,93,81);
+        mouse_sample(93,81,0,1,93,81);
+        assert(ta.paused==0);
+        draw_dirty();
+
+        mouse_cursor_remove();
+        mouse_present=0;
+        mouse_was_down=0;
+    }
+
     printf("PASS: 8 clickable labels, DRUM mode, song title, zero-write idle, "
-           "clock-only refresh, per-voice meters, state-only repaint.\n");
+           "clock-only refresh, per-voice meters, software cursor restore, "
+           "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;
 }
 
