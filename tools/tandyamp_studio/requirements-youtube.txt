@@ -1,0 +1,3 @@
+-r requirements.txt
+# Optional single-video YouTube -> MP3 support, including yt-dlp-ejs.
+yt-dlp[default]>=2026.10.26

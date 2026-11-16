@@ -210,4 +210,4 @@ Recommended hardware test: play the same Canyon section with `/VOL:15` and alter
 
 ## TandyAMP Studio: laptop-side MP3/MIDI converter
 
-The experimental [TandyAMP Studio](tools/tandyamp_studio/README.md) in `tools/tandyamp_studio/` converts existing MIDI and optionally MP3/WAV audio into DOS-safe, three-PSG-voice plus optional SPK4 bass arrangements. It offers a Windows GUI, optional Demucs/Basic Pitch transcription, 8.3 filenames, automatic file splitting and a DOS `PLAY.BAT`. The Python tools are not bundled in the three-file DOS ZIP.
+The experimental [TandyAMP Studio](tools/tandyamp_studio/README.md) in `tools/tandyamp_studio/` converts existing MIDI, YouTube video URLs and optionally MP3/WAV audio into DOS-safe, three-PSG-voice plus optional SPK4 bass arrangements. It offers a complete no-GUI command line with yt-dlp/FFmpeg MP3 extraction, a Windows GUI, optional Demucs/Basic Pitch transcription, 8.3 filenames, automatic file splitting and a DOS `PLAY.BAT`. The Python tools are not bundled in the three-file DOS ZIP.
