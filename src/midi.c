@@ -263,12 +263,73 @@ static ta_s32 note_priority(const TAActiveNote *n)
 }
 /* Standard 1.193182MHz PIT channel 2 versus 3.579545MHz PSG/32.
    A 10-bit PSG period converts to approximately period*32/3. */
-static ta_u16 speaker_divider_for(ta_u16 period)
+/* PIT2 plays the *real*, unfolded low bass: MIDI 24..52 (C1..E3).
+   Calculated independently from 1193182 Hz / equal-tempered frequency.
+   Endpoints 22..54 support the standard +/-2 semitone pitch bend. */
+#define TA_SPK_BASS_MIN 24
+#define TA_SPK_BASS_MAX 52
+static const ta_u16 pit_bass_dividers[33]={
+    40953,38655,36485,34437,32505,30680,28958,27333,25799,
+    24351,22984,21694,20477,19327,18243,17219,16252,15340,
+    14479,13667,12899,12175,11492,10847,10238,9664,9121,
+    8609,8126,7670,7240,6833,6450
+};
+static ta_u16 speaker_divider_for(ta_u8 note,signed short bend)
 {
-    ta_u32 d=((ta_u32)period*32UL+1UL)/3UL;
-    if(d<18UL)d=18UL;
-    if(d>65535UL)d=65535UL;
-    return (ta_u16)d;
+    ta_s32 base,edge,value;
+    unsigned n;
+    ta_u16 mag;
+    if(note<TA_SPK_BASS_MIN || note>TA_SPK_BASS_MAX)return 0;
+    n=(unsigned)note-22U;
+    mag=(ta_u16)(bend<0?-(ta_s32)bend:bend);
+    base=pit_bass_dividers[n];
+    edge=pit_bass_dividers[(bend>=0)?n+2U:n-2U];
+    value=base+((edge-base)*(ta_s32)mag)/8192L;
+    if(value<18L)value=18L;
+    if(value>65535L)value=65535L;
+    return (ta_u16)value;
+}
+static int speaker_note_audible(const TAActiveNote *n)
+{
+    unsigned attenuation=(unsigned)n->attenuation+
+        ta.mix_attenuation+ta.master_attenuation;
+    return n->note>=TA_SPK_BASS_MIN && n->note<=TA_SPK_BASS_MAX &&
+           attenuation<=8U;
+}
+/* Reserve a low-bass note only if THREE OTHER distinct playable PSG
+   pitches exist. Otherwise leave normal three-tone playback untouched.
+   This also ensures SPK4 is never handed a high melody overflow. */
+static signed short choose_speaker_bass(void)
+{
+    unsigned i,j,k;
+    signed short best=-1;
+    ta_s32 best_score=-200000L;
+    if(!ta.speaker_enabled || !ta.playing || ta.paused)return -1;
+    for(i=0;i<TA_ACTIVE_NOTES;i++){
+        TAActiveNote *n=&ta.notes[i];
+        ta_u16 distinct[3];
+        unsigned count=0;
+        ta_s32 score;
+        if(!speaker_note_audible(n))continue;
+        for(j=0;j<TA_ACTIVE_NOTES && count<3;j++){
+            TAActiveNote *other=&ta.notes[j];
+            int duplicate=0;
+            if(i==j || other->note<0 || other->attenuation>=15 ||
+               other->note==n->note)continue;
+            for(k=0;k<count;k++)
+                if(distinct[k]==other->period)duplicate=1;
+            if(!duplicate)distinct[count++]=other->period;
+        }
+        if(count<3)continue;
+        score=(ta_s32)(TA_SPK_BASS_MAX-n->note)*1000L+
+              note_priority(n)/4L;
+        if(ta.speaker_voice.source==(signed short)i)score+=300L;
+        if(score>best_score){
+            best_score=score;
+            best=(signed short)i;
+        }
+    }
+    return best;
 }
 static void render_speaker(void)
 {
@@ -281,8 +342,9 @@ static void render_speaker(void)
             ta.mix_attenuation+ta.master_attenuation;
         /* No volume register on PIT2. Don't let quiet notes sound loud:
            gate the fourth voice out when software attenuation is high. */
-        if(n->note>=0 && att<=8U)
-            divisor=speaker_divider_for(n->period);
+        if(speaker_note_audible(n) && att<=8U)
+            divisor=speaker_divider_for((ta_u8)n->note,
+                                        ta.pitchbend[n->channel]);
     }
     if(divisor!=speaker_output){
         ta_pc_speaker(divisor);
@@ -309,6 +371,21 @@ static void rebuild_voices(void)
     unsigned k,i,j;
     ta_s32 best,score;
     int found,already;
+    /* Decide bass before three-PSG allocation so a real bass note
+       can occupy PIT2, leaving PSG voices for melody and harmony. */
+    {
+        signed short bass=choose_speaker_bass();
+        ta.speaker_voice.source=bass;
+        if(bass>=0){
+            TAActiveNote *n=&ta.notes[bass];
+            ta.speaker_voice.note=n->note;
+            ta.speaker_voice.channel=n->channel;
+            ta.speaker_voice.velocity=n->velocity;
+            ta.speaker_voice.held=n->held;
+            ta.speaker_voice.sustained=n->sustained;
+            ta.speaker_voice.stamp=n->stamp;
+        }else ta.speaker_voice.note=-1;
+    }
     for(k=0;k<TA_VOICES;k++){
         best=-200000L;
         found=-1;
@@ -316,6 +393,8 @@ static void rebuild_voices(void)
             TAActiveNote *n=&ta.notes[i];
             if(n->note<0)continue;
             if(n->attenuation==15)continue;
+            if(ta.speaker_voice.source>=0 &&
+               n->note==ta.speaker_voice.note)continue;
             already=0;
             for(j=0;j<k;j++)if(selected[j]>=0 &&
                 ta.notes[selected[j]].period==n->period)already=1;
@@ -347,41 +426,6 @@ static void rebuild_voices(void)
             ta.voices[i].source=-1;
             ta.voices[i].note=-1;
         }
-    }
-    /* Overflow selection leaves the original three PSG choices intact.
-       Speaker only sounds when all three PSG slots have valid notes and
-       a fourth distinct, sufficiently audible note is available. */
-    {
-        signed short candidate=-1;
-        ta_s32 best=-200000L,score;
-        if(ta.speaker_enabled &&
-           selected[0]>=0 && selected[1]>=0 && selected[2]>=0){
-            for(i=0;i<TA_ACTIVE_NOTES;i++){
-                TAActiveNote *n=&ta.notes[i];
-                int duplicate=0;
-                if(n->note<0 || n->attenuation>=15)continue;
-                for(j=0;j<TA_VOICES;j++)
-                    if(selected[j]>=0 &&
-                       (selected[j]==(signed short)i ||
-                        ta.notes[selected[j]].period==n->period))
-                        duplicate=1;
-                if(duplicate)continue;
-                score=note_priority(n);
-                if(n->note>=36 && n->note<60)score+=220L;
-                if(ta.speaker_voice.source==(signed short)i)score+=130L;
-                if(score>best){best=score;candidate=(signed short)i;}
-            }
-        }
-        ta.speaker_voice.source=candidate;
-        if(candidate>=0){
-            TAActiveNote *n=&ta.notes[candidate];
-            ta.speaker_voice.note=n->note;
-            ta.speaker_voice.channel=n->channel;
-            ta.speaker_voice.velocity=n->velocity;
-            ta.speaker_voice.held=n->held;
-            ta.speaker_voice.sustained=n->sustained;
-            ta.speaker_voice.stamp=n->stamp;
-        }else ta.speaker_voice.note=-1;
     }
     for(k=0;k<TA_VOICES;k++){
         TAActiveNote *n;
@@ -448,16 +492,14 @@ static void flush_mix(void)
 }
 void ta_set_volume(unsigned volume)
 {
-    unsigned i,a;
     if(volume>15)volume=15;
     ta.master_attenuation=(ta_u8)(15-volume);
     if(!ta.playing || ta.paused)return;
-    for(i=0;i<TA_VOICES;i++)render_voice(i);
-    render_speaker();
-    a=ta.noise_last+ta.mix_attenuation+ta.master_attenuation;
-    if(a>15 || !ta.noise_left)a=15;
-    if(noise_output!=a)ta_psg_noise_level((ta_u8)a);
-    noise_output=(ta_u8)a;
+    /* Re-evaluate fourth-bass eligibility when the master level changes:
+       otherwise lowering volume could mute PIT2 and lose the bass note
+       that had been reserved from the PSG allocation. */
+    synth_dirty=controllers_dirty=1;
+    flush_mix();
 }
 static void silence_noise(void)
 {

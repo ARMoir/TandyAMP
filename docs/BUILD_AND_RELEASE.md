@@ -85,3 +85,7 @@ TandyAMP's own code is MIT licensed. The legacy Miles `TANDY.ADV` and original W
 ## Fourth speaker tone rollout
 
 The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the host tests. Build and automated tests **do not reproduce real Tandy EX speaker balance**. The ordinary three-voice mode is default and should be compared with the same MIDI track after toggling SPK4 on via the K key or clicking the small titlebar button. If the extra voice is harsh or inaudible through a particular output, disable it without rebooting; no change to the existing Windows image, AUTOEXEC.BAT or PIT channel 0 hardware timing is made.
+
+### SPK4 bass-only acceptance test
+
+`tests/speaker_test.c` verifies the PIT2 input is restricted to MIDI **24–52 (C1–E3)**, that the **true low-frequency PIT2 dividers** (including pitch bending) are used instead of octave-folded PSG values, and that three other distinct tone parts are required. It tests exclusion of high notes, pause/resume, disabling the button, master mute and clean stop. `tests/ui_test.c` verifies the wider **64×16 SPK4** button does not overlap the title/mouse label, correctly reacts to click and K, visibly switches ON/OFF, and repaints only its own region when the playlist is visible.

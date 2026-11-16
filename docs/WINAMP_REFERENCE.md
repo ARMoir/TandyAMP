@@ -20,7 +20,7 @@ Source reviewed: [alexfreud/winamp](https://github.com/alexfreud/winamp), `commu
 - **320×200 Tandy graphics, not VGA or Win32.** The reference screenshot's stacked windows have been condensed into a single main panel plus one lower pane that toggles between PLAYLIST and VOICE MONITOR.
 - Top panel: current filename, elapsed clock, MIDI/drum mode, master volume, playback state and activity marker. The marker does not seek.
 - Eight independent clickable/keyboard-controlled buttons: **PREV / PLAY / PAUSE / STOP / NEXT / VIS / LOOP / DRUM**.
-- The original serial-mouse workaround renders an 8×11 software cursor, with `INT 33h` only for input; the old driver-owned graphics cursor is no longer used.
+- The enlarged SPK4 titlebar switch uses its own dirty-region redraw and explicit ON/OFF indicator. The original serial-mouse workaround renders an 8×11 software cursor, with `INT 33h` only for input; the old driver-owned graphics cursor is no longer used.
 - Dirty-region renderer avoids repeatedly drawing the whole frame and panel.
 - `TANDYAMP` without a filename automatically creates a **64-entry** alphabetized `*.MID` playlist from the current working directory; explicit song arguments override it.
 - No literal bitmap/skin copying, playlist-row clicking, real EQ, seeking, shuffle or desktop windows.

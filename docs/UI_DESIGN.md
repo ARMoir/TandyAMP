@@ -10,7 +10,7 @@ The owner supplied an original classic Winamp player/equalizer/playlist screensh
 | Clock | inset near x=7–116, y=19–63; shows elapsed minutes/seconds |
 | Track display | x≈123–312, y=19–63; track filename and mode/volume |
 | Activity marker | y≈68; 12-pixel moving indicator only — **not** a seek bar |
-| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index; **ninth SPK4 52-pixel title-bar button** at x=151, y=3–16 |
+| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index; **ninth SPK4 64×16-pixel title-bar button** at x=147, y=2–17 |
 | Lower panel | y≈101–198; either playlist or **three-tone monitor** |
 | Playlist | up to seven visible entries around the active item, in a list of up to **64** |
 | Voice monitor | three bars driven from software voice note/velocity/activity, not audio FFT |
@@ -58,4 +58,4 @@ Originally the player frequently repainted most of the song display and entire v
 
 ## Optional fourth voice UI
 
-The eight existing 36-pixel transport buttons are **unchanged**. The additional **52×13 SPK4 button** is centered between the title and mouse-status indicator in the titlebar (x=151..202, y=3..15). It uses the same original 5×7 font and pressed/unpressed palette as the row buttons; no existing label is squeezed or clipped. A click or **K** calls the same `ta_set_speaker()` engine control and marks only the button and, when visible, the voice-monitor pane dirty. The switch is available during playback, paused or stopped, with no forced MIDI replay. The lower monitor text indicates when the extra channel is enabled, although only the three PSG tones have true volume meters.
+The eight existing 36-pixel transport buttons are **unchanged**. The larger **64×16 SPK4 button** sits between the title and mouse-status indicator (x=147..210, y=2..17), with visibly separate **SPK4 ON** (green) and **SPK4 OFF** (red) labels. The click area matches the full visible rectangle and no existing transport label is squeezed or clipped. A click or **K** calls the same `ta_set_speaker()` engine control and marks only the 64×16 button and, when visible, the voice-monitor pane dirty. The switch is available during playback, paused or stopped, with no forced MIDI replay. The lower monitor text indicates when the extra channel is enabled, although only the three PSG tones have true volume meters.

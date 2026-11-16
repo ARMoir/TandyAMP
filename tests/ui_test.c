@@ -61,20 +61,32 @@ int main(void)
     assert(UI_BUTTON_X+(UI_ROW_BUTTONS-1)*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
     assert(UI_BUTTON_COUNT==9U);
     assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,9)==8);
-    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,17)==-1);
+    assert(button_at(UI_SPK_BUTTON_X,UI_SPK_BUTTON_Y)==8);
+    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W-1,
+                     UI_SPK_BUTTON_Y+UI_SPK_BUTTON_H-1)==8);
+    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,18)==-1);
+    assert(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W<217U); /* no mouse status overlap */
+    assert(UI_SPK_BUTTON_X>138U); /* no title text overlap */
     assert(button_at(2,80)==-1);
     /* Click the upper-titlebar switch: state must change without
        restarting the MIDI clock, and repeated clicks must toggle back. */
     {
         ta_u32 clock=ta.clock_q8;
+        unsigned long before=ui_pixels_written, repaint;
         assert(ta.speaker_enabled==0);
         click_button(8);
         assert(ta.speaker_enabled==1 && ta.clock_q8==clock);
-        ui_dirty|=UI_BUTTONS;
         draw_dirty();
-        assert(colored_pixels(UI_SPK_BUTTON_X+14,6,23,7,15)>4);
+        repaint=ui_pixels_written-before;
+        assert(repaint>0 && repaint<2200UL); /* isolated 64x16 switch */
+        assert(colored_pixels(UI_SPK_BUTTON_X+7,7,23,7,15)>4);
+        assert(colored_pixels(UI_SPK_BUTTON_X+37,7,12,7,10)>3);
+        before=ui_pixels_written;
         click_button(8);
         assert(ta.speaker_enabled==0 && ta.clock_q8==clock);
+        draw_dirty();
+        assert(ui_pixels_written-before<2200UL);
+        assert(colored_pixels(UI_SPK_BUTTON_X+37,7,18,7,4)>3);
     }
     assert(button_at(20,100)==-1);
 
@@ -194,6 +206,16 @@ int main(void)
         assert(ta.paused==0);
         draw_dirty();
 
+        /* Click SPK4 with a real cursor position and captured AX=5 press;
+           the 64x16 hit zone is separate from the transport row. */
+        mouse_was_down=0;
+        mouse_sample(UI_SPK_BUTTON_X+17,9,1,1,UI_SPK_BUTTON_X+17,9);
+        assert(ta.speaker_enabled==1);
+        draw_dirty();
+        mouse_sample(UI_SPK_BUTTON_X+17,9,0,0,UI_SPK_BUTTON_X+17,9);
+        mouse_sample(UI_SPK_BUTTON_X+17,9,0,1,UI_SPK_BUTTON_X+17,9);
+        assert(ta.speaker_enabled==0);
+        draw_dirty();
         mouse_cursor_remove();
         mouse_present=0;
         mouse_was_down=0;
@@ -257,7 +279,7 @@ int main(void)
     }
 
     printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
-           "and 9 clickable labels including SPK4, DRUM mode, song title, zero-write idle, "
+           "and 9 clickable labels including low-redraw SPK4, DRUM mode, song title, zero-write idle, "
            "clock-only refresh, per-voice meters, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;

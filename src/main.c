@@ -34,14 +34,17 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_CLOCK    0x10U
 #define UI_PROGRESS 0x20U
 #define UI_METERS   0x40U
-#define UI_ALL      0x7fU
+#define UI_SPK4     0x80U
+#define UI_ALL      0xffU
 #define UI_BUTTON_X 8U
 #define UI_BUTTON_STEP 38U
 #define UI_BUTTON_WIDTH 36U
 #define UI_BUTTON_COUNT 9U
 #define UI_ROW_BUTTONS 8U
-#define UI_SPK_BUTTON_X 151U
-#define UI_SPK_BUTTON_W 52U
+#define UI_SPK_BUTTON_X 147U
+#define UI_SPK_BUTTON_Y 2U
+#define UI_SPK_BUTTON_W 64U
+#define UI_SPK_BUTTON_H 16U
 static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
 static ta_u32 ui_last_seconds=0xffffffffUL;
 static signed short meter_last_note[3]={-2,-2,-2};
@@ -368,10 +371,17 @@ static void draw_buttons(void)
         tx=x+(UI_BUTTON_WIDTH-w)/2U;
         label(tx,80,button_labels[i],ink,5);
     }
-    frame(UI_SPK_BUTTON_X,3,UI_SPK_BUTTON_W,13,
+}
+/* The larger, explicit ON/OFF control is independent of transport redraws. */
+static void draw_spk_button(void)
+{
+    frame(UI_SPK_BUTTON_X,UI_SPK_BUTTON_Y,
+          UI_SPK_BUTTON_W,UI_SPK_BUTTON_H,
           (ta_u8)(ta.speaker_enabled?1:7));
-    label(UI_SPK_BUTTON_X+14,6,"SPK4",
+    label(UI_SPK_BUTTON_X+7,7,"SPK4",
           (ta_u8)(ta.speaker_enabled?15:0),4);
+    label(UI_SPK_BUTTON_X+37,7,ta.speaker_enabled?"ON":"OFF",
+          (ta_u8)(ta.speaker_enabled?10:4),3);
 }
 static void draw_base(void)
 {
@@ -584,6 +594,7 @@ static void draw_dirty(void)
     mouse_cursor_remove();
     if(flags&UI_PANEL)draw_panel();
     if(flags&UI_BUTTONS)draw_buttons();
+    if(flags&UI_SPK4)draw_spk_button();
     if(flags&UI_TRACK)draw_track_info();
     if((flags&UI_CLOCK) || clock_changed)draw_clock();
     if(flags&UI_STATE)draw_state();
@@ -754,7 +765,7 @@ static void input_key(int key)
     case 'K':
         ta_set_speaker(!ta.speaker_enabled);
         if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
-        ui_dirty|=UI_BUTTONS;
+        ui_dirty|=UI_SPK4;
         if(show_equalizer)ui_dirty|=UI_PANEL; /* only changed monitor label */
         break;
     case 'D':
@@ -769,8 +780,9 @@ static void input_key(int key)
 static int button_at(unsigned x,unsigned y)
 {
     unsigned i,left;
-    if(y>=3U && y<16U && x>=UI_SPK_BUTTON_X &&
-       x<UI_SPK_BUTTON_X+UI_SPK_BUTTON_W)return 8;
+    if(y>=UI_SPK_BUTTON_Y && y<UI_SPK_BUTTON_Y+UI_SPK_BUTTON_H &&
+       x>=UI_SPK_BUTTON_X && x<UI_SPK_BUTTON_X+UI_SPK_BUTTON_W)
+        return 8;
     if(y<74U || y>=94U)return -1;
     for(i=0;i<UI_ROW_BUTTONS;i++){
         left=UI_BUTTON_X+i*UI_BUTTON_STEP;

@@ -15,6 +15,7 @@ FILES = [
 ]
 CODE = (ROOT / "src/main.c").read_text(encoding="utf-8")
 MIDI = (ROOT / "src/midi.h").read_text(encoding="utf-8")
+MIDI_SOURCE = (ROOT / "src/midi.c").read_text(encoding="utf-8")
 WORKFLOW = (ROOT / ".github/workflows/build-dos.yml").read_text(encoding="utf-8")
 README = FILES[0].read_text(encoding="utf-8")
 ARCH = (ROOT / "docs/PLAYER_ARCHITECTURE.md").read_text(encoding="utf-8")
@@ -45,6 +46,12 @@ demand("#define UI_BUTTON_COUNT 9U" in CODE and "ninth" in UI, "Button count mis
 demand("UI_ROW_BUTTONS 8U" in CODE, "Transport row geometry changed")
 demand('"/SPK4"' in CODE and '"/NOSPK4"' in CODE, "Missing speaker CLI options")
 demand("ta_set_speaker" in CODE and "SPK4" in README, "Speaker toggle undocumented")
+demand("#define UI_SPK_BUTTON_W 64U" in CODE and "64×16" in UI,
+       "SPK4 button dimensions inconsistent")
+demand("TA_SPK_BASS_MIN 24" in MIDI_SOURCE and "TA_SPK_BASS_MAX 52" in MIDI_SOURCE
+       and "24–52" in README, "SPK4 bass-only note range undocumented")
+demand("speaker_divider_for" in MIDI_SOURCE and "1.193182" in README,
+       "PIT2 true-octave note mapping undocumented")
 demand("#define UI_BUTTON_WIDTH 36U" in CODE and "36-pixel" in UI, "Button width mismatch")
 demand("playlist_find_current_directory" in CODE and "current working directory" in README,
        "Automatic MIDI directory discovery undocumented")
