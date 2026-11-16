@@ -54,7 +54,7 @@ class YouTubeUrlTests(unittest.TestCase):
 
 class DownloaderTests(unittest.TestCase):
     def test_missing_ffmpeg_reports_installation(self):
-        with tempfile.TemporaryDirectory() as td, patch('youtube.shutil.which', return_value=None):
+        with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'FFmpeg and ffprobe'):
                 download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td))
 
@@ -73,7 +73,7 @@ class DownloaderTests(unittest.TestCase):
                 Path(captured['opts']['outtmpl'].replace('%(ext)s', 'mp3')).write_bytes(b'ID3test')
                 return {'title': 'Demo / Track', 'id': 'dQw4w9WgXcQ'}
         fake = types.SimpleNamespace(YoutubeDL=FakeYoutubeDL)
-        with tempfile.TemporaryDirectory() as td, patch('youtube.shutil.which', return_value='/usr/bin/ffmpeg'), patch.dict(sys.modules, {'yt_dlp': fake}):
+        with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value='/usr/bin/ffmpeg'), patch.dict(sys.modules, {'yt_dlp': fake}):
             result = download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td), '256')
             self.assertTrue(result.audio_path.is_file())
             self.assertEqual(result.video_id, 'dQw4w9WgXcQ')
@@ -86,7 +86,7 @@ class DownloaderTests(unittest.TestCase):
 
     def test_missing_ytdlp_is_optional(self):
         # missing tools fail before importing yt-dlp; no import side-effects
-        with tempfile.TemporaryDirectory() as td, patch('youtube.shutil.which', return_value=None):
+        with tempfile.TemporaryDirectory() as td, patch('dependencies.shutil.which', return_value=None):
             with self.assertRaises(RuntimeError):
                 download_youtube_mp3('https://youtu.be/dQw4w9WgXcQ', Path(td))
 
