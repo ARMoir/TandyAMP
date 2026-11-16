@@ -96,11 +96,11 @@ The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the ho
 
 ### SPK4 bass-only acceptance test
 
-`tests/speaker_test.c` verifies the PIT2 input is restricted to MIDI **24-52 (C1-E3)**, that the **true low-frequency PIT2 dividers** (including pitch bending) are used instead of octave-folded PSG values, and that three other distinct tone parts are required. It tests exclusion of high notes, pause/resume, disabling the button, master mute and clean stop. `tests/ui_test.c` verifies the **58x17 SPK4** button is aligned in the second row, reacts to K and clicks, displays ON/OFF, and repaints only its own region when the playlist is visible.
+`tests/speaker_test.c` verifies the PIT2 input is restricted to MIDI **24–52 (C1–E3)**, that the **true low-frequency PIT2 dividers** (including pitch bending) are used instead of octave-folded PSG values, and that three other distinct tone parts are required. It tests exclusion of high notes, pause/resume, disabling the button, master mute and clean stop. `tests/ui_test.c` verifies the **58×17 SPK4** button is aligned in the second row, reacts to K and clicks, displays ON/OFF, and repaints only its own region when the playlist is visible.
 
 ### Two rows of buttons: regression coverage
 
-Current host framebuffer tests validate both five-button rows, all ten 58x17 labels and mouse click hitboxes, SPK4's bass-only live toggle, the MUTE button's previous-volume restoration, zero-change redraw caching and the lower playlist's retained seven visible rows. Open Watcom DOS compilation follows the tests; playback on actual EX hardware remains necessary.
+Current host framebuffer tests validate both five-button rows, all ten 58×17 labels and mouse click hitboxes, SPK4's bass-only live toggle, the MUTE button's previous-volume restoration, zero-change redraw caching and the lower playlist's retained seven visible rows. Open Watcom DOS compilation follows the tests; playback on actual EX hardware remains necessary.
 
 ### Loudness and volume-range regressions
 
@@ -112,7 +112,7 @@ Host tests verify that SPK4 being **enabled** but not programmed into PIT2 displ
 
 ### Three-way SPK4 acceptance checks
 
-`tests/speaker_test.c` now checks the original BASS divider, adaptive octave placement, �2-semitone pitch-overlap avoidance, quiet/loud PSG conditions, pitch-bend continuity, and the note-stamp lock (no mid-note octave jumping). `tests/ui_test.c` cycles OFF  BASS  ADAPT  OFF through both keyboard dispatch and captured serial mouse clicks, checks the three distinct button paint states and verifies that the VIS note label reflects a raised octave. `/SPK4`, `/SPK4:ADAPT`, and `/NOSPK4` are documented without changing the DOS release ZIP contents.
+`tests/speaker_test.c` now checks the original BASS divider, adaptive octave placement, ±2-semitone pitch-overlap avoidance, quiet/loud PSG conditions, pitch-bend continuity, and the note-stamp lock (no mid-note octave jumping). `tests/ui_test.c` cycles OFF → BASS → ADAPT → OFF through both keyboard dispatch and captured serial mouse clicks, checks the three distinct button paint states and verifies that the VIS note label reflects a raised octave. `/SPK4`, `/SPK4:ADAPT`, and `/NOSPK4` are documented without changing the DOS release ZIP contents.
 
 ### High-register improvement acceptance tests
 
