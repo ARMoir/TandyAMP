@@ -58,8 +58,12 @@ jobs:
           cd dist
           zip -9 "TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip" \
             TANDYAMP.EXE DEMO.MID LICENSE
-          # Markdown documentation stays in the source repository, never in a DOS build.
-          ! unzip -Z1 "TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip" | grep -Ei '\.md
+          # Documentation is in GitHub source only. No Markdown files in the DOS ZIP.
+          if unzip -Z1 "TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip" | grep -i "[.]md"; then
+            echo "ERROR: Markdown file included in DOS release"
+            exit 1
+          fi
+          test "$(unzip -Z1 "TandyAMP-DOS-build-${GITHUB_RUN_NUMBER}.zip" | wc -l)" -eq 3
       - name: Upload current build artifact
         uses: actions/upload-artifact@v4
         with:
