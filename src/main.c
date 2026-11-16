@@ -754,7 +754,8 @@ static void input_key(int key)
     case 'K':
         ta_set_speaker(!ta.speaker_enabled);
         if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
-        ui_dirty|=UI_BUTTONS|UI_TRACK|UI_PANEL;
+        ui_dirty|=UI_BUTTONS;
+        if(show_equalizer)ui_dirty|=UI_PANEL; /* only changed monitor label */
         break;
     case 'D':
         ta.drum_mode=(ta_u8)((ta.drum_mode+1U)%3U);
