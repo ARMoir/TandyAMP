@@ -8,6 +8,9 @@
 #define TA_VOICES 3
 #define TA_CHANNELS 16
 #define TA_ACTIVE_NOTES 32
+#define TA_DRUM_AUTO 0
+#define TA_DRUM_ON 1
+#define TA_DRUM_OFF 2
 
 typedef unsigned char ta_u8;
 typedef unsigned short ta_u16;
@@ -46,7 +49,9 @@ typedef struct {
     ta_u16 clock_carry; /* Subtick fractional MIDI clock accumulation. */
     ta_u16 noise_left, noise_length;
     ta_u8 noise_mode, noise_base, noise_last;
-    ta_u8 drum16; /* Optional legacy channel-16 percussion. */
+    ta_u8 drum16; /* Resolved channel-16 percussion routing. */
+    ta_u8 drum_mode; /* AUTO, ON, OFF; persists between songs. */
+    ta_u8 drum_detected; /* File-scanning decision before override. */
     ta_u8 loaded, playing, paused;
 } TAEngine;
 
