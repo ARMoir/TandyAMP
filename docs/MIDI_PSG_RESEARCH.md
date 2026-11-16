@@ -1,0 +1,107 @@
+# MIDI-to-Tandy PSG research and implementation audit
+
+**Audited November 16, 2026** against the actual `src/midi.c`, `src/midi.h`, `src/main.c`, host tests and GitHub workflow on `main`. This is **research and a prioritized roadmap**, not a claim that every idea below has been implemented. Newer functionality requires on-device testing on a 7 MHz NEC V20 Tandy 1000 EX.
+
+## Short answer
+
+**No, all known Tandy/MIDI tricks have not been implemented.** TandyAMP already supports Standard MIDI Files 0/1, a 24-track / 44 KiB limit, 64-entry directory playlists, tempo events, three-voice prioritization, 32 remembered notes, unison consolidation, bass octave folding, MIDI velocity/expression and pitch bends, GM noise drums, channel-16 percussion detection, and conservative automatic gain leveling. It uses an independent integer pitch table and a foreground PIT sub-tick scheduler, but still has considerable room for musical improvements.
+
+### Status by technique
+
+| Technique | Code status | Evidence / trade-off |
+| --- | --- | --- |
+| Three Tandy PSG tones, software note pool, age/salience-aware allocation | **Implemented** | `rebuild_voices()`, 32-note pool, three hardware slots |
+| Consolidate identical rendered pitches and restore still-held notes | **Implemented** | Actual PSG divider comparison; mixer/playback tests |
+| MIDI SMF 0/1, tempo, running status, PPQN | **Implemented** | `consume_event()`, `ta_advance()`; rejects SMF 2 / SMPTE |
+| 10-bit note dividers, semitone pitch bend, fold low bass notes | **Implemented** | `period_for()`; no heavy floating-point runtime |
+| CC7/CC11, note velocity, sustain, master loudness | **Implemented** | `attenuation()`, `handle_cc()`, `ta_set_volume()` |
+| Noise percussion on GM channel 10; optional channel 16 | **Implemented** | `drum_on()`, `update_noise()`, `detect_drum16()` |
+| Volume peak limiting based on logarithmic 2 dB hardware steps | **Implemented** | `flush_mix()`; simulated power, not acoustic measurement |
+| PIT subtick scheduling instead of original 18 Hz event grid | **Implemented** | Foreground mode-2 PIT polling and ~6.9 ms slices |
+| Per-instrument ATTACK/DECAY/SUSTAIN/RELEASE tone envelopes | **Not implemented** | Tone velocity and note-off are handled, but there is no instrument-aware per-note ADSR/envelope engine |
+| GM program-change-aware timbre / decay categories | **Not implemented** | `consume_event()` recognizes channel messages but does not store/interpret Program Change 0xC0 |
+| Automatic vibrato (MIDI modulation wheel CC1) / portamento | **Not implemented** | Pitch bend 0xE0 works; CC1 and GM program-driven vibrato do not |
+| Selective high-rate arpeggiation of chords on a single PSG channel | **Not implemented** | Three-voice allocator selects a note per voice; it does not time-multiplex extra chord tones |
+| Tracker-style tone slides, step envelopes, echo/retrigger | **Not implemented** | Candidate for a small optional synthesis layer; avoid expensive high-rate FX |
+| Offline MIDI → three-voice optimized stream / optional compact format | **Not implemented** | Native MID parsing remains on the EX. A host-side converter could precompute reduced polyphony, dividers, envelopes and event timing |
+| Time-saving PSG register-difference cache at the final I/O layer | **Partially optimized** | Dirty-state/voice selection avoids some writes, but direct `ta_psg_tone()` still writes tone latch, high divider, volume on each call |
+| Noise timed from third tone channel (noise mode 3/7) | **Not implemented** | Can create pitched noise/deeper rhythmic textures, **but ties up tone channel 2** and may interfere with a third melody |
+| Native Tandy 15-bit noise modeling in a host reference synthesizer | **Not implemented** | Tandy noise LFSR behavior differs from several Sega variants; relevant for offline preview, not for playing registers on real hardware |
+| Direct `TANDY.ADV` use / BIOS audio-routing write `out 61h,68h` | **Intentionally not implemented** | Proprietary Miles driver cannot serve as our native music engine; blindly rewriting 61h may disturb EX hardware selection |
+| Software PWM / high-frequency PCM through PSG volume | **Not planned as a default** | CPU-heavy, reduces simultaneous music quality and can monopolize a 7 MHz V20 |
+| Winamp UI seeking, scrolling clickable rows, full equalizer | **Not implemented** | Separate UX projects; not required to synthesize good PSG music |
+
+## External resources and concrete findings
+
+All sources below are for **independent algorithm study**. Check and honor licenses before borrowing implementation code or data. Do not add third-party MIDI, ROMs, Winamp skins, Miles assets, MODs or SoundFonts to this repository.
+
+### 1. TNDY Tracker: tracker effects and compact PSG playback
+
+- [JKnipperts/TNDY-Tracker](https://github.com/JKnipperts/TNDY-Tracker): Borland Pascal tracker with an assembly player at [`PLAYER.ASM`](https://github.com/JKnipperts/TNDY-Tracker/blob/master/PLAYER.ASM).
+- Implements **portamento, volume/tone slides, arpeggio**, imported AGI/Tandy music and compact `.TND` files; source also supports configurable I/O ports.
+- **Lesson:** Track the musical gesture (note, note-off, envelopes and pitch slide) separately from PSG register writes. A few bytes of precomputed per-note effect state could improve expressive melody without importing its song format.
+- **Not:** a general-purpose Standard MIDI File loader. Directly integrating the old Pascal/assembly playback system is unlikely to simplify the current engine.
+
+### 2. Monotone: virtual channels and integer effects
+
+- [MobyGamer/MONOTONE](https://github.com/MobyGamer/MONOTONE), [MONOTONE.TXT](https://github.com/MobyGamer/MONOTONE/blob/master/MONOTONE.TXT).
+- Uses **virtual channels** whose events are mapped to simple physical sound hardware. Documents frequency-based slides, vibrato and tracker arpeggio effects.
+- **Lesson:** Keep virtual notes/state in software (already done) while allowing bounded, optional pitch/volume modulation at the output stage. Use integer tables or Q-format state on the EX.
+
+### 3. Mod2PSG2 and Furnace: instrument envelopes, noise macros
+
+- [Mod2PSG2 description / MID import](https://www.smspower.org/Music/Mod2PSG2): imports `.MID`, `.MOD`, `.VGM` and supports **volume envelopes and vibrato** in tracker instruments.
+- [Furnace PSG instrument notes](https://github.com/tildearrow/furnace/blob/master/doc/4-instrument/psg.md): separate **volume, arpeggio, pitch and noise-mode macros**.
+- **Lesson:** Three cheap envelope profiles—`pluck`, `soft`, `sustain`—based on GM program family plus note duration offer much greater variation than giving every note an identical unchanging square wave. Use 16-level hardware attenuation rather than arbitrary floating-point DSP.
+
+### 4. MIDI-to-PSG conversion with program-aware expressive controls
+
+- [akiyan/midi2vgm](https://github.com/akiyan/midi2vgm), especially [`genpsg.py`](https://github.com/akiyan/midi2vgm/blob/main/scripts/genpsg.py) and [`psg_voice.py`](https://github.com/akiyan/midi2vgm/blob/main/scripts/psg_voice.py).
+- Its PSG-only VGM converter explicitly reduces a MIDI arrangement to **three melody tones plus noise**, **folds unplayable pitches**, picks relevant channels from **note count/range**, and uses short **pluck/soft/sustain** volume profiles. The helper also supports bounded **vibrato**.
+- **Lesson:** The per-program envelope strategy and *offline* selection of the three most meaningful parts are excellent candidates for TandyAMP. The converter is aimed at Game Gear/Genesis SN76489 rather than a native EX application; use ideas, not binaries or source snippets.
+
+### 5. PSGTools: pre-rendered register streams and clock conversion
+
+- [hightower70/PSGTools](https://github.com/hightower70/PSGTools) contains VGM-to-PSG conversion, optional compression, frame-rate resampling and SN76489 clock correction.
+- **Lesson:** Add an **optional desktop preconverter** from MIDI to a compact `.TAM` event stream, preserving playable native `.MID` support. Cache full register values, emit only changes, quantize times explicitly, and support clock-rate variants. Never blindly play Sega-specific VGM PSG data on Tandy without confirming clock and noise behavior.
+
+### 6. SN76489 and Tandy-specific noise behavior
+
+- [SMS Power SN76489 hardware reference](https://www.smspower.org/Development/SN76489) describes **10-bit dividers**, **2 dB per volume step**, **white vs periodic noise**, and noise clocking from the third tone channel. **Tandy/older chip variants use a 15-bit noise LFSR**, versus 16-bit in several Sega variants.
+- **Lesson:** An external preview/diagnostic simulator should model the **Tandy chip variant**, including noise reset. Do not mistake a converted Sega VGM for an exact Tandy sound. Tone-channel-2-clocked noise creates a trade-off: more interesting drum timbre but one less independent pitch if the noise follows it.
+
+### 7. DOSMid: low-end DOS MIDI timing / architecture reference
+
+- [DOSMid](https://dosmid.sourceforge.net/) targets **8086-class** DOS and documents a minimum memory footprint, while warning a faster 286 helps complex arrangements.
+- **Lesson:** Keep disk I/O and graphics out of the music-critical loop, maintain compact event state and optimize for 7 MHz instead of introducing expensive modern DSP. TandyAMP already has a foreground PIT scheduler; measure remaining latency on the actual EX.
+
+## Prioritized experiments
+
+| Priority | Experiment | Why it matters | Resource / risk |
+| --- | --- | --- | --- |
+| **P1** | Offline MIDI→PSG analysis tool on modern PC: annotate melody/bass/harmony, note contention, out-of-range pitches and estimated PSG register writes; produce an **audio-free report first** | Quickly reveals what Canyon loses without increasing EX CPU usage | Low hardware risk |
+| **P1** | Optional program-aware **volume envelopes** (pluck/soft/sustain), using 16-step integer decay with 2–4 frequency/volume updates per 50–100 ms only when notes change | Adds expressive instrument distinction with bounded PSG writes | Low–medium, benchmark CPU |
+| **P1** | **Voice-leading hysteresis**: penalize pointless voice swaps, retain coherent bass and melody, and add short retrigger damping | Improves recognizable music and reduces clicks from crowded chords | Medium, extensive golden MIDI tests |
+| **P2** | Compact **pre-rendered PSG event cache** `.TAM` (optional), with a native `.MID` fallback | Simplifies playback work on 7 MHz V20 and permits offline higher-quality reduction | Medium–high file format / code |
+| **P2** | Optional, restrained **software arpeggio** for overflow chords, 1 voice at a time, disable when it destabilizes timing | Approximate extra polyphony and fuller harmonies | Medium–high; can make tunes warble |
+| **P2** | Cache most recent divider and attenuation per hardware slot and write only changed register values | Saves I/O port operations and reduces crackle/slow foreground time | Medium; verify interrupt / latch ordering |
+| **P3** | Pitch/volume effects: vibrato from CC1, portamento and retrigger envelopes when musical context warrants | Makes long melodic notes livelier | Medium CPU and risk of wobble |
+| **P3** | Tandy-specific PSG/noise preview renderer and alternate tone2-clocked percussion | Better offline comparison and special drum textures | Nontrivial modeling, possible loss of third melody |
+| **Defer** | Per-sample PCM on PSG, complex reverb, full FFT, arbitrary filter chains | Exceed hardware budget; not sensible for 7 MHz V20 during polyphonic MIDI | High risk, low benefit |
+
+## Suggested verification approach
+
+1. Establish a known hardware baseline using one simple type-0 MIDI and the owner-provided Canyon file; record elapsed time, audible melody, and any note dropouts.
+2. Build **synthetic, distributable MIDI fixtures**, not copyrighted game MIDI: dense triads with a bass, drums concurrent with bass/third voice, melody retriggers, held notes and tempo changes.
+3. Compare deterministic *event-order and register-write traces* between versions. Measure maximum notes retained, stolen-note frequency, redundant port writes, envelope transitions and simulated peak power.
+4. Benchmark for a **7 MHz NEC V20** and refuse optional synthesis effects that exceed timing/write budgets. A native DOS mode remains available for any song without preconversion.
+5. Only promote a change after listening on real EX hardware. **A GitHub Actions pass proves compilation and model-level correctness, not audible quality.**
+
+## License and source caution
+
+- The source/code for TandyAMP remains independently authored and MIT licensed.
+- `TANDY.ADV` is proprietary and is not linked or distributed.
+- The external projects above use different licensing regimes. Verify any project's current license **before copying even a small implementation fragment**; prefer independent register/math descriptions.
+- Any future offline converter should not distribute copyrighted user MIDI, SoundFonts, tracker modules, Winamp skin resources or emulator ROMs.
+
+See [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md) for the code architecture and [README](../README.md) for supported command-line options and current limits.

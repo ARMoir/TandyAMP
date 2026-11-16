@@ -111,6 +111,7 @@ The authoritative source is on **[GitHub](https://github.com/ARMoir/TandyAMP)**:
 | `tests/midi_test.c` | MIDI format, drum and parser regression tests |
 | `tests/playback_test.c` / `tests/mixer_test.c` | Note/event ordering, voice allocation and mix-level checks |
 | `tests/ui_test.c` | Pixel-font bounds, button hit areas, software cursor, minimal redraws and directory playlist discovery |
+| `tests/check_docs.py` | Checks documentation links, feature limits and release packaging against source |
 | `.github/workflows/build-dos.yml` | Test, compile, package and publish DOS builds |
 | `docs/BUILD_AND_RELEASE.md` | Manual build commands, CI/release retention and troubleshooting |
 
@@ -123,6 +124,7 @@ The GitHub workflow runs host tests, installs Open Watcom 2.0, builds a real-mod
 - [Clean-room Winamp inspiration](docs/WINAMP_REFERENCE.md)
 - [Historical Miles TANDY.ADV disassembly findings](docs/TANDY_ADV_ANALYSIS.md)
 - [Rebuild, test and publish](docs/BUILD_AND_RELEASE.md)
+- [MIDI/PSG research audit and prioritized opportunities](docs/MIDI_PSG_RESEARCH.md)
 
 ## Troubleshooting and status
 

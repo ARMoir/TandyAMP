@@ -93,3 +93,4 @@ Command line: explicit files OR current-directory *.MID discovery
 - [Winamp design reference](WINAMP_REFERENCE.md): conceptual workflow and chrome only; no Winamp code/assets copied.
 - [UI design](UI_DESIGN.md): screen geometry, cursor/redraw details, and changes documented from the real EX recording.
 - [README](../README.md): user instructions, commands and current limitations.
+- [MIDI/PSG implementation audit and new resources](MIDI_PSG_RESEARCH.md): detailed implemented/partial/pending findings and prioritized experiments.
