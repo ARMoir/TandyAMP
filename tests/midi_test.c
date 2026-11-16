@@ -18,7 +18,7 @@ void ta_psg_silence(void){mute_count++;}
 int main(int argc,char **argv)
 {
     unsigned n,i,live;
-    if(argc<3)return 2;
+    if(argc<4)return 2;
     for(n=1;n<3;n++){
         if(!ta_load(argv[n])){fprintf(stderr,"LOAD %s: %s\n",argv[n],ta_error());return 3;}
         if(ta.format!=n-1){fprintf(stderr,"Incorrect SMF format\n");return 4;}
