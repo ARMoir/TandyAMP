@@ -449,6 +449,78 @@ static void consume_event(TATrack *t)
     }
     next_delta(t);
 }
+
+/* Inspect complete MIDI track data without altering playback cursors.
+   A legacy non-GM file may use channel 16 for drums, but a drum-like pitch
+   number alone is insufficient evidence: require repeated kick/snare + hats. */
+static ta_u8 detect_drum16(void)
+{
+    unsigned i,total=0,known=0,bass=0,hats=0,channel10=0;
+    for(i=0;i<ta.track_count;i++){
+        TATrack t=ta.tracks[i];
+        int ok;
+        ta_u8 status,b,kind,channel,d1,d2;
+        ta_u32 len;
+        t.pos=t.beginning;
+        t.running=0;
+        while(t.pos<t.end){
+            (void)vlq(&t,&ok);
+            if(!ok || t.pos>=t.end)break;
+            b=ta.data[t.pos];
+            if(b&128){
+                status=b;
+                t.pos++;
+                if(status>=0x80 && status<=0xef)t.running=status;
+                else t.running=0;
+            }else{
+                status=t.running;
+                if(status<0x80 || status>0xef)break;
+            }
+            if(status==0xff){
+                if(t.pos>=t.end)break;
+                t.pos++;
+                len=vlq(&t,&ok);
+                if(!ok || len>(ta_u32)(t.end-t.pos))break;
+                t.pos=(ta_u16)(t.pos+len);
+                continue;
+            }
+            if(status==0xf0 || status==0xf7){
+                len=vlq(&t,&ok);
+                if(!ok || len>(ta_u32)(t.end-t.pos))break;
+                t.pos=(ta_u16)(t.pos+len);
+                continue;
+            }
+            if(status<0x80 || status>=0xf0 || t.pos>=t.end)break;
+            channel=(ta_u8)(status&15);
+            kind=(ta_u8)(status&0xf0);
+            d1=ta.data[t.pos++];
+            d2=0;
+            if(kind!=0xc0 && kind!=0xd0){
+                if(t.pos>=t.end)break;
+                d2=ta.data[t.pos++];
+            }
+            if(d1>127 || d2>127)break;
+            if(kind!=0x90 || d2==0)continue;
+            if(channel==9){if(channel10<65535U)channel10++;continue;}
+            if(channel!=15)continue;
+            if(total<65535U)total++;
+            switch(d1){
+            case 35:case 36:case 38:case 40:
+                bass++;known++;break;
+            case 42:case 44:case 46:
+                hats++;known++;break;
+            case 41:case 43:case 45:case 47:case 48:case 49:
+            case 50:case 51:case 57:
+                known++;break;
+            default:break;
+            }
+        }
+    }
+    /* Prefer a false negative (user can press D) to wrecking a melody. */
+    return (ta_u8)(channel10==0 && total>=6 && known*4UL>=total*3UL
+                   && bass>=2 && hats>=2);
+}
+
 int ta_load(const char *filename)
 {
     FILE *f;
@@ -495,6 +567,9 @@ int ta_load(const char *filename)
         ta.tracks[i].end=(ta_u16)end;
         p=end;
     }
+    ta.drum_detected=detect_drum16();
+    ta.drum16=(ta_u8)(ta.drum_mode==TA_DRUM_ON ||
+       (ta.drum_mode==TA_DRUM_AUTO && ta.drum_detected));
     last_error="OK";
     ta.loaded=1;
     ta.playing=0;
