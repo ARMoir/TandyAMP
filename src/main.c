@@ -32,8 +32,9 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_METERS   0x40U
 #define UI_ALL      0x7fU
 #define UI_BUTTON_X 8U
-#define UI_BUTTON_STEP 44U
-#define UI_BUTTON_WIDTH 42U
+#define UI_BUTTON_STEP 38U
+#define UI_BUTTON_WIDTH 36U
+#define UI_BUTTON_COUNT 8U
 static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
 static ta_u32 ui_last_seconds=0xffffffffUL;
 static signed short meter_last_note[3]={-2,-2,-2};
@@ -247,23 +248,22 @@ static const char *leaf(const char *name)
     while(*p){if(*p=='/'||*p=='\\'||*p==':')a=p+1;p++;}
     return a;
 }
-/* All seven labels are centered inside 42-pixel buttons.
-   At 5x7 pixels with 6-pixel character advance, PAUSE is 29 pixels wide.
-   The old 33-pixel layout placed labels over neighboring button borders. */
-static const char *button_labels[7]={
-    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP"
+/* Eight tight but legible buttons, including a legacy-drums override. */
+static const char *button_labels[UI_BUTTON_COUNT]={
+    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM"
 };
 static void draw_buttons(void)
 {
     unsigned i,x,w,tx;
     ta_u8 face,ink;
     int pressed;
-    for(i=0;i<7;i++){
+    for(i=0;i<UI_BUTTON_COUNT;i++){
         x=UI_BUTTON_X+i*UI_BUTTON_STEP;
         pressed=(i==1 && ta.playing && !ta.paused)
             ||(i==2 && ta.playing && ta.paused)
             ||(i==5 && show_equalizer)
-            ||(i==6 && loop_mode);
+            ||(i==6 && loop_mode)
+            ||(i==7 && ta.drum16);
         face=(ta_u8)(pressed?1:7);
         ink=(ta_u8)(pressed?15:0);
         frame(x,74,UI_BUTTON_WIDTH,20,face);
@@ -285,7 +285,7 @@ static void draw_base(void)
     box(8,67,302,3,0);
     box(10,68,298,1,8);
     frame(1,101,318,97,8);
-    label(8,188,"SPACE PAUSE N NEXT P PREV E VIS Q QUIT",7,47);
+    label(8,188,"D DRUMS SPACE PAUSE N NEXT E VIS Q QUIT",7,47);
 }
 static void draw_playlist(void)
 {
@@ -357,6 +357,7 @@ static void draw_meters(void)
 static void draw_track_info(void)
 {
     char filename[64];
+    const char *mode;
     box(129,24,179,35,0);
     label(135,25,"NOW PLAYING",7,24);
     if(song_count){
@@ -364,7 +365,11 @@ static void draw_track_info(void)
         filename[27]=0;
     }else strcpy(filename,"NO MIDI FILE");
     label(135,38,filename,10,27);
-    label(135,51,"TANDY PSG  3 VOICES",7,27);
+    if(ta.drum_mode==TA_DRUM_AUTO)
+        mode=ta.drum16?"DR16 AUTO ON":"DR16 AUTO OFF";
+    else if(ta.drum_mode==TA_DRUM_ON)mode="DR16 FORCED ON";
+    else mode="DR16 FORCED OFF";
+    label(135,51,mode,7,27);
 }
 static void draw_clock(void)
 {
@@ -436,10 +441,13 @@ static void usage(void)
     puts("Options: /TXT     text-only player (no Tandy graphics)");
     puts("         /GUI     Tandy 320x200 16-color display (default)");
     puts("         /LOOP    repeat entire playlist");
-    puts("         /DRUM16  legacy drum channel 16 (early CANYON.MID)");
+    puts("         /DRUM16  force channel 16 drums on");
+    puts("         /NODRUM16 force channel 16 drums off");
+    puts("         /AUTODRUM16 auto-detect drums (default)");
     puts("         /HELP    this help");
     puts("Keys: SPACE pause/resume, S stop, R replay, N next, P previous");
-    puts("      E visualizer/playlist, L loop toggle, Q or ESC quit");
+    puts("      E visualizer, L loop, D drums AUTO/ON/OFF");
+    puts("      Q or ESC quit. D restarts the current song.");
     puts("Supports MIDI format 0/1, 24 tracks, files <= 44 KB.");
 }
 static int start_song(unsigned n)
@@ -456,7 +464,10 @@ static int start_song(unsigned n)
     song_ticks=0;
     song_tick_part=0;
     stopped=0;
-    if(text_mode)printf("Playing %u/%u: %s\n",song_current+1,song_count,songs[song_current]);
+    if(text_mode)printf("Playing %u/%u: %s [DR16 %s%s]\n",
+        song_current+1,song_count,songs[song_current],
+        ta.drum_mode==TA_DRUM_AUTO?"AUTO ":"FORCED ",
+        ta.drum16?"ON":"OFF");
     ui_dirty|=UI_ALL;
     ui_last_seconds=0xffffffffUL;
     return 1;
@@ -481,8 +492,84 @@ static void input_key(int key)
     case 'P':next_song(1);break;
     case 'L':loop_mode=!loop_mode;ui_dirty|=UI_BUTTONS;break;
     case 'E':show_equalizer=!show_equalizer;ui_dirty|=UI_PANEL|UI_BUTTONS|UI_METERS;break;
+    case 'D':
+        ta.drum_mode=(ta_u8)((ta.drum_mode+1U)%3U);
+        if(song_count)start_song(song_current);
+        ui_dirty|=UI_TRACK|UI_BUTTONS|UI_STATE;
+        break;
     }
 }
+
+/* All buttons can be driven by keyboard, or clicked via INT 33h driver. */
+static int button_at(unsigned x,unsigned y)
+{
+    unsigned i,left;
+    if(y<74U || y>=94U)return -1;
+    for(i=0;i<UI_BUTTON_COUNT;i++){
+        left=UI_BUTTON_X+i*UI_BUTTON_STEP;
+        if(x>=left && x<left+UI_BUTTON_WIDTH)return (int)i;
+    }
+    return -1;
+}
+static void click_button(int id)
+{
+    if(id==0)input_key('P');
+    else if(id==1){
+        if(ta.playing && ta.paused)input_key(' ');
+        else if(!ta.playing)input_key('R');
+    }else if(id==2)input_key(' ');
+    else if(id==3)input_key('S');
+    else if(id==4)input_key('N');
+    else if(id==5)input_key('E');
+    else if(id==6)input_key('L');
+    else if(id==7)input_key('D');
+}
+#ifdef __WATCOMC__
+static int has_mouse=0,mouse_was_down=0;
+static ta_u32 last_mouse_poll=0;
+static void mouse_command(unsigned cmd)
+{
+    union REGS r;
+    r.x.ax=cmd;
+    int86(0x33,&r,&r);
+}
+static void mouse_initialize(void)
+{
+    union REGS r;
+    r.x.ax=0;
+    int86(0x33,&r,&r);
+    if(!r.x.ax)return;
+    has_mouse=1;
+    /* 320px graphics normally expose 0..639 horizontal mouse units. */
+    r.x.ax=7;r.x.cx=0;r.x.dx=639;int86(0x33,&r,&r);
+    r.x.ax=8;r.x.cx=0;r.x.dx=199;int86(0x33,&r,&r);
+    mouse_command(1);
+}
+static void mouse_poll(ta_u32 clock)
+{
+    union REGS r;
+    int down,id;
+    if(!has_mouse || clock-last_mouse_poll<128UL)return;
+    last_mouse_poll=clock;
+    r.x.ax=3;
+    int86(0x33,&r,&r);
+    down=(r.x.bx&1)!=0;
+    if(down && !mouse_was_down){
+        id=button_at((unsigned)(r.x.cx/2U),(unsigned)r.x.dx);
+        if(id>=0)click_button(id);
+    }
+    mouse_was_down=down;
+}
+static void mouse_shutdown(void)
+{
+    if(has_mouse)mouse_command(2);
+}
+#else
+static void mouse_initialize(void){}
+static void mouse_poll(ta_u32 clock){(void)clock;}
+static void mouse_shutdown(void){}
+#endif
+
 int main(int argc,char **argv)
 {
     int i,key;
@@ -494,7 +581,9 @@ int main(int argc,char **argv)
         if(same(s,"/TXT")||same(s,"-T")||same(s,"/TEXT")){text_mode=1;continue;}
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
-        if(same(s,"/DRUM16")){ta.drum16=1;continue;}
+        if(same(s,"/DRUM16")){ta.drum_mode=TA_DRUM_ON;continue;}
+        if(same(s,"/NODRUM16")){ta.drum_mode=TA_DRUM_OFF;continue;}
+        if(same(s,"/AUTODRUM16")){ta.drum_mode=TA_DRUM_AUTO;continue;}
         if(s[0]=='-'||s[0]=='/'){printf("Unknown option: %s\n",s);usage();return 1;}
         if(song_count>=MAX_SONGS){puts("Maximum 8 playlist entries.");return 1;}
         if(strlen(s)>=PATHLEN){puts("Filename too long (63 characters).");return 1;}
@@ -505,6 +594,7 @@ int main(int argc,char **argv)
     if(!text_mode){
         set_mode(9);
         draw_all();
+        mouse_initialize();
     }else usage();
     then=get_clock_q8();
     while(!program_exit){
@@ -549,6 +639,13 @@ int main(int argc,char **argv)
                 last_refresh=song_ticks;
             }
         }
+        if(!text_mode){
+            mouse_poll(now);
+            if(ui_dirty){
+                draw_dirty();
+                last_refresh=song_ticks;
+            }
+        }
         if(key_ready()){
             key=next_key();
             if(key==0 || key==0xe0){(void)next_key();continue;}
@@ -563,6 +660,7 @@ int main(int argc,char **argv)
         if(fake_clock>200UL)program_exit=1;
 #endif
     }
+    mouse_shutdown();
     ta_stop();
     set_mode(3);
     if(text_mode)puts("\nTandyAMP stopped.");
