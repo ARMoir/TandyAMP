@@ -25,8 +25,8 @@ int main(void)
 {
     unsigned i,x,textw,start;
     unsigned long initial,delta,prior;
-    static const char *reference[7]={
-        "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP"
+    static const char *reference[8]={
+        "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM"
     };
 
     /* Render the same CANYON.MID scene seen on the real hardware video. */
@@ -44,8 +44,8 @@ int main(void)
     song_ticks=0;
     draw_all();
 
-    /* All seven 5x7 labels fit WITHIN the button's inside bevel. */
-    for(i=0;i<7;i++){
+    /* All eight 5x7 labels fit WITHIN the button's inside bevel. */
+    for(i=0;i<UI_BUTTON_COUNT;i++){
         x=UI_BUTTON_X+i*UI_BUTTON_STEP;
         textw=(unsigned)strlen(reference[i])*6U-1U;
         start=x+(UI_BUTTON_WIDTH-textw)/2U;
@@ -53,10 +53,19 @@ int main(void)
         assert(start>x+1 && start+textw<x+UI_BUTTON_WIDTH-1);
         assert(colored_pixels(start,80,textw,7,(i==1)?15:0)>4);
         assert(color_at(x+UI_BUTTON_WIDTH-1,80)==0);
-        if(i<6)assert(color_at(x+UI_BUTTON_WIDTH,80)==8);
+        if(i+1<UI_BUTTON_COUNT)assert(color_at(x+UI_BUTTON_WIDTH,80)==8);
+        assert(button_at(x+UI_BUTTON_WIDTH/2,80)==(int)i);
     }
-    assert(UI_BUTTON_X+6*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
+    assert(UI_BUTTON_X+(UI_BUTTON_COUNT-1)*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
+    assert(button_at(2,80)==-1);
+    assert(button_at(20,100)==-1);
 
+    /* Mode indicator/button repaints don't require a full-screen redraw. */
+    ta.drum_mode=TA_DRUM_ON;
+    ta.drum16=1;
+    ui_dirty=UI_BUTTONS|UI_TRACK;
+    draw_dirty();
+    assert(colored_pixels(UI_BUTTON_X+7*UI_BUTTON_STEP+2,80,32,7,15)>3);
     /* The upper-right now-playing window must not be empty. */
     assert(colored_pixels(135,38,162,7,10)>10);
     assert(colored_pixels(135,25,135,7,7)>10);
@@ -102,7 +111,7 @@ int main(void)
     delta=ui_pixels_written-prior;
     assert(delta>0 && delta<20000UL);
 
-    printf("PASS: 7 centered labels, song title, zero-write idle, "
+    printf("PASS: 8 clickable labels, DRUM mode, song title, zero-write idle, "
            "clock-only refresh, per-voice meters, state-only repaint.\n");
     return 0;
 }
