@@ -25,9 +25,9 @@ The widest eight-character captions are 47 pixels at the 5×7 font's six-pixel c
 | Activity marker | y=67–69, *not* a seek bar |
 | First row | y=72–88, five transport buttons |
 | Second row | y=91–107, five options including SPK4 and MUTE |
-| Lower pane | y=112–197, playlist or three-voice monitor |
+| Lower pane | y=112–197, playlist or **four-column live output monitor** |
 | Playlist | seven visible songs with 8-pixel row spacing, from up to 64 entries |
-| Bottom legend | y=189–195, brief keyboard reminder |
+| Bottom legend | y=187–196, **white-on-black** keyboard reminder for higher contrast |
 
 The Winamp reference is vertically stacked; the EX cannot show three tall windows without tiny controls. Instead, one lower pane is toggled by **E** / VIS. There is no real EQ, draggable seek bar, shuffle or graphical file picker.
 
@@ -35,7 +35,7 @@ The Winamp reference is vertically stacked; the EX cannot show three tall window
 
 Tandy video mode 09h has four interleaved 8 KiB banks at `B800:0000`, with two color pixels per byte. TandyAMP avoids full-screen refreshes during normal playback. Its ten buttons share a state-aware `draw_button()` routine that caches each button's prior pressed state. A general transport redraw updates only changed buttons; separate **UI_SPK4** and **UI_MUTE** dirty flags redraw only their button. Volume changes update the text field; the cursor is removed and restored only when there are actual changed regions.
 
-Other elements update independently: clock each displayed second, selected playlist when the track changes, individual PSG voice bars when note/level changes, and only the old/new 12-pixel activity marker. The voice-monitor panel displays three real PSG voices, **not** frequency-domain audio EQ. The newly lowered pane preserves seven playlist rows by tightening spacing rather than dropping songs.
+Other elements update independently: clock each displayed second, selected playlist when the track changes, individual PSG voice bars when note/level changes, and only the old/new 12-pixel activity marker. The voice monitor has **four columns** (CH1/CH2/CH3/SPK4) but only three PSG oscillators. The PSG columns show **actual hardware attenuation** (0 loudest, 15 mute), not merely MIDI velocity, and identify the corresponding note below each bar. The SPK4 column lights only when a nonzero PIT2 divider has been programmed, and shows its bass note; the **READY** state means SPK4 is enabled but currently silent. **PAUSE** and **OFF** are distinct states. No FFT or PCM processing occurs. When VIS is displayed, changed meter values are inspected about six times per second and only the affected 40×29 bar plus its 40×8 label is repainted. The lower legend now uses white text over a black strip because its former gray-on-gray rendering was faint in the physical EX video. The newly lowered pane preserves seven playlist rows by tightening spacing rather than dropping songs.
 
 ## Serial mouse
 

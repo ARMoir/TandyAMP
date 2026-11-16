@@ -49,9 +49,17 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_LOWER_PANEL_Y 112U
 static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
 static ta_u32 ui_last_seconds=0xffffffffUL;
-static signed short meter_last_note[3]={-2,-2,-2};
-static ta_u8 meter_last_velocity[3]={255,255,255};
-static ta_u8 meter_last_active[3]={255,255,255};
+/* Fourth bar is PIT2 activity, NOT a fictitious fourth PSG oscillator.
+   Cache only rendered values to avoid re-painting unchanged meters. */
+#define UI_METER_COUNT 4U
+#define UI_METER_X 18U
+#define UI_METER_STEP 77U
+#define UI_METER_TOP 139U
+#define UI_METER_H 29U
+#define UI_METER_W 40U
+static signed short meter_last_note[UI_METER_COUNT]={-2,-2,-2,-2};
+static ta_u8 meter_last_level[UI_METER_COUNT]={255,255,255,255};
+static ta_u8 meter_last_mode[UI_METER_COUNT]={255,255,255,255};
 static unsigned song_tick_part=0;
 static unsigned last_audible_volume=15U;
 static unsigned button_cache_valid=0;
@@ -421,7 +429,10 @@ static void draw_base(void)
     box(8,67,302,3,0);
     box(10,68,298,1,8);
     frame(1,UI_LOWER_PANEL_Y,318,86,8);
-    label(8,189,"SPACE PAUSE  K SPK4  M MUTE  D DRUM  Q QUIT",7,49);
+    /* Recording from the physical EX showed this legend was too faint.
+       White text on black is clearer than gray text on gray chrome. */
+    box(7,187,306,10,0);
+    label(11,189,"SPACE PAUSE  K SPK4  M MUTE  Q QUIT",15,44);
 }
 static void draw_playlist(void)
 {
@@ -444,6 +455,39 @@ static void draw_playlist(void)
 }
 /* Panel contents and hardware-driven meters are independent.
    The pane is only cleared on track change or VIS/playlist toggle. */
+/* Display only true, programmed output. PSG bars use attenuation 0
+   (maximum output) .. 15 (silence), NOT raw MIDI note velocity. */
+static ta_u8 meter_mode(unsigned i)
+{
+    if(i<TA_VOICES){
+        const TAVoice *v=&ta.voices[i];
+        return (ta_u8)((ta.playing && !ta.paused &&
+                v->note>=0 && v->level<15U)?2U:0U);
+    }
+    if(!ta.speaker_enabled)return 0; /* OFF */
+    if(ta.paused)return 3; /* PAUSED */
+    return (ta_u8)((ta.playing &&
+        ta.speaker_divider!=0 && ta.speaker_voice.note>=0)?2U:1U);
+}
+static signed short meter_note(unsigned i,ta_u8 mode)
+{
+    return mode==2U?(i<TA_VOICES?ta.voices[i].note:
+                     ta.speaker_voice.note):-1;
+}
+static ta_u8 meter_level(unsigned i,ta_u8 mode)
+{
+    if(mode!=2U)return 15U;
+    return i<TA_VOICES?ta.voices[i].level:0U;
+}
+static void note_caption(char *out,signed short note)
+{
+    static const char * const names[12]={
+        "C","C#","D","D#","E","F","F#","G","G#","A","A#","B"
+    };
+    if(note<0)strcpy(out,"--");
+    else sprintf(out,"%s%d",names[(unsigned)note%12U],
+                 ((int)note/12)-1);
+}
 static void draw_panel(void)
 {
     unsigned i;
@@ -453,42 +497,68 @@ static void draw_panel(void)
         return;
     }
     box(3,127,314,59,0);
-    label(8,129,ta.speaker_enabled?
-          "3 PSG TONES + PC SPEAKER":"3 PSG TONE CHANNELS",7,35);
-    for(i=0;i<3;i++){
-        unsigned x=26+i*95;
-        char n[4];
-        box(x,141,40,33,8);
-        sprintf(n,"CH%u",i+1);
-        label(x+8,177,n,14,3);
+    label(8,129,"3 PSG TONES + BASS-ONLY SPK4",7,38);
+    for(i=0;i<UI_METER_COUNT;i++){
+        unsigned x=UI_METER_X+i*UI_METER_STEP;
+        char n[5];
+        box(x,UI_METER_TOP,UI_METER_W,UI_METER_H,8);
+        if(i<3U)sprintf(n,"CH%u",i+1U);
+        else strcpy(n,"SPK4");
+        label(x+6,171,n,14,4);
         meter_last_note[i]=-2;
-        meter_last_velocity[i]=255;
-        meter_last_active[i]=255;
+        meter_last_level[i]=255;
+        meter_last_mode[i]=255;
     }
+}
+static int meter_changed(void)
+{
+    unsigned i;
+    if(!show_equalizer)return 0;
+    for(i=0;i<UI_METER_COUNT;i++){
+        ta_u8 mode=meter_mode(i);
+        if(meter_last_mode[i]!=mode ||
+           meter_last_note[i]!=meter_note(i,mode) ||
+           meter_last_level[i]!=meter_level(i,mode))return 1;
+    }
+    return 0;
 }
 static void draw_meters(void)
 {
     unsigned i;
     if(!show_equalizer)return;
-    for(i=0;i<3;i++){
-        unsigned x=26+i*95,h;
-        TAVoice *v=&ta.voices[i];
-        ta_u8 playing=(ta_u8)(ta.playing && !ta.paused && v->note>=0);
-        if(meter_last_note[i]==v->note &&
-           meter_last_velocity[i]==v->velocity &&
-           meter_last_active[i]==playing)continue;
-        /* Only this voice's 40x33 bar is touched, not the whole pane. */
-        box(x,141,40,33,8);
-        if(playing){
-            h=8U+(unsigned)v->velocity*24U/127U
-              +((unsigned)v->note%4U)*2U;
-            if(h>31U)h=31U;
-            box(x+2,174-h,36,h,10);
-            box(x+2,174-h,36,1,14);
-        }
-        meter_last_note[i]=v->note;
-        meter_last_velocity[i]=v->velocity;
-        meter_last_active[i]=playing;
+    for(i=0;i<UI_METER_COUNT;i++){
+        unsigned x=UI_METER_X+i*UI_METER_STEP,h=0;
+        ta_u8 mode=meter_mode(i);
+        ta_u8 level=meter_level(i,mode);
+        signed short note=meter_note(i,mode);
+        char info[8];
+        ta_u8 textcolor=7;
+        if(meter_last_mode[i]==mode &&
+           meter_last_note[i]==note &&
+           meter_last_level[i]==level)continue;
+        /* This bar is the only one repainted when the note/level changes. */
+        box(x,UI_METER_TOP,UI_METER_W,UI_METER_H,8);
+        if(mode==2U){
+            if(i<TA_VOICES)
+                h=((unsigned)(15U-level)*25U+7U)/15U;
+            else h=23U; /* PIT2 has NO hardware volume register. */
+            if(h>25U)h=25U;
+            if(h){
+                box(x+2,UI_METER_TOP+27U-h,UI_METER_W-4U,h,
+                    (ta_u8)(i==3U?14:10));
+                box(x+2,UI_METER_TOP+27U-h,UI_METER_W-4U,1,15);
+            }
+            note_caption(info,note);
+            textcolor=(ta_u8)(i==3U?14:10);
+        }else if(i==3U){
+            strcpy(info,mode==0U?"OFF":mode==3U?"PAUSE":"READY");
+            textcolor=(ta_u8)(mode==0U?7:14);
+        }else strcpy(info,"--");
+        box(x,178,UI_METER_W,8,0);
+        label(x+5,179,info,textcolor,6);
+        meter_last_mode[i]=mode;
+        meter_last_note[i]=note;
+        meter_last_level[i]=level;
     }
 }
 static void draw_track_info(void)
@@ -592,19 +662,6 @@ static unsigned mouse_logical_x(unsigned raw)
 {
     unsigned x=raw/mouse_x_divisor;
     return x>319U?319U:x;
-}
-static int meter_changed(void)
-{
-    unsigned i;
-    if(!show_equalizer)return 0;
-    for(i=0;i<3;i++){
-        const TAVoice *v=&ta.voices[i];
-        ta_u8 active=(ta_u8)(ta.playing && !ta.paused && v->note>=0);
-        if(v->note!=meter_last_note[i] ||
-           v->velocity!=meter_last_velocity[i] ||
-           active!=meter_last_active[i])return 1;
-    }
-    return 0;
 }
 static void draw_dirty(void)
 {
@@ -809,8 +866,8 @@ static void input_key(int key)
     case 'K':
         ta_set_speaker(!ta.speaker_enabled);
         if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
+        /* The fourth bar reacts to engine state; no full-panel repaint. */
         ui_dirty|=UI_SPK4;
-        if(show_equalizer)ui_dirty|=UI_PANEL; /* update monitor label */
         break;
     case 'D':
         ta.drum_mode=(ta_u8)((ta.drum_mode+1U)%3U);
@@ -1026,7 +1083,7 @@ int main(int argc,char **argv)
                     last_refresh=song_ticks;
                 }
             }else if(ui_dirty || song_ticks<last_refresh
-                         || song_ticks-last_refresh>=5UL){
+                         || song_ticks-last_refresh>=(show_equalizer?3UL:5UL)){
                 draw_dirty();  /* max ~3.6Hz; only changed rectangles */
                 last_refresh=song_ticks;
             }

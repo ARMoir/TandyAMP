@@ -97,3 +97,7 @@ Current host framebuffer tests validate both five-button rows, all ten 58×17 la
 ### Loudness and volume-range regressions
 
 `tests/mixer_test.c` verifies the corrected 6,144-power mix ceiling (formerly 1,024), full-volume solo PSG output, safe four-channel power summing, gain above the normal level at `/VOL:20`, unchanged hard silence for MIDI-off notes, and master mute. `tests/ui_test.c` checks keyboard volume stepping and that the MUTE button restores a boosted volume. The DOS `/VOL:0..20` command line is documented in the README and independently checked against the current source. The volume change does not promise amplification beyond the SN76489 attenuation register's physical maximum; compare 15 and 20 on a known melody on the actual EX.
+
+### Four-channel monitor and audio-review regression
+
+Host tests verify that SPK4 being **enabled** but not programmed into PIT2 displays **READY**, while an actual nonzero `ta.speaker_divider` displays the yellow fourth bar and bass pitch. They check that the three PSG meters depend on final attenuation, changing only MIDI velocity without changing hardware output causes **zero redraw writes**, the speaker output is cleared on stop/pause, and the shortcut footer has high contrast. The enhanced monitor is polled roughly **6 times/s** only while visible and retains the low-redraw strategy. See the separate [audio and recording review](HARDWARE_AUDIO_REVIEW_3582.md) for observations from physical hardware.

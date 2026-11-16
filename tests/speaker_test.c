@@ -32,6 +32,7 @@ static void check_bass_exclusive(ta_u8 note,ta_u16 divider)
     assert(ta.speaker_voice.note==note);
     assert(ta.speaker_voice.source>=0);
     assert(pit_divider==divider);
+    assert(ta.speaker_divider==divider);
     for(i=0;i<TA_VOICES;i++)assert(ta.voices[i].note!=note);
 }
 int main(void)
@@ -111,7 +112,7 @@ int main(void)
     play_four(48);
     assert(pit_divider==9121);
     ta_pause();
-    assert(ta.paused && pit_divider==0);
+    assert(ta.paused && pit_divider==0 && ta.speaker_divider==0);
     ta_pause();
     assert(!ta.paused && pit_divider==9121);
     ta_set_volume(0);
@@ -119,7 +120,8 @@ int main(void)
     ta_set_volume(15);
     assert(pit_divider==9121);
     ta_stop();
-    assert(pit_divider==0 && !ta.playing && pit_off_calls>0);
+    assert(pit_divider==0 && ta.speaker_divider==0 &&
+           !ta.playing && pit_off_calls>0);
     assert(ta.speaker_enabled==1);
     clear_synth();
     assert(ta.speaker_enabled && ta.speaker_voice.source<0);

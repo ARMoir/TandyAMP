@@ -126,6 +126,7 @@ static void clear_synth(void)
     ta.speaker_voice.level=15;
     ta_pc_speaker(0);
     speaker_output=0;
+    ta.speaker_divider=0;
     ta.noise_left=0;
     ta.noise_length=0;
     ta.noise_last=15;
@@ -166,6 +167,7 @@ void ta_stop(void)
     silence_noise();
     ta_pc_speaker(0);
     speaker_output=0;
+    ta.speaker_divider=0;
     ta_psg_silence();
 }
 void ta_pause(void)
@@ -177,6 +179,7 @@ void ta_pause(void)
         ta_psg_silence();
         ta_pc_speaker(0);
         speaker_output=0;
+        ta.speaker_divider=0;
         for(i=0;i<TA_VOICES;i++)ta.voices[i].level=15;
         noise_output=15;
     }
@@ -368,6 +371,9 @@ static void render_speaker(void)
         ta_pc_speaker(divisor);
         speaker_output=divisor;
     }
+    /* This is actual programmed PIT2 output, not just SPK4 enabled.
+       The UI must never show activity simply because /SPK4 was set. */
+    ta.speaker_divider=divisor;
 }
 void ta_set_speaker(unsigned enabled)
 {
@@ -379,6 +385,7 @@ void ta_set_speaker(unsigned enabled)
             ta_pc_speaker(0);
             speaker_output=0;
         }
+        ta.speaker_divider=0;
     }
     synth_dirty=controllers_dirty=1;
     if(ta.playing && !ta.paused)flush_mix();

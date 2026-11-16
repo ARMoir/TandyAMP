@@ -63,6 +63,7 @@ typedef struct {
     ta_u8 master_attenuation, mix_attenuation;
     ta_u8 master_boost; /* 0..5 extra attenuation steps recovered at 16..20. */
     ta_u8 speaker_enabled; /* Preserved across tracks; default off. */
+    ta_u16 speaker_divider; /* Real PIT2 output: 0=off, nonzero=sounding. */
 } TAEngine;
 
 extern TAEngine ta;

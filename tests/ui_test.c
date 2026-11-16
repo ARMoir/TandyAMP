@@ -45,6 +45,8 @@ int main(void)
     ta.voices[2].velocity=95;
     song_ticks=0;
     draw_all();
+    assert(color_at(9,188)==0); /* new black footer */
+    assert(colored_pixels(11,189,220,7,15)>24);
 
     /* Exact 5x2 grid: no button text crosses its 58x17 inset.
        Transport row is separate from the functional mode/mute row. */
@@ -160,12 +162,49 @@ int main(void)
     draw_dirty();
     assert(ui_pixels_written==prior);
 
-    /* One voice changes; only its small meter rectangle is repainted. */
+    /* New meter uses final hardware attenuation, not MIDI velocity. */
+    assert(UI_METER_COUNT==4U);
+    assert(meter_mode(3)==0);
     ta.voices[1].note=76;
+    ta.voices[1].level=8;
     ta.voices[1].velocity=110;
     draw_dirty();
     delta=ui_pixels_written-prior;
     assert(delta>0 && delta<3500UL);
+    assert(meter_last_note[1]==76 && meter_last_level[1]==8);
+    prior=ui_pixels_written;
+    ta.voices[1].velocity=20; /* no actual hardware output change */
+    draw_dirty();
+    assert(ui_pixels_written==prior);
+
+    /* Enabled SPK4 differs from actual programmed PIT2 note. */
+    ta.speaker_enabled=1;
+    ui_dirty=UI_SPK4;
+    draw_dirty();
+    assert(meter_mode(3)==1 && meter_last_mode[3]==1);
+    assert(colored_pixels(UI_METER_X+3U*UI_METER_STEP,
+            UI_METER_TOP,UI_METER_W,UI_METER_H,14)==0);
+    prior=ui_pixels_written;
+    draw_dirty();
+    assert(ui_pixels_written==prior);
+    ta.speaker_voice.note=36; /* C2 bass */
+    ta.speaker_divider=18243;
+    draw_dirty();
+    delta=ui_pixels_written-prior;
+    assert(delta>0 && delta<2500UL);
+    assert(meter_mode(3)==2 && meter_last_note[3]==36);
+    assert(colored_pixels(UI_METER_X+3U*UI_METER_STEP+2,
+            UI_METER_TOP,UI_METER_W-4,UI_METER_H,14)>40);
+    prior=ui_pixels_written;
+    draw_dirty();
+    assert(ui_pixels_written==prior);
+    ta.speaker_divider=0;
+    draw_dirty();
+    assert(meter_mode(3)==1 && meter_last_mode[3]==1);
+    ta.speaker_enabled=0;
+    ui_dirty=UI_SPK4;
+    draw_dirty();
+    assert(meter_mode(3)==0 && meter_last_mode[3]==0);
 
     /* A pause changes its indicator but never forces a full repaint. */
     ta.paused=1;
@@ -330,7 +369,8 @@ int main(void)
 
     printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
            "and 10 clickable 5x2 controls including SPK4 and MUTE, title, zero-write idle, "
-           "clock-only refresh, per-voice meters, software cursor restore, "
+           "clock-only refresh, four accurate meters, SPK4 ready-vs-playing, "
+           "high contrast footer, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;
 }

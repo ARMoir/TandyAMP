@@ -56,6 +56,12 @@ demand("TA_SPK_BASS_MIN 24" in MIDI_SOURCE and "TA_SPK_BASS_MAX 52" in MIDI_SOUR
        and "24–52" in README, "SPK4 bass-only note range undocumented")
 demand("speaker_divider_for" in MIDI_SOURCE and "1.193182" in README,
        "PIT2 true-octave note mapping undocumented")
+demand("UI_METER_COUNT 4U" in CODE and "four-column" in README,
+       "Four-column real-output monitor undocumented")
+demand("ta.speaker_divider" in CODE and "speaker_divider" in MIDI,
+       "PIT2 actual activity telemetry missing")
+demand("white-on-black" in UI and "box(7,187,306,10,0)" in CODE,
+       "EX contrast fix not documented or implemented")
 demand("#define UI_BUTTON_WIDTH 58U" in CODE and "58×17 pixels" in UI,
        "Two-row button width mismatch")
 demand("playlist_find_current_directory" in CODE and "current working directory" in README,
