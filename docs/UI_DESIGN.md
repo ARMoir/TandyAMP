@@ -1,61 +1,54 @@
-# TandyAMP visual design and graphics implementation
+# TandyAMP visual design — two balanced rows
 
-The owner supplied an original classic Winamp player/equalizer/playlist screenshot as a **reference**, not a resource to ship. TandyAMP independently recreates the compact metallic feel: navy title bars, dark insets, green LED-style lettering, gray beveled transport controls and a black playlist. No licensed Winamp artwork or bitmap has been copied.
+The original classic Winamp screenshot provided by the project owner is used as a **design reference**, not as a source of code or artwork. TandyAMP uses independently drawn gray/blue chrome, dark displays, green text and a 5×7 font compatible with the original Tandy's **320×200, 16-color mode 09h**.
 
-## Actual 320×200 layout (Tandy mode 09h)
+## Current 5×2 control layout
 
-| Area | Coordinates / role |
+All **ten** functional buttons are the same **58×17 pixels**, with five equal-spaced controls per row. Columns begin at x=10, 70, 130, 190, 250 (2-pixel horizontal gaps).
+
+| Row | Y range | Controls |
+| --- | --- | --- |
+| Playback | y=72–88 | PREV · PLAY · PAUSE · STOP · NEXT |
+| Options | y=91–107 | VIS · LOOP · DRUM · SPK4 · MUTE |
+
+SPK4 is no longer in the title bar. Its second-row button clearly shows **SPK4 ON** in green or **SPK4 OFF** in red and has the **K** shortcut. It remains an *optional bass-only* fourth pitched voice using PIT channel 2 (MIDI notes 24–52). MUTE is the **tenth real control**, not a spacer: **M** or a click mutes audio, and the next press restores the previous audible master volume. The label shows **MUTE ON/OFF**.
+
+The widest eight-character captions are 47 pixels at the 5×7 font's six-pixel character pitch; a 58-pixel button provides ample inset. Mouse click zones are exactly the drawn rectangles. The original Winamp-inspired metal bevel and green status text remain.
+
+## Screen allocation
+
+| Region | Location / content |
 | --- | --- |
-| Main panel | roughly y=1–98; title, clock, song name and MIDI/drum/volume information |
-| Clock | inset near x=7–116, y=19–63; shows elapsed minutes/seconds |
-| Track display | x≈123–312, y=19–63; track filename and mode/volume |
-| Activity marker | y≈68; 12-pixel moving indicator only — **not** a seek bar |
-| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index; **ninth SPK4 64×16-pixel title-bar button** at x=147, y=2–17 |
-| Lower panel | y≈101–198; either playlist or **three-tone monitor** |
-| Playlist | up to seven visible entries around the active item, in a list of up to **64** |
-| Voice monitor | three bars driven from software voice note/velocity/activity, not audio FFT |
-| Software cursor | original 8×11 black/white sprite, drawn in banked graphics memory |
+| Upper frame | y=1–110: player title, time, track, volume, status |
+| Title bar | y=3–15: title and mouse-driver status; no longer a separate SPK4 |
+| Clock and song | y=19–63 in black inset windows |
+| Activity marker | y=67–69, *not* a seek bar |
+| First row | y=72–88, five transport buttons |
+| Second row | y=91–107, five options including SPK4 and MUTE |
+| Lower pane | y=112–197, playlist or three-voice monitor |
+| Playlist | seven visible songs with 8-pixel row spacing, from up to 64 entries |
+| Bottom legend | y=189–195, brief keyboard reminder |
 
-Actual bottom-row button labels (left to right): **PREV, PLAY, PAUSE, STOP, NEXT, VIS, LOOP, DRUM**. The new ninth **SPK4** titlebar button independently toggles an optional fourth PIT2 PC-speaker tone; its pressed state reflects the feature and its shortcut is **K**. The previous seven-button layout was revised to accommodate DRUM. Each 5×7 glyph uses a six-pixel advance and is horizontally centered so it does not obscure neighboring bevels.
+The Winamp reference is vertically stacked; the EX cannot show three tall windows without tiny controls. Instead, one lower pane is toggled by **E** / VIS. There is no real EQ, draggable seek bar, shuffle or graphical file picker.
 
-The original 267×422 stacked Winamp screenshot cannot be fitted literally onto 320×200 without illegible controls, so the lower region **switches modes** with `E` / VIS rather than opening a second window. There is no functional equalizer, 10-band EQ slider, drag seek bar, file browser or resizable skin yet.
+## Minimal redraws
 
-## Rendering / performance
+Tandy video mode 09h has four interleaved 8 KiB banks at `B800:0000`, with two color pixels per byte. TandyAMP avoids full-screen refreshes during normal playback. Its ten buttons share a state-aware `draw_button()` routine that caches each button's prior pressed state. A general transport redraw updates only changed buttons; separate **UI_SPK4** and **UI_MUTE** dirty flags redraw only their button. Volume changes update the text field; the cursor is removed and restored only when there are actual changed regions.
 
-Tandy mode `09h` places 16-color pixel pairs at `B800:0000` across **four 8 KB banks**, indexed by scanline modulo four, at **160 bytes per scanline**. TandyAMP draws with an original 5×7 bitmap font, direct writes to VRAM and integer geometry.
+Other elements update independently: clock each displayed second, selected playlist when the track changes, individual PSG voice bars when note/level changes, and only the old/new 12-pixel activity marker. The voice-monitor panel displays three real PSG voices, **not** frequency-domain audio EQ. The newly lowered pane preserves seven playlist rows by tightening spacing rather than dropping songs.
 
-A full background/frame draw occurs on GUI entry. During playback the dirty-region renderer changes only necessary areas:
+## Serial mouse
 
-- clock digits when the display second changes;
-- filename, drum state and master volume when their associated state changes;
-- button faces on transport, loop, VIS or drum mode changes;
-- playlist pane on selection or mode change;
-- separate 40×42 voice meters only when their represented note, velocity or activity changes;
-- the 12×1 activity marker at its former and new positions.
+Movement and button input still come from a DOS `INT 33h` driver (e.g. correctly configured CuteMouse). Because some drivers cannot render in the Tandy's banked graphics mode, TandyAMP draws its own **8×11 software arrow** and saves/restores underlying pixels. Its input code handles brief captured clicks, held-button debouncing, and either 320 or 640 horizontal mouse units. All ten buttons use the same geometry for drawing and hit-testing. `/NOMOUSE` and keyboard shortcuts remain available.
 
-Host framebuffer tests verify button text bounds, display title, zero-write idle redraws and upper bounds on common updates. These checks reduce risk on a **7 MHz NEC V20** but do not establish measured hardware FPS or sound jitter.
+**MOUSE OK** confirms an INT 33h interface exists, not that the physical serial mouse is working. The current UI has passed host framebuffer tests; its appearance and responsiveness on the 7 MHz EX still require testing on real hardware.
 
-## Mouse cursor and click handling
+## Development history
 
-The first mouse code used `INT 33h AX=1` to ask a DOS driver to draw its own pointer. Some serial-mouse drivers recognize `INT 33h` but **do not render a pointer in Tandy banked graphics mode 09h**. The updated player draws its own 8×11 arrow, saving and restoring each pixel underneath the cursor. Before repainting the UI it removes the pointer; after repainting it re-reads the changed background and draws it again, avoiding cursor trails.
+The physical EX recording confirmed an earlier GUI rendered and produced sound, but the old tiny buttons overlapped and status updates repainted too much. Later iterations centered the buttons, added DRUM, and temporarily placed SPK4 in the title bar. The current revision consolidates all controls into two equal rows of five while keeping individual-button redraw caching.
 
-`INT 33h` is still used for **input**: reset/presence, coordinate bounds, position and button state, and AX=5 click counts for short clicks. Startup probes 320-versus-640 horizontal units, and keyboard operation is always available. Titlebar text says `MOUSE OK` if the DOS interface was detected, `NO MOUSE` otherwise; it **does not prove the physical serial mouse was found**. A DOS serial mouse driver such as CuteMouse must be loaded first. `/NOMOUSE` disables detection/cursor.
+## Related documentation
 
-The software cursor path and click dispatch are CI-tested with a simulated framebuffer. Physical EX mouse confirmation is pending.
-
-## Evolution from the real EX video
-
-The earlier recording `3578.mp4` showed the main player and audible MIDI on physical hardware, while button labels overlapped neighboring borders. The original 33-pixel buttons were enlarged and centered; later the layout changed again to **eight 36-pixel** buttons for DRUM.
-
-Originally the player frequently repainted most of the song display and entire visualizer on a timer. That was replaced by cached/dirty sections, so clock and voice changes do not repeatedly redraw static UI. The video proves an earlier GUI ran on the EX; improvements since then require their own on-device evaluation.
-
-## References and boundaries
-
-- [README](../README.md): launch, keyboard, mouse setup and limitations
-- [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md): audio and UI data flow
-- [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md): specific Winamp source units reviewed and licensing
-- Owner-provided classic Winamp screenshot; intentionally not redistributed
-
-## Optional fourth voice UI
-
-The eight existing 36-pixel transport buttons are **unchanged**. The larger **64×16 SPK4 button** sits between the title and mouse-status indicator (x=147..210, y=2..17), with visibly separate **SPK4 ON** (green) and **SPK4 OFF** (red) labels. The click area matches the full visible rectangle and no existing transport label is squeezed or clipped. A click or **K** calls the same `ta_set_speaker()` engine control and marks only the 64×16 button and, when visible, the voice-monitor pane dirty. The switch is available during playback, paused or stopped, with no forced MIDI replay. The lower monitor text indicates when the extra channel is enabled, although only the three PSG tones have true volume meters.
+- [README](../README.md): commands, MIDI behavior, shortcuts
+- [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md): code structure and hardware
+- [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md): original Winamp conceptual design reference and license boundaries

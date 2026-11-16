@@ -42,17 +42,22 @@ demand("#define MAX_SONGS 64" in CODE and "64" in README, "Playlist capacity und
 demand("#define PATHLEN 64" in CODE and "63 characters" in README, "Filename limit undocumented")
 demand("#define TA_MAX_TRACKS 24" in MIDI and "24" in README, "Track limit undocumented")
 demand("#define TA_MAX_FILE 45056U" in MIDI and "45,056" in README, "44 KiB file limit undocumented")
-demand("#define UI_BUTTON_COUNT 9U" in CODE and "ninth" in UI, "Button count mismatch")
-demand("UI_ROW_BUTTONS 8U" in CODE, "Transport row geometry changed")
+demand("#define UI_BUTTON_COUNT 10U" in CODE and "ten" in UI,
+       "Ten-button control count mismatch")
+demand("#define UI_BUTTON_COLS 5U" in CODE and "two" in UI,
+       "Two even rows of five missing")
 demand('"/SPK4"' in CODE and '"/NOSPK4"' in CODE, "Missing speaker CLI options")
 demand("ta_set_speaker" in CODE and "SPK4" in README, "Speaker toggle undocumented")
-demand("#define UI_SPK_BUTTON_W 64U" in CODE and "64×16" in UI,
-       "SPK4 button dimensions inconsistent")
+demand("#define UI_BUTTON_HEIGHT 17U" in CODE and "58×17" in UI,
+       "58×17 control dimensions inconsistent")
+demand("case 'M':" in CODE and "else if(id==9)input_key('M')" in CODE,
+       "Mute keyboard or mouse action missing")
 demand("TA_SPK_BASS_MIN 24" in MIDI_SOURCE and "TA_SPK_BASS_MAX 52" in MIDI_SOURCE
        and "24–52" in README, "SPK4 bass-only note range undocumented")
 demand("speaker_divider_for" in MIDI_SOURCE and "1.193182" in README,
        "PIT2 true-octave note mapping undocumented")
-demand("#define UI_BUTTON_WIDTH 36U" in CODE and "36-pixel" in UI, "Button width mismatch")
+demand("#define UI_BUTTON_WIDTH 58U" in CODE and "58 pixels" in UI,
+       "Two-row button width mismatch")
 demand("playlist_find_current_directory" in CODE and "current working directory" in README,
        "Automatic MIDI directory discovery undocumented")
 demand("mouse_cursor_draw" in CODE and "/NOMOUSE" in README,

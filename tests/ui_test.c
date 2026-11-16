@@ -26,8 +26,9 @@ int main(void)
 {
     unsigned i,x,textw,start;
     unsigned long initial,delta,prior;
-    static const char *reference[8]={
-        "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM"
+    static const char *reference[UI_BUTTON_COUNT]={
+        "PREV","PLAY","PAUSE","STOP","NEXT",
+        "VIS","LOOP","DRUM","SPK4 OFF","MUTE OFF"
     };
 
     /* Render the same CANYON.MID scene seen on the real hardware video. */
@@ -45,57 +46,90 @@ int main(void)
     song_ticks=0;
     draw_all();
 
-    /* Keep the original eight 5x7 labels within their unchanged buttons.
-       The ninth SPK4 button lives in the title bar. */
-    for(i=0;i<UI_ROW_BUTTONS;i++){
-        x=UI_BUTTON_X+i*UI_BUTTON_STEP;
+    /* Exact 5x2 grid: no button text crosses its 58x17 inset.
+       Transport row is separate from the functional mode/mute row. */
+    assert(UI_BUTTON_COUNT==10U && UI_BUTTON_COLS==5U);
+    assert(UI_BUTTON_WIDTH==58U && UI_BUTTON_HEIGHT==17U);
+    assert(UI_BUTTON_Y==72U && button_y(5)==91U);
+    assert(button_x(0)==button_x(5));
+    assert(button_x(4)+UI_BUTTON_WIDTH<320U);
+    for(i=0;i<UI_BUTTON_COUNT;i++){
+        unsigned y=button_y(i),tx,ty;
+        ta_u8 basecolor=(ta_u8)(i==1?15:0);
+        x=button_x(i);
         textw=(unsigned)strlen(reference[i])*6U-1U;
         start=x+(UI_BUTTON_WIDTH-textw)/2U;
-        assert(!strcmp(reference[i],button_labels[i]));
-        assert(start>x+1 && start+textw<x+UI_BUTTON_WIDTH-1);
-        assert(colored_pixels(start,80,textw,7,(i==1)?15:0)>4);
-        assert(color_at(x+UI_BUTTON_WIDTH-1,80)==0);
-        if(i+1<UI_ROW_BUTTONS)assert(color_at(x+UI_BUTTON_WIDTH,80)==8);
-        assert(button_at(x+UI_BUTTON_WIDTH/2,80)==(int)i);
+        tx=start;
+        ty=y+(UI_BUTTON_HEIGHT-7U)/2U;
+        assert(!strncmp(reference[i],button_labels[i],
+                        strlen(button_labels[i])));
+        assert(start>x+2U && start+textw<x+UI_BUTTON_WIDTH-2U);
+        assert(button_at(x+UI_BUTTON_WIDTH/2U,
+                         y+UI_BUTTON_HEIGHT/2U)==(int)i);
+        assert(button_at(x,y)==(int)i);
+        assert(button_at(x+UI_BUTTON_WIDTH-1,
+                         y+UI_BUTTON_HEIGHT-1)==(int)i);
+        assert(color_at(x+UI_BUTTON_WIDTH-1,ty)==0);
+        if(i%UI_BUTTON_COLS<UI_BUTTON_COLS-1)
+            assert(color_at(x+UI_BUTTON_WIDTH,ty)==8);
+        if(i<8)
+            assert(colored_pixels(tx,ty,textw,7,basecolor)>4);
+        else{
+            assert(colored_pixels(tx,ty,23,7,0)>4);
+            assert(colored_pixels(tx+30,ty,17,7,4)>3);
+        }
     }
-    assert(UI_BUTTON_X+(UI_ROW_BUTTONS-1)*UI_BUTTON_STEP+UI_BUTTON_WIDTH<=SCREEN_W-5);
-    assert(UI_BUTTON_COUNT==9U);
-    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,9)==8);
-    assert(button_at(UI_SPK_BUTTON_X,UI_SPK_BUTTON_Y)==8);
-    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W-1,
-                     UI_SPK_BUTTON_Y+UI_SPK_BUTTON_H-1)==8);
-    assert(button_at(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W/2,18)==-1);
-    assert(UI_SPK_BUTTON_X+UI_SPK_BUTTON_W<217U); /* no mouse status overlap */
-    assert(UI_SPK_BUTTON_X>138U); /* no title text overlap */
-    assert(button_at(2,80)==-1);
-    /* Click the upper-titlebar switch: state must change without
-       restarting the MIDI clock, and repeated clicks must toggle back. */
+    assert(button_at(8,80)==-1);
+    assert(button_at(39,90)==-1); /* gap between rows */
+    assert(button_at(300,110)==-1);
+    assert(button_at(159,80)==2); /* pause */
+    assert(button_at(159,99)==7); /* drum */
+    assert(button_at(button_x(8)+24,button_y(8)+8)==8);
+    assert(button_at(button_x(9)+24,button_y(9)+8)==9);
+
+    /* The SPK4 button joins its peers in the second row. A toggle only
+       changes its 58x17 rectangle, not the other nine buttons. */
     {
         ta_u32 clock=ta.clock_q8;
-        unsigned long before=ui_pixels_written, repaint;
+        unsigned long before=ui_pixels_written,paint;
         assert(ta.speaker_enabled==0);
         click_button(8);
         assert(ta.speaker_enabled==1 && ta.clock_q8==clock);
         draw_dirty();
-        repaint=ui_pixels_written-before;
-        assert(repaint>0 && repaint<2200UL); /* isolated 64x16 switch */
-        assert(colored_pixels(UI_SPK_BUTTON_X+7,7,23,7,15)>4);
-        assert(colored_pixels(UI_SPK_BUTTON_X+37,7,12,7,10)>3);
+        paint=ui_pixels_written-before;
+        assert(paint>0 && paint<2600UL);
+        assert(colored_pixels(button_x(8)+8,button_y(8)+5,23,7,15)>4);
+        assert(colored_pixels(button_x(8)+38,button_y(8)+5,11,7,10)>3);
         before=ui_pixels_written;
         click_button(8);
         assert(ta.speaker_enabled==0 && ta.clock_q8==clock);
         draw_dirty();
-        assert(ui_pixels_written-before<2200UL);
-        assert(colored_pixels(UI_SPK_BUTTON_X+37,7,18,7,4)>3);
+        assert(ui_pixels_written-before<2600UL);
+        assert(colored_pixels(button_x(8)+38,button_y(8)+5,17,7,4)>3);
     }
-    assert(button_at(20,100)==-1);
+    /* MUTE is real and remembers the prior volume, not a dead filler. */
+    {
+        unsigned v=15U-ta.master_attenuation;
+        unsigned long before=ui_pixels_written;
+        assert(v>0);
+        click_button(9);
+        assert(ta.master_attenuation==15);
+        draw_dirty();
+        assert(ui_pixels_written-before<10000UL); /* includes volume text */
+        assert(colored_pixels(button_x(9)+38,button_y(9)+5,11,7,14)>3);
+        click_button(9);
+        assert(ta.master_attenuation==15U-v);
+        draw_dirty();
+        assert(colored_pixels(button_x(9)+38,button_y(9)+5,17,7,4)>3);
+    }
+    assert(button_at(20,109)==-1);
 
     /* Mode indicator/button repaints don't require a full-screen redraw. */
     ta.drum_mode=TA_DRUM_ON;
     ta.drum16=1;
     ui_dirty=UI_BUTTONS|UI_TRACK;
     draw_dirty();
-    assert(colored_pixels(UI_BUTTON_X+7*UI_BUTTON_STEP+2,80,32,7,15)>3);
+    assert(colored_pixels(button_x(7)+8,button_y(7)+5,30,7,15)>3);
     /* The upper-right now-playing window must not be empty. */
     assert(colored_pixels(135,38,162,7,10)>10);
     assert(colored_pixels(135,25,135,7,7)>10);
@@ -139,9 +173,9 @@ int main(void)
     prior=ui_pixels_written;
     draw_dirty();
     delta=ui_pixels_written-prior;
-    /* Nine buttons redraw only ~20K pixels including the titlebar.
-       Still substantially below a whole 320x200 frame. */
-    assert(delta>0 && delta<22000UL);
+    /* Cached per-button paint: pausing updates transport state only,
+       not the second row or a full 320x200 frame. */
+    assert(delta>0 && delta<13000UL);
 
     /* Volume changes while paused stay silent and repaint only track text. */
     ta.master_attenuation=0;
@@ -153,6 +187,8 @@ int main(void)
     assert(ta.master_attenuation==15);
     for(i=0;i<30;i++)input_key('+');
     assert(ta.master_attenuation==0);
+    input_key('M');assert(ta.master_attenuation==15);
+    input_key('M');assert(ta.master_attenuation==0);
 
     /* Pointer is a software sprite over the actual banked framebuffer.
        Moving it must restore exactly the original pixels underneath. */
@@ -169,11 +205,11 @@ int main(void)
         mouse_cursor_remove();
         assert(!memcmp(screenshot,host_screen,sizeof screenshot));
 
-        mouse_move_to(93,81);
+        mouse_move_to(159,80);
         assert(mouse_cursor_visible);
         mouse_cursor_remove();
         assert(!memcmp(screenshot,host_screen,sizeof screenshot));
-        mouse_move_to(93,81);
+        mouse_move_to(159,80);
         ui_dirty|=UI_BUTTONS;
         draw_dirty();
         assert(mouse_cursor_visible);
@@ -197,24 +233,35 @@ int main(void)
         /* Holding a button is one click; fast press/release counted via
            INT 33h AX=5 is not dropped between polling intervals. */
         ta.playing=1;ta.paused=0;mouse_was_down=0;
-        mouse_sample(93,81,1,1,93,81);
+        mouse_sample(159,80,1,1,159,80);
         assert(ta.paused==1);
-        mouse_sample(93,81,1,0,93,81);
+        mouse_sample(159,80,1,0,159,80);
         assert(ta.paused==1);
-        mouse_sample(93,81,0,0,93,81);
-        mouse_sample(93,81,0,1,93,81);
+        mouse_sample(159,80,0,0,159,80);
+        mouse_sample(159,80,0,1,159,80);
         assert(ta.paused==0);
         draw_dirty();
 
-        /* Click SPK4 with a real cursor position and captured AX=5 press;
-           the 64x16 hit zone is separate from the transport row. */
+        /* Click second-row SPK4 through the serial mouse interface,
+           then MUTE. The old title-bar location is no longer clickable. */
         mouse_was_down=0;
-        mouse_sample(UI_SPK_BUTTON_X+17,9,1,1,UI_SPK_BUTTON_X+17,9);
+        mouse_sample(button_x(8)+17,button_y(8)+8,1,1,
+                     button_x(8)+17,button_y(8)+8);
         assert(ta.speaker_enabled==1);
         draw_dirty();
-        mouse_sample(UI_SPK_BUTTON_X+17,9,0,0,UI_SPK_BUTTON_X+17,9);
-        mouse_sample(UI_SPK_BUTTON_X+17,9,0,1,UI_SPK_BUTTON_X+17,9);
+        mouse_sample(button_x(8)+17,button_y(8)+8,0,0,
+                     button_x(8)+17,button_y(8)+8);
+        mouse_sample(button_x(8)+17,button_y(8)+8,0,1,
+                     button_x(8)+17,button_y(8)+8);
         assert(ta.speaker_enabled==0);
+        draw_dirty();
+        mouse_sample(button_x(9)+17,button_y(9)+8,0,1,
+                     button_x(9)+17,button_y(9)+8);
+        assert(ta.master_attenuation==15);
+        draw_dirty();
+        mouse_sample(button_x(9)+17,button_y(9)+8,0,1,
+                     button_x(9)+17,button_y(9)+8);
+        assert(ta.master_attenuation==0);
         draw_dirty();
         mouse_cursor_remove();
         mouse_present=0;
@@ -279,7 +326,7 @@ int main(void)
     }
 
     printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
-           "and 9 clickable labels including low-redraw SPK4, DRUM mode, song title, zero-write idle, "
+           "and 10 clickable 5x2 controls including SPK4 and MUTE, title, zero-write idle, "
            "clock-only refresh, per-voice meters, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;

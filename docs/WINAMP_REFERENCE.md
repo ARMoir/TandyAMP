@@ -9,7 +9,7 @@ Source reviewed: [alexfreud/winamp](https://github.com/alexfreud/winamp), `commu
 | Winamp reference | Design observation | Independent TandyAMP implementation |
 | --- | --- | --- |
 | [`draw_main.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/draw_main.cpp) | Distinct routines for elapsed time, song name, controls and state | Original compact LED display and status drawing; fixed position/time labels; minimal dirty updates |
-| [`main_buttons.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/main_buttons.cpp) | Button events separated from drawing | TandyAMP has keyboard event handler and mouse hit testing, with eight centered transport buttons |
+| [`main_buttons.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/main_buttons.cpp) | Button events separated from drawing | TandyAMP has keyboard event handler and mouse hit testing, with ten evenly spaced clickable buttons in two rows |
 | [`draw_pe.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/draw_pe.cpp) | Playlist rows, highlighting and selection | Up to 64 names, alphabetic auto-scan when no explicit songs; seven visible rows following current track |
 | [`draw_eq.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/draw_eq.cpp) | Separate visualization/equalizer drawing | VIS button toggles three-note monitor; not a true equalizer |
 | [`classic_vis.cpp`](https://github.com/alexfreud/winamp/blob/community/Src/Winamp/classic_vis.cpp) | PCM-driven FFT/oscilloscope visualization | Not ported. V20 displays voice/velocity information directly from MIDI state |
@@ -19,8 +19,8 @@ Source reviewed: [alexfreud/winamp](https://github.com/alexfreud/winamp), `commu
 
 - **320×200 Tandy graphics, not VGA or Win32.** The reference screenshot's stacked windows have been condensed into a single main panel plus one lower pane that toggles between PLAYLIST and VOICE MONITOR.
 - Top panel: current filename, elapsed clock, MIDI/drum mode, master volume, playback state and activity marker. The marker does not seek.
-- Eight independent clickable/keyboard-controlled buttons: **PREV / PLAY / PAUSE / STOP / NEXT / VIS / LOOP / DRUM**.
-- The enlarged SPK4 titlebar switch uses its own dirty-region redraw and explicit ON/OFF indicator. The original serial-mouse workaround renders an 8×11 software cursor, with `INT 33h` only for input; the old driver-owned graphics cursor is no longer used.
+- Ten independent clickable/keyboard-controlled buttons in two balanced rows: **PREV / PLAY / PAUSE / STOP / NEXT** and **VIS / LOOP / DRUM / SPK4 / MUTE**.
+- SPK4 now sits in the options row with a dedicated dirty-region redraw and explicit ON/OFF indicator; MUTE behaves similarly. The original serial-mouse workaround renders an 8×11 software cursor, with `INT 33h` only for input; the old driver-owned graphics cursor is no longer used.
 - Dirty-region renderer avoids repeatedly drawing the whole frame and panel.
 - `TANDYAMP` without a filename automatically creates a **64-entry** alphabetized `*.MID` playlist from the current working directory; explicit song arguments override it.
 - No literal bitmap/skin copying, playlist-row clicking, real EQ, seeking, shuffle or desktop windows.
@@ -38,4 +38,8 @@ See [UI_DESIGN.md](UI_DESIGN.md) for geometry and [PLAYER_ARCHITECTURE.md](PLAYE
 
 ## PIT2 optional speaker control
 
-The ninth button is **SPK4** in the title bar, not another crowded transport button. It is an original UI adaptation: the eight 36-pixel row controls remain readable. The K shortcut and `/SPK4` option select the same real MIDI-engine state. This is not a new PSG oscillator; it uses the separate PC speaker circuit only when the three Tandy tone outputs are already occupied and a fourth useful note is available.
+The **SPK4** button is in the second of two balanced five-button rows, alongside DRUM and a real MUTE control. All buttons are 58×17 pixels. The K shortcut and `/SPK4` option select the same real MIDI-engine state. This is not a new PSG oscillator; it uses the separate PC speaker circuit only when the three Tandy tone outputs are already occupied and a fourth useful note is available.
+
+### Two-row controls
+
+Current TandyAMP places all ten functional controls in two 5-button rows instead of the original cramped transport strip plus separate SPK4 title switch. The additional MUTE button recalls the previous audible master volume. The appearance remains independently authored, with no Winamp sprites or program code copied.

@@ -35,22 +35,27 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_PROGRESS 0x20U
 #define UI_METERS   0x40U
 #define UI_SPK4     0x80U
-#define UI_ALL      0xffU
-#define UI_BUTTON_X 8U
-#define UI_BUTTON_STEP 38U
-#define UI_BUTTON_WIDTH 36U
-#define UI_BUTTON_COUNT 9U
-#define UI_ROW_BUTTONS 8U
-#define UI_SPK_BUTTON_X 147U
-#define UI_SPK_BUTTON_Y 2U
-#define UI_SPK_BUTTON_W 64U
-#define UI_SPK_BUTTON_H 16U
+#define UI_MUTE     0x100U
+#define UI_ALL      0x1ffU
+/* Five consistently sized controls per row.  All labels fit in mode 09h. */
+#define UI_BUTTON_COUNT 10U
+#define UI_BUTTON_COLS 5U
+#define UI_BUTTON_X 10U
+#define UI_BUTTON_STEP 60U
+#define UI_BUTTON_WIDTH 58U
+#define UI_BUTTON_HEIGHT 17U
+#define UI_BUTTON_Y 72U
+#define UI_BUTTON_ROW_STEP 19U
+#define UI_LOWER_PANEL_Y 112U
 static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
 static ta_u32 ui_last_seconds=0xffffffffUL;
 static signed short meter_last_note[3]={-2,-2,-2};
 static ta_u8 meter_last_velocity[3]={255,255,255};
 static ta_u8 meter_last_active[3]={255,255,255};
 static unsigned song_tick_part=0;
+static unsigned last_audible_volume=15U;
+static unsigned button_cache_valid=0;
+static ta_u8 button_cache[UI_BUTTON_COUNT];
 /* Original 8x11 software arrow: native INT 33h cursors may not display
    in Tandy mode 09h even when movement and button calls work. */
 #define TA_POINTER_W 8U
@@ -346,70 +351,92 @@ static const char *leaf(const char *name)
     while(*p){if(*p=='/'||*p=='\\'||*p==':')a=p+1;p++;}
     return a;
 }
-/* Keep all existing button widths; the ninth switch is in titlebar. */
+/* Two balanced rows, using the existing 5x7 pixel font.
+   All 10 buttons are live controls, not cosmetic placeholders. */
 static const char *button_labels[UI_BUTTON_COUNT]={
-    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP","DRUM","SPK4"
+    "PREV","PLAY","PAUSE","STOP","NEXT",
+    "VIS","LOOP","DRUM","SPK4","MUTE"
 };
+static unsigned button_x(unsigned i)
+{
+    return UI_BUTTON_X+(i%UI_BUTTON_COLS)*UI_BUTTON_STEP;
+}
+static unsigned button_y(unsigned i)
+{
+    return UI_BUTTON_Y+(i/UI_BUTTON_COLS)*UI_BUTTON_ROW_STEP;
+}
+static int button_pressed(unsigned i)
+{
+    return (i==1 && ta.playing && !ta.paused)
+        || (i==2 && ta.playing && ta.paused)
+        || (i==5 && show_equalizer)
+        || (i==6 && loop_mode)
+        || (i==7 && ta.drum16)
+        || (i==8 && ta.speaker_enabled)
+        || (i==9 && ta.master_attenuation==15);
+}
+static void draw_button(unsigned i)
+{
+    unsigned x,y,w,tx,ty;
+    int pressed;
+    const char *caption;
+    ta_u8 face,ink;
+    if(i>=UI_BUTTON_COUNT)return;
+    pressed=button_pressed(i);
+    if((button_cache_valid&(1U<<i)) &&
+       button_cache[i]==(ta_u8)pressed)return;
+    button_cache_valid|=(1U<<i);
+    button_cache[i]=(ta_u8)pressed;
+    caption=button_labels[i];
+    if(i==8)caption=pressed?"SPK4 ON":"SPK4 OFF";
+    else if(i==9)caption=pressed?"MUTE ON":"MUTE OFF";
+    x=button_x(i);y=button_y(i);
+    face=(ta_u8)(pressed?1:7);
+    ink=(ta_u8)(pressed?15:0);
+    frame(x,y,UI_BUTTON_WIDTH,UI_BUTTON_HEIGHT,face);
+    box(x+2,y+2,UI_BUTTON_WIDTH-4,1,
+        (ta_u8)(pressed?9:15));
+    w=(unsigned)strlen(caption)*6U-1U;
+    tx=x+(UI_BUTTON_WIDTH-w)/2U;
+    ty=y+(UI_BUTTON_HEIGHT-7U)/2U;
+    if(i==8 || i==9){
+        /* State is explicit, not inferred solely from a pressed bevel. */
+        label(tx,ty,caption,ink,4);
+        label(tx+30,ty,caption+5,
+              (ta_u8)(pressed?(i==8?10:14):4),3);
+    }else label(tx,ty,caption,ink,5);
+}
 static void draw_buttons(void)
 {
-    unsigned i,x,w,tx;
-    ta_u8 face,ink;
-    int pressed;
-    for(i=0;i<UI_ROW_BUTTONS;i++){
-        x=UI_BUTTON_X+i*UI_BUTTON_STEP;
-        pressed=(i==1 && ta.playing && !ta.paused)
-            ||(i==2 && ta.playing && ta.paused)
-            ||(i==5 && show_equalizer)
-            ||(i==6 && loop_mode)
-            ||(i==7 && ta.drum16);
-        face=(ta_u8)(pressed?1:7);
-        ink=(ta_u8)(pressed?15:0);
-        frame(x,74,UI_BUTTON_WIDTH,20,face);
-        /* One-pixel bevel, no long Winamp bitmaps or sprite copying. */
-        box(x+2,76,UI_BUTTON_WIDTH-4,1,(ta_u8)(pressed?9:15));
-        w=(unsigned)strlen(button_labels[i])*6U-1U;
-        tx=x+(UI_BUTTON_WIDTH-w)/2U;
-        label(tx,80,button_labels[i],ink,5);
-    }
-}
-/* The larger, explicit ON/OFF control is independent of transport redraws. */
-static void draw_spk_button(void)
-{
-    frame(UI_SPK_BUTTON_X,UI_SPK_BUTTON_Y,
-          UI_SPK_BUTTON_W,UI_SPK_BUTTON_H,
-          (ta_u8)(ta.speaker_enabled?1:7));
-    label(UI_SPK_BUTTON_X+7,7,"SPK4",
-          (ta_u8)(ta.speaker_enabled?15:0),4);
-    label(UI_SPK_BUTTON_X+37,7,ta.speaker_enabled?"ON":"OFF",
-          (ta_u8)(ta.speaker_enabled?10:4),3);
+    unsigned i;
+    for(i=0;i<UI_BUTTON_COUNT;i++)draw_button(i);
 }
 static void draw_base(void)
 {
     box(0,0,320,200,8);
-    frame(1,1,318,98,8);
+    frame(1,1,318,110,8);
     header(3,"TANDYAMP MIDI PLAYER");
     frame(7,19,109,44,0);
     frame(123,19,189,44,0);
-    /* Inset song activity line, not a fake seek bar. */
     box(8,67,302,3,0);
     box(10,68,298,1,8);
-    frame(1,101,318,97,8);
-    label(8,188,"K SPK4 D DRUM SPACE PAUSE N NEXT Q QUIT",7,47);
+    frame(1,UI_LOWER_PANEL_Y,318,86,8);
+    label(8,189,"SPACE PAUSE  K SPK4  M MUTE  D DRUM  Q QUIT",7,49);
 }
 static void draw_playlist(void)
 {
     unsigned i,start;
     char n[5];
-    box(3,116,314,70,0);
+    box(3,127,314,59,0);
     if(!song_count){
-        label(10,134,"PASS A MIDI FILE ON COMMAND LINE",10,43);
+        label(10,142,"PASS A MIDI FILE ON COMMAND LINE",10,43);
         return;
     }
     start=song_current>4?song_current-4:0;
     for(i=start;i<song_count && i<start+7;i++){
-        unsigned y=118+(i-start)*10;
+        unsigned y=129+(i-start)*8;
         ta_u8 col=(i==song_current)?14:10;
-        if(i==song_current)box(5,y-1,306,9,1);
+        if(i==song_current)box(5,y-1,306,8,1);
         sprintf(n,"%u.",i+1);
         label(10,y,n,col,3);
         label(29,y,leaf(songs[i]),col,43);
@@ -420,18 +447,18 @@ static void draw_playlist(void)
 static void draw_panel(void)
 {
     unsigned i;
-    header(102,show_equalizer?"TANDYAMP VOICE MONITOR":"TANDYAMP PLAYLIST");
+    header(113,show_equalizer?"TANDYAMP VOICE MONITOR":"TANDYAMP PLAYLIST");
     if(!show_equalizer){
         draw_playlist();
         return;
     }
-    box(3,116,314,70,0);
-    label(8,118,ta.speaker_enabled?
+    box(3,127,314,59,0);
+    label(8,129,ta.speaker_enabled?
           "3 PSG TONES + PC SPEAKER":"3 PSG TONE CHANNELS",7,35);
     for(i=0;i<3;i++){
         unsigned x=26+i*95;
         char n[4];
-        box(x,132,40,42,8);
+        box(x,141,40,33,8);
         sprintf(n,"CH%u",i+1);
         label(x+8,177,n,14,3);
         meter_last_note[i]=-2;
@@ -450,14 +477,14 @@ static void draw_meters(void)
         if(meter_last_note[i]==v->note &&
            meter_last_velocity[i]==v->velocity &&
            meter_last_active[i]==playing)continue;
-        /* Only this voice's 40x42 bar is touched, not the whole pane. */
-        box(x,132,40,42,8);
+        /* Only this voice's 40x33 bar is touched, not the whole pane. */
+        box(x,141,40,33,8);
         if(playing){
             h=8U+(unsigned)v->velocity*24U/127U
               +((unsigned)v->note%4U)*2U;
-            if(h>40U)h=40U;
-            box(x+2,173-h,36,h,10);
-            box(x+2,173-h,36,1,14);
+            if(h>31U)h=31U;
+            box(x+2,174-h,36,h,10);
+            box(x+2,174-h,36,1,14);
         }
         meter_last_note[i]=v->note;
         meter_last_velocity[i]=v->velocity;
@@ -594,7 +621,10 @@ static void draw_dirty(void)
     mouse_cursor_remove();
     if(flags&UI_PANEL)draw_panel();
     if(flags&UI_BUTTONS)draw_buttons();
-    if(flags&UI_SPK4)draw_spk_button();
+    else {
+        if(flags&UI_SPK4)draw_button(8);
+        if(flags&UI_MUTE)draw_button(9);
+    }
     if(flags&UI_TRACK)draw_track_info();
     if((flags&UI_CLOCK) || clock_changed)draw_clock();
     if(flags&UI_STATE)draw_state();
@@ -607,6 +637,7 @@ static void draw_all(void)
 {
     if(text_mode)return;
     draw_base();             /* called ONCE on entering graphics mode */
+    button_cache_valid=0;
     ui_dirty=UI_ALL;
     ui_last_seconds=0xffffffffUL;
     old_marker=0xffffU;
@@ -710,6 +741,7 @@ static void usage(void)
     puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
     puts("      E voice monitor, L loop, D drums AUTO/ON/OFF");
     puts("      K toggle fourth PC speaker voice (SPK4 button)");
+    puts("      M mute/unmute with previous volume restored");
     puts("      + or - change volume; Q or ESC quit.");
     puts("Playlist: 64 files max, alphabetical if auto-discovered.");
     puts("MIDI format 0/1, up to 24 tracks, up to 44 KB per file.");
@@ -750,10 +782,25 @@ static void input_key(int key)
     switch(toupper(key&255)){
     case '+':case '=':
         ta_set_volume(16U-ta.master_attenuation);
-        ui_dirty|=UI_TRACK;break;
+        if(ta.master_attenuation<15U)
+            last_audible_volume=15U-ta.master_attenuation;
+        ui_dirty|=UI_TRACK|UI_MUTE;break;
     case '-':case '_':
-        ta_set_volume(ta.master_attenuation<15?14U-ta.master_attenuation:0);
-        ui_dirty|=UI_TRACK;break;
+        ta_set_volume(ta.master_attenuation<15U?
+                      14U-ta.master_attenuation:0U);
+        if(ta.master_attenuation<15U)
+            last_audible_volume=15U-ta.master_attenuation;
+        ui_dirty|=UI_TRACK|UI_MUTE;break;
+    case 'M':
+        if(ta.master_attenuation==15U)
+            ta_set_volume(last_audible_volume?last_audible_volume:15U);
+        else{
+            last_audible_volume=15U-ta.master_attenuation;
+            ta_set_volume(0);
+        }
+        if(text_mode)printf("MUTE %s\n",
+                           ta.master_attenuation==15U?"ON":"OFF");
+        ui_dirty|=UI_TRACK|UI_MUTE;break;
     case 'Q':case 27:program_exit=1;break;
     case ' ':ta_pause();ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
     case 'S':ta_stop();stopped=1;ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
@@ -766,7 +813,7 @@ static void input_key(int key)
         ta_set_speaker(!ta.speaker_enabled);
         if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
         ui_dirty|=UI_SPK4;
-        if(show_equalizer)ui_dirty|=UI_PANEL; /* only changed monitor label */
+        if(show_equalizer)ui_dirty|=UI_PANEL; /* update monitor label */
         break;
     case 'D':
         ta.drum_mode=(ta_u8)((ta.drum_mode+1U)%3U);
@@ -779,14 +826,11 @@ static void input_key(int key)
 /* All buttons can be driven by keyboard, or clicked via INT 33h driver. */
 static int button_at(unsigned x,unsigned y)
 {
-    unsigned i,left;
-    if(y>=UI_SPK_BUTTON_Y && y<UI_SPK_BUTTON_Y+UI_SPK_BUTTON_H &&
-       x>=UI_SPK_BUTTON_X && x<UI_SPK_BUTTON_X+UI_SPK_BUTTON_W)
-        return 8;
-    if(y<74U || y>=94U)return -1;
-    for(i=0;i<UI_ROW_BUTTONS;i++){
-        left=UI_BUTTON_X+i*UI_BUTTON_STEP;
-        if(x>=left && x<left+UI_BUTTON_WIDTH)return (int)i;
+    unsigned i;
+    for(i=0;i<UI_BUTTON_COUNT;i++){
+        unsigned bx=button_x(i),by=button_y(i);
+        if(x>=bx && x<bx+UI_BUTTON_WIDTH &&
+           y>=by && y<by+UI_BUTTON_HEIGHT)return (int)i;
     }
     return -1;
 }
@@ -803,6 +847,7 @@ static void click_button(int id)
     else if(id==6)input_key('L');
     else if(id==7)input_key('D');
     else if(id==8)input_key('K');
+    else if(id==9)input_key('M');
 }
 /* Same button/cursor behavior in native DOS and host regressions.
    INT 33h AX=5 remembers quick presses between position polls. */

@@ -62,11 +62,12 @@ Options can be used with either an explicitly named song or the automatically di
 | `E` | Toggle playlist / PSG voice monitor | VIS |
 | `L` | Toggle playlist looping | LOOP |
 | `D` | Cycle legacy channel-16 drums: AUTO → ON → OFF; restarts the current song | DRUM |
-| `K` | Toggle the fourth PC-speaker voice without restarting playback | SPK4 (top title bar) |
+| `K` | Toggle the fourth PC-speaker voice without restarting playback | SPK4 (second row) |
+| `M` | Mute or restore the previously audible master volume | MUTE (second row) |
 | `+` / `-` | Increase / decrease master volume without restarting | Keyboard only |
 | `Q` / `Esc` | Silence PSG and quit to DOS | Keyboard only |
 
-The eight original transport buttons use a **36-pixel-wide** layout; the ninth **SPK4** button is a larger **64×16-pixel** title-bar control with explicit green **ON** and red **OFF** indicators. The lower pane shows up to seven visible playlist rows around the active song or a **three-tone voice monitor**; it is **not an audio equalizer**. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
+The ten controls now form **two evenly spaced rows of five 58×17-pixel buttons**. The first row is PREV, PLAY, PAUSE, STOP, NEXT; the second is VIS, LOOP, DRUM, SPK4, MUTE. The SPK4 and MUTE buttons display explicit ON/OFF labels. Each button skips repainting when its pressed state hasn't changed. The lower pane shows up to seven visible playlist rows around the active song or a **three-tone voice monitor**; it is **not an audio equalizer**. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
 
 ## Serial mouse on the EX
 
@@ -77,7 +78,7 @@ CTMOUSE /S14 /M
 TANDYAMP
 ```
 
-Only use that CuteMouse command if it matches your actual serial port/driver setup. The GUI displays **MOUSE OK** if an INT 33h driver is detected, or **NO MOUSE** otherwise. TandyAMP draws its own 8×11 software arrow in Tandy mode 09h, avoids trails via save/restore of covered pixels, auto-checks 320-versus-640 X coordinate reporting, and accepts left-clicks on all nine buttons (eight transport controls plus SPK4 in the title bar). A driver may be present without its serial mouse actually functioning; **MOUSE OK only confirms that the interface was detected**, not verified movement. The current code's mouse behavior is CI-tested but still requires final physical EX testing. To bypass it use `/NOMOUSE`.
+Only use that CuteMouse command if it matches your actual serial port/driver setup. The GUI displays **MOUSE OK** if an INT 33h driver is detected, or **NO MOUSE** otherwise. TandyAMP draws its own 8×11 software arrow in Tandy mode 09h, avoids trails via save/restore of covered pixels, auto-checks 320-versus-640 X coordinate reporting, and accepts left-clicks on all ten buttons in two equal rows. A driver may be present without its serial mouse actually functioning; **MOUSE OK only confirms that the interface was detected**, not verified movement. The current code's mouse behavior is CI-tested but still requires final physical EX testing. To bypass it use `/NOMOUSE`.
 
 ## MIDI features and technical limits
 
@@ -153,10 +154,16 @@ The three-voice selector now more strongly favors keeping the same audible notes
 
 ## Optional fourth pitched voice — SPK4
 
-**Default OFF.** The **SPK4** button appears in the player's title bar, separately from the eight existing transport buttons, and is clickable using the serial mouse. Press **K** to toggle it with the keyboard, or launch with `TANDYAMP /SPK4` (also works when auto-loading all `*.MID` files). Use `/NOSPK4` or press K again to turn it off. Toggle changes take effect **without restarting** a song.
+**Default OFF.** The **SPK4** button is now grouped with the other audio controls in the second row, alongside DRUM and MUTE, and is clickable using the serial mouse. Press **K** to toggle it with the keyboard, or launch with `TANDYAMP /SPK4` (also works when auto-loading all `*.MID` files). Use `/NOSPK4` or press K again to turn it off. Toggle changes take effect **without restarting** a song.
 
 SPK4 is **strictly bass-only**: it accepts MIDI notes **24–52 (C1–E3)**, never melody or high notes. When the song contains an eligible low bass **plus three other distinct PSG pitches**, the bass is reserved for **PIT channel 2** while the other three notes play through the Tandy PSG. This potentially gives four simultaneous pitched notes **plus PSG noise percussion**. If fewer than three other distinct pitches exist, or no low bass is eligible, the PC speaker stays silent and normal three-tone playback continues. The selected bass uses a native 1.193182 MHz PIT2 divider, keeping its **real low octave** rather than playing the PSG's octave-folded approximation, including ±2-semitone pitch bend. It stops immediately when released, paused, muted, switched off or when the player exits. The MIDI timing PIT channel 0 remains at its normal frequency. This is an implementation inspired by the independent fourth-track mechanism documented in [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker); no original tracker code was copied.
 
 **Important hardware difference:** PIT2 has **no independent volume register or instrument timbre**. An extra tone is therefore gated on only when its computed attenuation is sufficiently strong, but when on it can sound harsher or louder than PSG notes. On the Tandy 1000 EX the PIT2 source can mix with the PSG; output through particular external audio connections can depend on port 61h routing. TandyAMP intentionally changes **only speaker gate bits 0–1** of port 61h and leaves other audio-route bits intact; it does not override the motherboard's routing to force an external output. The physical EX sound balance must still be checked. Disable with K if the extra note is distracting.
 
-**SPK4 interface correction:** The new, wider title-bar switch is at x=147–210 and y=2–17, with clearly visible **SPK4 ON** (green) or **SPK4 OFF** (red). It can be clicked with the DOS mouse or toggled by K. Only the small switch itself is repainted on toggle; no transport-button or playlist redraw is needed. The tone choice and interface changes are covered by host tests; confirm the physical sound level on the EX.
+**Current SPK4 interface:** The button is in row two at x=190–247, y=91–107, showing **SPK4 ON** (green) or **SPK4 OFF** (red). It can be clicked or toggled using K, and only its 58×17 region is repainted. The speaker remains bass-only (MIDI 24–52). The tone choice and interface changes are covered by host tests; confirm the physical sound level on the EX.
+
+### Two equal rows and the MUTE button
+
+All ten controls are **58×17 pixels** with five buttons in each row: **PREV / PLAY / PAUSE / STOP / NEXT** at y=72–88, and **VIS / LOOP / DRUM / SPK4 / MUTE** at y=91–107. This replaces the crowded single-row and separate title-bar SPK4 layouts. The lower panel starts at y=112 and **retains seven playlist entries**, using slightly tighter row spacing. Keyboard shortcuts and existing functionality remain intact.
+
+**MUTE** is functional, not a placeholder. Press **M** or click the far-right button in row two to silence the output; do it again to restore the previous audible master volume. The existing `+`/`-` keys and `/VOL:0..15` still work. Both SPK4 and MUTE have their own low-cost dirty redraw paths. The layout has automated framebuffer and mouse tests, but should be checked on the physical EX display for readability.

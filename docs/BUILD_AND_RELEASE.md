@@ -13,7 +13,7 @@
 | `tests/midi_test.c` | MIDI parser and format/boundary tests |
 | `tests/playback_test.c` | Event ordering and note/voice behavior |
 | `tests/mixer_test.c` | Mix model and volume/attenuation tests |
-| `tests/ui_test.c` | Simulated Tandy VRAM drawing, nine-button layout (SPK4 title bar), software mouse, minimal repaint and directory playlist auto-discovery |
+| `tests/ui_test.c` | Simulated Tandy VRAM drawing, ten-button two-row layout (SPK4 and MUTE together), software mouse, minimal repaint and directory playlist auto-discovery |
 | `tests/speaker_test.c` | Optional fourth PIT2 voice allocation, live toggle and mute/stop regressions |
 | `tools/make_demo.py` | Produces an original 16-second `DEMO.MID` |
 | `.github/workflows/build-dos.yml` | Primary DOS build, tests, package, release and cleanup |
@@ -72,7 +72,7 @@ Documentation files are kept in the repository, **not copied into the DOS releas
 1. Reboot into plain DOS if a separate resident SimCity sound TSR has taken control of the PSG.
 2. With a compatible installed DOS mouse driver, use `CTMOUSE /S14 /M` only when appropriate for the actual serial port; use `/NOMOUSE` if necessary.
 3. Put at least two `.MID` files in the current DOS directory. Launch `TANDYAMP` without arguments and verify an alphabetic list and automatic first-song playback.
-4. Press `N` / `P` / `Space` / `D` and `+` / `-`. Verify the 8x11 cursor, button hit testing and no cursor trails.
+4. Press `N` / `P` / `Space` / `D` / `K` / `M` and `+` / `-`. Verify the 8x11 cursor, button hit testing and no cursor trails.
 5. Use `/TXT` as a fallback for testing the MIDI engine independently of the graphics.
 6. Listen for lost/stuck notes and timing drift, particularly in dense sections. Compare with an earlier tested build only if needed; older release packages are removed automatically.
 
@@ -84,8 +84,12 @@ TandyAMP's own code is MIT licensed. The legacy Miles `TANDY.ADV` and original W
 
 ## Fourth speaker tone rollout
 
-The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the host tests. Build and automated tests **do not reproduce real Tandy EX speaker balance**. The ordinary three-voice mode is default and should be compared with the same MIDI track after toggling SPK4 on via the K key or clicking the small titlebar button. If the extra voice is harsh or inaudible through a particular output, disable it without rebooting; no change to the existing Windows image, AUTOEXEC.BAT or PIT channel 0 hardware timing is made.
+The latest optional `/SPK4` output is covered by a mocked PIT2 backend in the host tests. Build and automated tests **do not reproduce real Tandy EX speaker balance**. The ordinary three-voice mode is default and should be compared with the same MIDI track after toggling SPK4 on via the K key or clicking its second-row button. If the extra voice is harsh or inaudible through a particular output, disable it without rebooting; no change to the existing Windows image, AUTOEXEC.BAT or PIT channel 0 hardware timing is made.
 
 ### SPK4 bass-only acceptance test
 
-`tests/speaker_test.c` verifies the PIT2 input is restricted to MIDI **24–52 (C1–E3)**, that the **true low-frequency PIT2 dividers** (including pitch bending) are used instead of octave-folded PSG values, and that three other distinct tone parts are required. It tests exclusion of high notes, pause/resume, disabling the button, master mute and clean stop. `tests/ui_test.c` verifies the wider **64×16 SPK4** button does not overlap the title/mouse label, correctly reacts to click and K, visibly switches ON/OFF, and repaints only its own region when the playlist is visible.
+`tests/speaker_test.c` verifies the PIT2 input is restricted to MIDI **24–52 (C1–E3)**, that the **true low-frequency PIT2 dividers** (including pitch bending) are used instead of octave-folded PSG values, and that three other distinct tone parts are required. It tests exclusion of high notes, pause/resume, disabling the button, master mute and clean stop. `tests/ui_test.c` verifies the **58×17 SPK4** button is aligned in the second row, reacts to K and clicks, displays ON/OFF, and repaints only its own region when the playlist is visible.
+
+### Two rows of buttons: regression coverage
+
+Current host framebuffer tests validate both five-button rows, all ten 58×17 labels and mouse click hitboxes, SPK4's bass-only live toggle, the MUTE button's previous-volume restoration, zero-change redraw caching and the lower playlist's retained seven visible rows. Open Watcom DOS compilation follows the tests; playback on actual EX hardware remains necessary.
