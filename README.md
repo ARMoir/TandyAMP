@@ -206,3 +206,8 @@ The treble reduction is applied **after master boost**, so it still works at vol
 
 Recommended hardware test: play the same Canyon section with `/VOL:15` and alternate **H** between SOFT and RAW; then repeat at volume 18 or 20. Pay particular attention to the ~14–24-second high sustained tone. The new setting is tested by host regressions but has **not** yet been acoustically verified on the physical 7 MHz EX.
 
+
+
+## TandyAMP Studio: laptop-side MP3/MIDI converter
+
+The experimental [TandyAMP Studio](tools/tandyamp_studio/README.md) in `tools/tandyamp_studio/` converts existing MIDI and optionally MP3/WAV audio into DOS-safe, three-PSG-voice plus optional SPK4 bass arrangements. It offers a Windows GUI, optional Demucs/Basic Pitch transcription, 8.3 filenames, automatic file splitting and a DOS `PLAY.BAT`. The Python tools are not bundled in the three-file DOS ZIP.
