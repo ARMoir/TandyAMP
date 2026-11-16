@@ -18,9 +18,18 @@ TANDYAMP DEMO.MID
 
 The demo is an original 16-second MIDI tune generated from `tools/make_demo.py`. No copyrighted music is bundled.
 
+## Automatic current-directory playlist
+
+In the DOS directory containing your music, type `TANDYAMP` to find any `.MID` files without listing them. Names are sorted alphabetically, matching DOS's case-insensitive filename conventions. The player supports **up to 64 tracks** in this automatic playlist (approximately 4 KB for filenames); it reports when additional files were skipped. A directory with no `.MID` files displays a clear message and exits without switching video modes. Each MIDI file must still satisfy the player's 44 KB / 24-track limits.
+
+This searches the **current working directory**, not the directory where the EXE is stored if those differ. For example, `CD \\MIDI` before running `C:\\APPS\\TANDYAMP.EXE`. Explicit filenames override discovery. Keyboard Next/Previous and the graphical playlist work as before.
+
 ## Command-line options
 
 ```dos
+TANDYAMP
+TANDYAMP /LOOP
+TANDYAMP /TXT
 TANDYAMP DEMO.MID
 TANDYAMP SONG1.MID SONG2.MID SONG3.MID
 TANDYAMP /TXT DEMO.MID
@@ -44,7 +53,7 @@ TANDYAMP /HELP
 | `/NODRUM16` | Force channel 16 to melodic notes |
 | `/AUTODRUM16` | Conservative automatic detection (default) |
 
-Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For this build, files must be **44 KB or smaller** and use MIDI **type 0 or 1**, with **24 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
+**Run `TANDYAMP` without any filenames** to automatically build a playlist from the current directory's `*.MID` files, sorted alphabetically, then begin the first song. `TANDYAMP /LOOP` repeats that directory playlist, while `TANDYAMP /TXT` plays it in text mode. The scan does not recurse into subdirectories. When one or more filenames are supplied explicitly, **only those files** are played in the order supplied. Supply up to **64 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For this build, files must be **44 KB or smaller** and use MIDI **type 0 or 1**, with **24 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
 
 ### Keyboard controls
 

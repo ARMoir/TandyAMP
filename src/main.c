@@ -8,9 +8,12 @@
 #ifdef __WATCOMC__
 #include <dos.h>
 #include <conio.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
 #endif
 
-#define MAX_SONGS 8
+#define MAX_SONGS 64
 #define PATHLEN 64
 #define SCREEN_W 320
 #define SCREEN_H 200
@@ -19,6 +22,7 @@
 
 static char songs[MAX_SONGS][PATHLEN];
 static unsigned song_count=0, song_current=0;
+static int playlist_truncated=0;
 static int text_mode=0, loop_mode=0, show_equalizer=0;
 static int stopped=0, program_exit=0;
 static ta_u32 song_ticks=0, last_refresh=0;
@@ -537,10 +541,80 @@ static int same(const char *a,const char *b)
     }
     return !*a&&!*b;
 }
+/* With no explicit file arguments, discover DOS 8.3 .MID files in the
+   CURRENT working directory.  Do not recurse and do not scan when the
+   user supplied an explicit sequence.  Sorting avoids FAT directory-order
+   surprises between boots; explicit arguments preserve their order. */
+static int ends_with_mid(const char *name)
+{
+    size_t n=strlen(name);
+    return n>=5U && name[n-4]=='.'
+        && toupper((unsigned char)name[n-3])=='M'
+        && toupper((unsigned char)name[n-2])=='I'
+        && toupper((unsigned char)name[n-1])=='D';
+}
+static int song_compare(const char *a,const char *b)
+{
+    int x,y;
+    do {
+        x=toupper((unsigned char)*a++);
+        y=toupper((unsigned char)*b++);
+        if(x!=y)return x-y;
+    }while(x!=0);
+    return 0;
+}
+static void playlist_add_sorted(const char *name)
+{
+    unsigned i,j;
+    if(!ends_with_mid(name) || strlen(name)>=PATHLEN)return;
+    if(song_count>=MAX_SONGS){playlist_truncated=1;return;}
+    for(i=0;i<song_count;i++){
+        if(song_compare(name,songs[i])<0)break;
+    }
+    for(j=song_count;j>i;j--)
+        memcpy(songs[j],songs[j-1],PATHLEN);
+    strcpy(songs[i],name);
+    song_count++;
+}
+static unsigned playlist_find_current_directory(void)
+{
+    song_count=0;
+    song_current=0;
+    playlist_truncated=0;
+#ifdef __WATCOMC__
+    {
+        struct find_t found;
+        unsigned status=_dos_findfirst("*.MID",0,&found);
+        while(status==0){
+            if(!(found.attrib&_A_SUBDIR))
+                playlist_add_sorted(found.name);
+            status=_dos_findnext(&found);
+        }
+    }
+#else
+    {
+        DIR *dir=opendir(".");
+        struct dirent *entry;
+        if(dir){
+            while((entry=readdir(dir))!=NULL){
+                struct stat st;
+                if(ends_with_mid(entry->d_name)
+                   && stat(entry->d_name,&st)==0
+                   && S_ISREG(st.st_mode))
+                    playlist_add_sorted(entry->d_name);
+            }
+            closedir(dir);
+        }
+    }
+#endif
+    return song_count;
+}
+
 static void usage(void)
 {
     puts("TandyAMP v0.1 -- Tandy 1000 EX three-voice MIDI player");
-    puts("Usage: TANDYAMP [options] FILE.MID [NEXT.MID ...]");
+    puts("Usage: TANDYAMP [options] [FILE.MID ...]");
+    puts("       No filenames: load *.MID in current directory automatically.");
     puts("Options: /TXT     text-only player (no Tandy graphics)");
     puts("         /GUI     Tandy 320x200 16-color display (default)");
     puts("         /LOOP    repeat entire playlist");
@@ -554,6 +628,7 @@ static void usage(void)
     puts("      E visualizer, L loop, D drums AUTO/ON/OFF");
     puts("      + or - adjusts volume without restarting playback.");
     puts("      Q or ESC quit. D restarts the current song.");
+    puts("Playlist: up to 64 files (alphabetical when auto-discovered).");
     puts("Supports MIDI format 0/1, 24 tracks, files <= 44 KB.");
 }
 static int start_song(unsigned n)
@@ -747,11 +822,20 @@ int main(int argc,char **argv)
             ta_set_volume((unsigned)volume);continue;
         }
         if(s[0]=='-'||s[0]=='/'){printf("Unknown option: %s\n",s);usage();return 1;}
-        if(song_count>=MAX_SONGS){puts("Maximum 8 playlist entries.");return 1;}
+        if(song_count>=MAX_SONGS){puts("Maximum 64 playlist entries.");return 1;}
         if(strlen(s)>=PATHLEN){puts("Filename too long (63 characters).");return 1;}
         strcpy(songs[song_count++],s);
     }
-    if(song_count==0){usage();return 0;}
+    if(song_count==0){
+        if(!playlist_find_current_directory()){
+            puts("No .MID files found in the current directory.");
+            usage();
+            return 1;
+        }
+        printf("Found %u MIDI file(s) in current directory.\n",song_count);
+        if(playlist_truncated)
+            puts("Playlist is limited to 64 songs; extra files were skipped.");
+    }
     if(!start_song(0))return 1;
     if(!text_mode){
         set_mode(9);

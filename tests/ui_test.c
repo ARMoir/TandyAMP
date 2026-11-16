@@ -5,6 +5,7 @@
 #include "../src/main.c"
 #undef main
 #include <assert.h>
+#include <unistd.h>
 
 static unsigned color_at(unsigned x,unsigned y)
 {
@@ -179,7 +180,36 @@ int main(void)
         mouse_was_down=0;
     }
 
-    printf("PASS: 8 clickable labels, DRUM mode, song title, zero-write idle, "
+    /* Directory playlist logic is shared with the DOS build. */
+    {
+        unsigned j;
+        char song[16];
+        static const char *order[]={"ALPHA.MID","bravo.mid","Zulu.MID"};
+        song_count=0;playlist_truncated=0;
+        playlist_add_sorted("Zulu.MID");
+        playlist_add_sorted("ALPHA.MID");
+        playlist_add_sorted("bravo.mid");
+        playlist_add_sorted("README.MD");
+        playlist_add_sorted("track.MID.bak");
+        assert(song_count==3);
+        for(j=0;j<3;j++)assert(!song_compare(songs[j],order[j]));
+        for(j=0;j<70;j++){
+            sprintf(song,"T%02u.MID",j);
+            playlist_add_sorted(song);
+        }
+        assert(song_count==64 && playlist_truncated==1);
+        /* Tests/make_test_mid.py created real .MID test files. */
+        assert(chdir("tests")==0);
+        assert(playlist_find_current_directory()>=3);
+        assert(song_count<=MAX_SONGS);
+        assert(!song_compare(songs[0],"bad.mid"));
+        for(j=1;j<song_count;j++)
+            assert(song_compare(songs[j-1],songs[j])<=0);
+        assert(chdir("..")==0);
+    }
+
+    printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
+           "and 8 clickable labels, DRUM mode, song title, zero-write idle, "
            "clock-only refresh, per-voice meters, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;
