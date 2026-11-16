@@ -1,0 +1,80 @@
+# Building, testing and releasing TandyAMP
+
+**Repository:** [ARMoir/TandyAMP](https://github.com/ARMoir/TandyAMP), default branch `main`.
+**Current development target:** Tandy 1000 EX, 7 MHz NEC V20, real-mode DOS, Tandy PSG port `0xC0`, Tandy graphics mode `09h`.
+
+## Source tree
+
+| Files | Role |
+| --- | --- |
+| `src/main.c` | DOS frontend, command-line parsing, current-directory playlist scan, GUI, mouse, PSG I/O |
+| `src/midi.c` / `src/midi.h` | MIDI decode, tempo scheduling, synthesizer/voice pool, percussion and volume |
+| `tests/make_test_mid.py` | Generates synthetic format-0/1, malformed, dense and channel-16 test inputs |
+| `tests/midi_test.c` | MIDI parser and format/boundary tests |
+| `tests/playback_test.c` | Event ordering and note/voice behavior |
+| `tests/mixer_test.c` | Mix model and volume/attenuation tests |
+| `tests/ui_test.c` | Simulated Tandy VRAM drawing, eight-button layout, software mouse, minimal repaint and directory playlist auto-discovery |
+| `tools/make_demo.py` | Produces an original 16-second `DEMO.MID` |
+| `.github/workflows/build-dos.yml` | Primary DOS build, tests, package, release and cleanup |
+| `.github/workflows/blank.yml` | Older placeholder CI workflow (echo-only); **does not build TandyAMP** |
+
+## Manual DOS cross-build
+
+Use a working **Open Watcom 2.0** installation with DOS 16-bit support and its tools in your environment. From the repository root:
+
+```sh
+wcl -bt=dos -0 -ms -os -s -zq -fe=TANDYAMP.EXE src/main.c src/midi.c
+python3 tools/make_demo.py
+```
+
+`TANDYAMP.EXE` is a real-mode MZ executable; it is **not** a Win32 EXE. The `-0` target uses 8086-compatible instructions, suitable for the NEC V20. Copy `TANDYAMP.EXE` and optionally `DEMO.MID` to the CF/floppy DOS filesystem.
+
+## Local host regression tests
+
+On a system with `python3` and a C89-capable GCC (these are **host tests**, not substitutes for playing on the EX):
+
+```sh
+python3 tests/make_test_mid.py
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/midi_test tests/midi_test.c src/midi.c
+./tests/midi_test tests/test0.mid tests/test1.mid tests/bad.mid tests/dense.mid tests/large.mid tests/legacy16.mid tests/melody16.mid
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/ui_test tests/ui_test.c src/midi.c
+./tests/ui_test
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/playback_test tests/playback_test.c src/midi.c
+./tests/playback_test
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/mixer_test tests/mixer_test.c
+./tests/mixer_test
+python3 tests/check_docs.py
+```
+
+The UI tests include **actual pixel/framebuffer comparisons** and exercise the current-directory scanner in a fixture folder; the MIDI tests verify event/voice scheduling on a host. None emulate the EX's serial port or sound circuit fully.
+
+## GitHub Actions, release policy, and package contents
+
+The **primary workflow** is [`build-dos.yml`](../.github/workflows/build-dos.yml), triggered by pushes to `main` affecting source/tests/tools/docs/README/workflow or by manual dispatch. It:
+
+1. Checks out source and generates original test MIDI files.
+2. Runs MIDI, UI/mouse/playlist, playback, mixer and documentation consistency checks.
+3. Sets up Open Watcom 2.0 and compiles the DOS executable.
+4. Generates original `DEMO.MID` and packages **only** `TANDYAMP.EXE`, `DEMO.MID`, `LICENSE` into a ZIP. A release check rejects Markdown in the ZIP.
+5. Uploads the current Actions artifact.
+6. On successful `main` build, publishes tag `tandyamp-build-N` as the **latest GitHub Release**, with both the ZIP and individual `TANDYAMP.EXE`/`DEMO.MID` assets.
+7. **Only after publication is verified**, deletes previous `tandyamp-build-*` releases/tags and older `TandyAMP-DOS-*` Actions artifacts. Unrelated releases, commits and workflow logs are not touched.
+
+Download the most recent packaged build at **[Releases/latest](https://github.com/ARMoir/TandyAMP/releases/latest)**. **Older successful builds are intentionally removed** on each new success; for reproducibility, previous source commits remain in the repository's history.
+
+Documentation files are kept in the repository, **not copied into the DOS release ZIP**. This is intentional for faster/cleaner 16-bit DOS deployment and consistent with the owner's packaging preference.
+
+## Real hardware testing checklist
+
+1. Reboot into plain DOS if a separate resident SimCity sound TSR has taken control of the PSG.
+2. With a compatible installed DOS mouse driver, use `CTMOUSE /S14 /M` only when appropriate for the actual serial port; use `/NOMOUSE` if necessary.
+3. Put at least two `.MID` files in the current DOS directory. Launch `TANDYAMP` without arguments and verify an alphabetic list and automatic first-song playback.
+4. Press `N` / `P` / `Space` / `D` and `+` / `-`. Verify the 8x11 cursor, button hit testing and no cursor trails.
+5. Use `/TXT` as a fallback for testing the MIDI engine independently of the graphics.
+6. Listen for lost/stuck notes and timing drift, particularly in dense sections. Compare with an earlier tested build only if needed; older release packages are removed automatically.
+
+**Evidence:** earlier recordings confirmed actual MIDI sound and GUI on a real 7 MHz EX; latest mouse and playlist changes are tested in GitHub Actions but not yet individually verified on-device.
+
+## Preservation and attribution
+
+TandyAMP's own code is MIT licensed. The legacy Miles `TANDY.ADV` and original Winamp source/assets were used only for independent technical/design study, not redistributed. See [TANDY_ADV_ANALYSIS.md](TANDY_ADV_ANALYSIS.md) and [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md).

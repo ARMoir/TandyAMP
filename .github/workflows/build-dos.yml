@@ -43,6 +43,8 @@ jobs:
           ./tests/playback_test
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/mixer_test tests/mixer_test.c
           ./tests/mixer_test
+      - name: Verify current documentation and local links
+        run: python3 tests/check_docs.py
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:
@@ -89,7 +91,7 @@ jobs:
           gh release create "$tag" "$bundle" dist/TANDYAMP.EXE dist/DEMO.MID \
             --target "$GITHUB_SHA" \
             --title "TandyAMP DOS Build #${GITHUB_RUN_NUMBER}" \
-            --notes "Automatic 16-bit DOS build from commit ${GITHUB_SHA}. Includes TANDYAMP.EXE, original DEMO.MID and LICENSE (no Markdown files). Compiled with Open Watcom and passed MIDI regression tests. Real Tandy 1000 EX playback is not yet hardware-verified." \
+            --notes "Automatic 16-bit DOS build from commit ${GITHUB_SHA}. Includes TANDYAMP.EXE, original DEMO.MID and LICENSE (no Markdown files). Compiled with Open Watcom and passed MIDI regression tests. Earlier Tandy EX audio and graphics were demonstrated on hardware; the changes in this build still require hardware verification." \
             --latest
           # Do NOT remove earlier builds unless this release is readable and has assets.
           gh release view "$tag" --json tagName,isDraft,assets \

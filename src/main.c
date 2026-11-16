@@ -612,24 +612,24 @@ static unsigned playlist_find_current_directory(void)
 
 static void usage(void)
 {
-    puts("TandyAMP v0.1 -- Tandy 1000 EX three-voice MIDI player");
+    puts("TandyAMP -- Tandy 1000 EX three-voice DOS MIDI player");
     puts("Usage: TANDYAMP [options] [FILE.MID ...]");
-    puts("       No filenames: load *.MID in current directory automatically.");
-    puts("Options: /TXT     text-only player (no Tandy graphics)");
-    puts("         /GUI     Tandy 320x200 16-color display (default)");
-    puts("         /LOOP    repeat entire playlist");
-    puts("         /DRUM16  force channel 16 drums on");
+    puts("       No filenames: play *.MID in the current directory.");
+    puts("Options: /TXT      text-only player (no Tandy graphics)");
+    puts("         /GUI      Tandy 320x200 16-color screen (default)");
+    puts("         /LOOP     repeat the entire playlist");
+    puts("         /NOMOUSE  disable DOS mouse detection / pointer");
+    puts("         /DRUM16   force legacy channel 16 drums on");
     puts("         /NODRUM16 force channel 16 drums off");
-    puts("         /AUTODRUM16 auto-detect drums (default)");
+    puts("         /AUTODRUM16 auto drum routing (default)");
     puts("         /VOL:0..15 master volume, 0=mute (default 15)");
-    puts("         Automatic peak leveling is always enabled.");
-    puts("         /HELP    this help");
-    puts("Keys: SPACE pause/resume, S stop, R replay, N next, P previous");
-    puts("      E visualizer, L loop, D drums AUTO/ON/OFF");
-    puts("      + or - adjusts volume without restarting playback.");
-    puts("      Q or ESC quit. D restarts the current song.");
-    puts("Playlist: up to 64 files (alphabetical when auto-discovered).");
-    puts("Supports MIDI format 0/1, 24 tracks, files <= 44 KB.");
+    puts("         /HELP     display this help");
+    puts("Auto level limiting always on. No playlist recursion or seek.");
+    puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
+    puts("      E voice monitor, L loop, D drums AUTO/ON/OFF");
+    puts("      + or - change volume; Q or ESC quit.");
+    puts("Playlist: 64 files max, alphabetical if auto-discovered.");
+    puts("MIDI format 0/1, up to 24 tracks, up to 44 KB per file.");
 }
 static int start_song(unsigned n)
 {

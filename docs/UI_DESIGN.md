@@ -1,72 +1,57 @@
-# Winamp-inspired interface reference
+# TandyAMP visual design and graphics implementation
 
-The project owner supplied a reference screenshot of a classic Winamp window stack (player, equalizer, playlist). It shows a compact dark-gray metal interface, narrow blue title bars, black displays with green LED typography, beveled metallic transport controls, a small spectrum visualizer, and bright-green playlist entries.
+The owner supplied an original classic Winamp player/equalizer/playlist screenshot as a **reference**, not a resource to ship. TandyAMP independently recreates the compact metallic feel: navy title bars, dark insets, green LED-style lettering, gray beveled transport controls and a black playlist. No licensed Winamp artwork or bitmap has been copied.
 
-**TandyAMP does not copy the screenshot's bitmaps, fonts, logos, or Winamp program code.** It recreates the general interaction ideas using original drawing code and a 5x7 pixel font compatible with the Tandy's 16-color mode 09h.
+## Actual 320×200 layout (Tandy mode 09h)
 
-## How that becomes a 320×200 EX screen
+| Area | Coordinates / role |
+| --- | --- |
+| Main panel | roughly y=1–98; title, clock, song name and MIDI/drum/volume information |
+| Clock | inset near x=7–116, y=19–63; shows elapsed minutes/seconds |
+| Track display | x≈123–312, y=19–63; track filename and mode/volume |
+| Activity marker | y≈68; 12-pixel moving indicator only — **not** a seek bar |
+| Controls | y=74–94; **eight 36-pixel buttons** at x=8 + 38 × index |
+| Lower panel | y≈101–198; either playlist or **three-tone monitor** |
+| Playlist | up to seven visible entries around the active item, in a list of up to **64** |
+| Voice monitor | three bars driven from software voice note/velocity/activity, not audio FFT |
+| Software cursor | original 8×11 black/white sprite, drawn in banked graphics memory |
 
-The original reference is approximately 267×422 vertically. The EX provides only **320×200** in the desired 16-color mode, so reproducing all three tall windows simultaneously would leave controls unreadably small.
+Actual button labels (left to right): **PREV, PLAY, PAUSE, STOP, NEXT, VIS, LOOP, DRUM**. The previous seven-button layout was revised to accommodate DRUM. Each 5×7 glyph uses a six-pixel advance and is horizontally centered so it does not obscure neighboring bevels.
 
-v0.1 instead combines:
-1. **Main player** (screen y=1–98): TANDYAMP title, LED-style elapsed time, song title, activity line, playback progress animation, and seven bevel-style transport keys.
-2. **Switchable lower pane** (screen y=101–198): playlist with the active song highlighted; pressing **E** switches to three PSG voice-level bars inspired by the equalizer/visualizer.
-3. **Keyboard shortcuts**: SPACE, N, P, S, R, E, L, Q/ESC, with equivalent launch options for text-mode/headless use.
+The original 267×422 stacked Winamp screenshot cannot be fitted literally onto 320×200 without illegible controls, so the lower region **switches modes** with `E` / VIS rather than opening a second window. There is no functional equalizer, 10-band EQ slider, drag seek bar, file browser or resizable skin yet.
 
-This is **an original Winamp-inspired interface**, not a pixel-exact clone. The beveled keys are currently visible indicators only; mouse clicking is not yet implemented.
+## Rendering / performance
 
-## Color budget
+Tandy mode `09h` places 16-color pixel pairs at `B800:0000` across **four 8 KB banks**, indexed by scanline modulo four, at **160 bytes per scanline**. TandyAMP draws with an original 5×7 bitmap font, direct writes to VRAM and integer geometry.
 
-The GUI deliberately uses a small subset of the Tandy's indexed 16-color palette:
+A full background/frame draw occurs on GUI entry. During playback the dirty-region renderer changes only necessary areas:
 
-- 0 black for the displays and playlist background
-- 1/9 blue highlights for title bars
-- 7/8 light and dark gray for beveled chrome
-- 10 bright green for current track and three-channel activity
-- 14 yellow for highlights and LED accents
-- 15 white for selected title text
+- clock digits when the display second changes;
+- filename, drum state and master volume when their associated state changes;
+- button faces on transport, loop, VIS or drum mode changes;
+- playlist pane on selection or mode change;
+- separate 40×42 voice meters only when their represented note, velocity or activity changes;
+- the 12×1 activity marker at its former and new positions.
 
-It uses a banked framebuffer at B800:0000: **four 8 KB banks, 160 bytes per scanline, 2 pixels per byte**, ordered by scanline number modulo four. No VGA dependency or full-frame redraw each timer tick.
+Host framebuffer tests verify button text bounds, display title, zero-write idle redraws and upper bounds on common updates. These checks reduce risk on a **7 MHz NEC V20** but do not establish measured hardware FPS or sound jitter.
 
-## Hardware priorities
+## Mouse cursor and click handling
 
-Do not sacrifice correct note-offs and tempo just to animate the display. v0.1 schedules sound in foreground polling on the BIOS 18.2 Hz tick and redraws partial regions. This is a baseline, not a precision metronome.
+The first mouse code used `INT 33h AX=1` to ask a DOS driver to draw its own pointer. Some serial-mouse drivers recognize `INT 33h` but **do not render a pointer in Tandy banked graphics mode 09h**. The updated player draws its own 8×11 arrow, saving and restoring each pixel underneath the cursor. Before repainting the UI it removes the pointer; after repainting it re-reads the changed background and draws it again, avoiding cursor trails.
 
-Planned: higher-precision, safe MIDI timer; input-driven clickable buttons through a PC-compatible serial mouse; incremental seek bar, song metadata, file browser, playlist loading, and user-selected skins. A true frequency equalizer isn't realistic on three square-wave oscillators; the lower panel is a **voice visualizer**, not a signal-processing equalizer.
+`INT 33h` is still used for **input**: reset/presence, coordinate bounds, position and button state, and AX=5 click counts for short clicks. Startup probes 320-versus-640 horizontal units, and keyboard operation is always available. Titlebar text says `MOUSE OK` if the DOS interface was detected, `NO MOUSE` otherwise; it **does not prove the physical serial mouse was found**. A DOS serial mouse driver such as CuteMouse must be loaded first. `/NOMOUSE` disables detection/cursor.
 
-## External reference
+The software cursor path and click dispatch are CI-tested with a simulated framebuffer. Physical EX mouse confirmation is pending.
 
-Owner-provided Winamp 2-era screenshot in the conversation, used as a visual reference only. It is intentionally not redistributed with the project.
+## Evolution from the real EX video
 
-## Winamp source-code UI research
+The earlier recording `3578.mp4` showed the main player and audible MIDI on physical hardware, while button labels overlapped neighboring borders. The original 33-pixel buttons were enlarged and centered; later the layout changed again to **eight 36-pixel** buttons for DRUM.
 
-The original [Winamp classic player repository](https://github.com/alexfreud/winamp) has been reviewed for conceptual ideas: main player, playlist, equalizer display, button event handling and spectrum visualizer. For a file-by-file analysis and the restrictions against copying the original code or bitmaps, see [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md). The three Tandy tone channels need a lightweight voice monitor, **not** Winamp's PCM FFT spectrum code.
+Originally the player frequently repainted most of the song display and entire visualizer on a timer. That was replaced by cached/dirty sections, so clock and voice changes do not repeatedly redraw static UI. The video proves an earlier GUI ran on the EX; improvements since then require their own on-device evaluation.
 
-## Physical EX UI review and redraw fixes
+## References and boundaries
 
-The owner's real-hardware video `3578.mp4` showed transport labels spilling into adjacent narrow button borders. In the original source, 33-pixel buttons were spaced 37 pixels apart, but labels were placed at hard-coded x positions independent of each button's text width. Several labels ran into their neighbor's vertical bevel, visibly obscuring text.
-
-The revised implementation uses **7 × 42-pixel** buttons, each spaced 44 pixels from the next starting at x=8, with text centered using `(button_width - (length*6-1))/2`. The longest label, `PAUSE`, occupies only 29 pixels, leaving at least 6 pixels of inset on either side. `VIS` replaces the ambiguous `EQ` button because the lower panel monitors real PSG voice activity, rather than offering an equalizer.
-
-The video also confirmed that periodic status refreshes were clearing 100×34 and 179×35 display panes, redrawing a full 298-pixel progress line, and rebuilding the entire visualizer every few clock ticks. The revised dirty-region renderer now updates only:
-
-- **Clock:** the 95×10-digit strip, and only when the displayed second changes.
-- **Title/metadata:** the upper-right display only when a song changes (rather than every 5 ticks).
-- **Play/pause/stop indicators:** the left 95×13 strip and the seven button faces only after a transport command.
-- **Playlist:** the lower pane only when the track selection changes or the panel is toggled.
-- **Voice meters:** a single 40×42 rectangle only when that specific note, velocity or activity state changes.
-- **Activity line:** the previous and next 12×1 pixel markers only when the indicator moves.
-
-No full-screen erase occurs in the normal playback timer loop. On the host build, `tests/ui_test.c` renders the actual four-bank 16-color framebuffer and asserts that button glyph pixels do not overflow, the song title appears, repeated unchanged status draws cause **zero video writes**, and normal clock/meter updates stay far below full-screen redraw costs. This test runs before publishing each GitHub release. The actual performance improvement on the Tandy EX remains to be measured on hardware.
-
-## 2026-11-16 Tandy EX mouse-pointer compatibility update
-
-The initial graphical release used `INT 33h AX=0001h` to ask the DOS mouse driver to draw a graphics cursor. Bank-switched Tandy video mode `09h` is not necessarily recognized by the driver; this can leave the pointer invisible even when `INT 33h AX=3` reports valid mouse movement and buttons. It also **unconditionally halved CX**, which was wrong for drivers exposing actual 320-pixel horizontal coordinates.
-
-The new implementation keeps the mouse driver responsible only for **input** and draws an original 8×11 black/white arrow into the four-bank Tandy framebuffer. For each cursor movement, it saves the underlying pixels at cursor-mask positions, restores the previous position, and draws at the new location. Every UI dirty-region repaint first removes the cursor and reinstates it afterward, eliminating ghosted pixels and driver-drawn cursor corruption. With no mouse movement or UI changes, no VRAM writes occur.
-
-Startup now checks whether the INT 33h vector points to a real routine, resets the driver, and calibrates 320-versus-640 horizontal units using the standard position/position-read functions. DOS `INT 33h AX=5` is used to capture short left-button clicks even if the button was released between polls, and `AX=3` retains a fallback edge detector. The player displays `MOUSE OK` or `NO MOUSE` near the title bar. `/NOMOUSE` provides a keyboard-only fallback. Serial-mouse detection remains the responsibility of an installed DOS mouse TSR, such as `CTMOUSE /S14 /M` on the known EX COM1/IRQ4 setup.
-
-### Regression coverage
-
-`tests/ui_test.c` now checks software cursor save/restore against the full simulated 32 KB video framebuffer, cursor movement over a button and then a dirty redraw, zero-write idle behavior, X coordinate scaling, held-click debouncing, and press-count handling for very short clicks. The new pointer code has no driver graphics callback, no DOS interrupt handler, and should remain responsive without repainting the entire screen. **The source is hardware-unverified until tested with the physical mouse on the EX.**
+- [README](../README.md): launch, keyboard, mouse setup and limitations
+- [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md): audio and UI data flow
+- [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md): specific Winamp source units reviewed and licensing
+- Owner-provided classic Winamp screenshot; intentionally not redistributed

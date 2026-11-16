@@ -1,66 +1,95 @@
-# TandyAMP — implementation blueprint
+# TandyAMP — implemented architecture and engineering roadmap
 
-> **Implementation status (v0.1):** The initial Standard MIDI File type 0/1 parser, three-tone PSG renderer, Open Watcom 8086 MZ build, MIDI tests, original demo, DOS command-line options, and the 320×200 Winamp-inspired GUI now exist in `src/midi.c`, `src/main.c`, `tools/make_demo.py`, and `.github/workflows/build-dos.yml`. The original sections below describe the longer-term architecture. Current limitations: BIOS 18.2 Hz timing, 28 KB / 12-track limit, no mouse or seek UI, no file picker, limited instrument timbre. **Physical Tandy EX testing remains pending.** See [UI_DESIGN.md](UI_DESIGN.md) for the reference-image adaptation.
+**Status:** This document describes the current code in `src/main.c`, `src/midi.c` and `src/midi.h`, plus clearly separated future work. It supersedes the old v0.1 proposal (which incorrectly described a 28 KB/12-track, 18 Hz-only, keyboard-only prototype).
 
-This is a proposal for a new program, **not a description of software already implemented**.
-
-## Target and overall flow
+## Runtime data flow
 
 ```text
-MIDI file (.MID, type 0/1)
-       |
-       v
-SMF parser (header, tracks, running status, delta-time VLQ)
-       |
-       v
-Merged timestamped events / tempo map
-       |
-       v
-Bounded-time scheduler  ---- transport state (play/pause/seek)
-       |
-       v
-MIDI channel / note state (note-on, note-off, sustain, velocity, CCs)
-       |
-       v
-Three-voice allocator + optional noise/percussion policy
-       |
-       v
-Integer note period + velocity/volume lookup + pitch bends
-       |
-       v
-Tandy SN76489-compatible PSG at I/O port 0xC0
+Command line: explicit files OR current-directory *.MID discovery
+                         |
+                         v
+        64-entry case-insensitive DOS playlist
+                         |
+                         v
+       File loader (up to 44 KiB, 24 SMF tracks)
+                         |
+                         v
+     SMF 0/1 parser: delta VLQ, running status,
+              track events and tempo changes
+                         |
+                         v
+    Timestamp-ordered event groups / MIDI note state
+             (up to 32 active notes)
+                         |
+                         v
+      Pitch/velocity/CC/sustain/bend; volume leveling
+                         |
+                         v
+        3-voice PSG allocation and duplicate
+         divider merging; noise percussion
+                         |
+                         v
+             Tandy PSG at I/O 0xC0
+
+    Foreground PIT timing  <--->  transport state
+          |                         |
+          +------- GUI / keys / mouse +-----+
+                   (dirty areas only)
 ```
 
-The UI reads the current transport and channel state; **the sound engine must never depend on a redraw**. Avoid full-screen redraws on every music event.
+## Implemented subsystems
 
-## What we learned from the original TANDY.ADV
+### MIDI decoding and timing
 
-- **96-note period tables** demonstrate efficient lookup-based note-to-divider mapping. Recreate the table independently from equal-tempered MIDI frequencies, with an explicit policy for out-of-range notes.
-- **128-level attenuation table** demonstrates efficient MIDI-style volume control. Calculate TandyAMP's own mapping from velocity × CC7 × CC11; cap each hardware attenuation command to 0..15 and test note-offs.
-- **Three-slot voice allocation** is an essential part of music quality, not an afterthought. Compare oldest-note, quietest-note, most-salient-note and sustained-note policies using synthetic MIDI test sequences.
-- **Pitch bend via integer interpolation** is achievable on a V20. Keep the fixed-point intermediate types wide enough to avoid overflows.
-- **Direct PSG writes to port 0xC0** need a robust channel-specific latch/data command encoder, preferably using cached register values.
-- **Port 0x61 audio routing** is a hardware configuration concern requiring model-specific read/modify/write; do not hardcode the Miles driver's 0x68 setting.
+- Loads Standard MIDI Files **type 0 and 1**, supports PPQN ticks, up to **24 tracks** and **45,056 bytes per song**. SMPTE timing and type 2 are rejected.
+- Merges tracks by absolute event timestamp rather than simply consuming tracks in index order. Events at one MIDI timestamp update the note pool together before voice selection.
+- Maintains program state for MIDI note on/off, velocity, sustain pedal, CC7 volume, CC11 expression and pitch bend. Handles tempo meta events, running status and end-of-track.
+- Uses PIT channel 0 with the standard **65536 divisor** and temporary **mode 2** for a monotonic sub-BIOS-tick counter. Polling is in the foreground and subdivides work into up to **32 Q8 subticks**, ~6.9 ms at the normal 18.2 Hz BIOS rate. PIT mode 3 is restored on normal exit; **no new IRQ handler is installed**.
+- Timer precision does not guarantee identical real-hardware rhythm under GUI or disk I/O load. Earlier EX recordings confirm playback, but new code needs repeat verification there.
 
-See [the offsets and detailed observations](TANDY_ADV_ANALYSIS.md) for evidence.
+### MIDI synthesis and arrangement
 
-## First deliverable: audible MIDI before graphics
+- Stores up to **32** active notes (held/sustained/eligible), maps them to **three hardware tone voices** while avoiding simultaneous duplicate PSG dividers.
+- Prioritizes musically salient notes, can restore a held note after a stolen voice is freed, and updates selection when CC volume/expression changes. Bass notes below the normal SN76489 pitch floor are octave-folded.
+- Uses hardware noise for General MIDI channel 10 drums, with short envelopes. A conservative pre-scan can recognize legacy channel-16 drum patterns; `/DRUM16` and `/NODRUM16` override it. Changing drum mode with `D` restarts the song.
+- The 16-level master volume (`/VOL:0..15`) applies to tones and percussion. Always-on integer-based automatic leveling attenuates dense mixes and recovers slowly. It is an **estimated hardware-output budget**, not a microphone-based loudness measure.
+- The notes and sound logic are **original**; the Miles `TANDY.ADV` was used only as a factual register/algorithm reference, never linked or copied.
 
-An independently compiled real-mode DOS program should:
-1. Open one specified `.MID` file from disk and decode type 0 or type 1 tracks; gracefully reject unsupported cases.
-2. Schedule note-on, note-off and tempo changes with consistent elapsed time. A timer faster than 18.2 Hz may be required; keep DOS calls out of time-critical interrupt handlers.
-3. Use three PSG tone channels with deterministic note stealing and no stuck notes.
-4. Handle end-of-track, explicit stop and Ctrl-C/exit safely (silence PSG and restore any modified interrupt/system state).
-5. Record deterministic test traces and compare tempo/note order against the expected MIDI event stream.
-6. Be timed on a real 7 MHz NEC V20 before adding animation or graphic skins.
+### DOS interface and playlist
 
-## Graphical player milestone
+- `TANDYAMP` with no song arguments performs a **non-recursive `*.MID` scan of the current working directory**, alphabetically sorts matches ignoring case, stores up to 64 entries, and starts track 1.
+- `/LOOP` repeats the list. `N` / `P` navigate; if filenames are passed they are used **instead** of the scan and preserve the supplied order.
+- Rejects empty directory, excessive path length or too many explicit tracks with messages before drawing the GUI. Does **not** currently skip unsupported songs automatically once playback tries to load them.
+- GUI uses video BIOS mode `09h` (320×200, 16 colors). Pixel routines write to Tandy's four interleaved 8 KB video banks at `B800:0000`.
+- Text-only `/TXT` mode does not request the graphics mouse cursor.
 
-Target a compact **Winamp-inspired** UI in Tandy's 320×200 16-color mode: song title, elapsed time, position bar, play/pause/stop/next, three-channel indicators, simple file browser and optional playlist. Aim for keyboard-first and mouse-optional; repaint only dirty rectangles. This is an interface design target, **not an implemented feature**.
+### Visuals, controls and serial mouse
 
-## Integration boundaries
+- Eight **36-pixel transport buttons**: PREV / PLAY / PAUSE / STOP / NEXT / VIS / LOOP / DRUM. Their actions share the keyboard input dispatcher.
+- Upper area: filename, elapsed-time clock, playback state, drum detection mode, master volume and animated *activity marker*. The marker is not a scrub/seek bar.
+- Lower pane shows a seven-row window onto the **64-entry** playlist or a **three-tone voice monitor**; it is not an FFT spectrum or equalizer.
+- Dirty-region renderer updates only changed clock digits, labels, selection, activity dots, meters or buttons rather than redrawing the whole image every timer pass.
+- Mouse support uses standard DOS `INT 33h` to detect movement and clicks (not raw serial I/O). To work around graphics-driver issues in Tandy banked mode `09h`, an original **8×11 software cursor** saves and restores its covered pixels. It probes 320 vs 640 X units, records short clicks via AX=5, and reports `MOUSE OK` / `NO MOUSE`. `/NOMOUSE` disables it.
+- Serial-mouse operation on the physical EX requires a loaded compatible DOS mouse driver, e.g. a known working CuteMouse serial configuration. The GUI and cursor tests run on a **simulated framebuffer**, not the real RS-232 port.
 
-- MIDI timing/parser can be written in Open Watcom 16-bit C; PSG I/O and any timer-critical code can use small assembly routines where profiling demonstrates a benefit.
-- Research from [DOSMid](https://dosmid.sourceforge.net/) and [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker) is useful, but **verify licenses and attribution requirements before incorporating third-party code**. Prefer independent implementations of the small hardware-specific routines.
-- Do not import proprietary Miles `.ADV` drivers or SimCity assets into this repository.
-- This is separate from [SCEXSND](https://github.com/ARMoir/WIN31DSK/tree/TANDY30/tools/tandy30/simcity-ex-sound), which is a digital-sound BIOS translator rather than a MIDI sequencer.
+## Tests and reproducible build
+
+`tests/make_test_mid.py` creates original synthetic inputs; `tests/midi_test.c` tests format/track bounds and percussion; `tests/playback_test.c` and `tests/mixer_test.c` test event ordering, note allocation and estimated gain. `tests/ui_test.c` exercises the real UI drawing implementation on host-allocated Tandy VRAM and validates cursor restoration, clicking, coordinate scaling, redraw budgets and automatic directory playlists.
+
+`.github/workflows/build-dos.yml` runs these tests, builds a DOS EXE with Open Watcom 2.0 and publishes the result only on success. See [BUILD_AND_RELEASE.md](BUILD_AND_RELEASE.md).
+
+## Still not implemented / known limitations
+
+- No MIDI type 2, SMPTE timing, unlimited file length or general GM wavetable instruments.
+- Only three simultaneous PSG pitches; extra MIDI polyphony must be approximated.
+- No visual seek, accurate full-song duration bar, file chooser, clickable playlist song rows, user-selectable skins, shuffle or true EQ.
+- The current CLI auto-scan is **current-directory only**, not recursive, and caps the list at 64.
+- A supported mouse driver does not guarantee EX serial-device detection or cursor smoothness; actual EX retest pending.
+- Priority next: listen to recent builds on the real EX, validate serial mouse movement, test large playlists on CF media, then improve UI responsiveness and note quality without introducing slow framebuffer writes.
+
+## Historical research used
+
+- [TANDY.ADV analysis](TANDY_ADV_ANALYSIS.md): factual 96-note, 128-step loudness, allocation and register observations. MIDI/PSG code is independently authored.
+- [Winamp design reference](WINAMP_REFERENCE.md): conceptual workflow and chrome only; no Winamp code/assets copied.
+- [UI design](UI_DESIGN.md): screen geometry, cursor/redraw details, and changes documented from the real EX recording.
+- [README](../README.md): user instructions, commands and current limitations.

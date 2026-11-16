@@ -2,6 +2,8 @@
 
 This document carries forward the binary analysis originally recorded in [WIN31DSK/TANDY_ADV_ANALYSIS.md](https://github.com/ARMoir/WIN31DSK/blob/TANDY30/tools/tandy30/simcity-ex-sound/TANDY_ADV_ANALYSIS.md) and applies it specifically to a **standalone Standard MIDI File player**. No Miles driver code or copyrighted waveform/audio data is included here.
 
+> **Current TandyAMP integration status (November 2026):** The original TandyAMP MIDI engine has independently implemented three-tone voice allocation, integer PSG note periods/pitch bending, volume and expression, a master limiter, and optional noise-channel percussion. MIDI is played directly through port `0xC0`. The historical observations below remain a **reference analysis**, not imported code. Port `0x61` initialization is intentionally *not* blindly copied from the proprietary ADV. For current behavior see [PLAYER_ARCHITECTURE.md](PLAYER_ARCHITECTURE.md). Latest EX-specific changes remain under hardware evaluation.
+
 ## Provenance and limits
 
 - Owner-supplied archive: `SimCity_DOS_EN_Version-20-Quaders-Release(1).zip`
@@ -68,7 +70,7 @@ The engine should remember `track/channel/note` ownership and implement note-off
 ### PSG programming and EX routing
 
 - **Tone channels:** latch + high divider data, then attenuation; repeat for three voices only when values change.
-- **Noise channel:** the fourth SN76489 voice can approximate percussion. This is a future design choice, not proof that the proprietary ADV offers full MIDI drum mapping.
+- **Noise channel:** the fourth SN76489 voice can approximate percussion. **Current TandyAMP implements this for GM channel 10 and optional legacy channel 16**; this does not imply the proprietary ADV supports full MIDI drums.
 - **I/O address:** `0xC0` for Tandy PSG.
 - **Port `0x61`:** The ADV sets `0x68` as part of its startup path. On different Tandy models, port `61h` also participates in audio selection and other system behavior. **Never blindly write `0x68`** in a general-purpose player. Verify the EX-specific bit assignments; if required, do a documented read/modify/write and preserve or restore unrelated state. Even this should be hardware-tested.
 - **I/O delay:** the ADV has short instruction gaps between PSG writes. Add a minimal delay only when actual hardware testing demonstrates glitches; 7 MHz V20 I/O may already supply enough spacing.
@@ -82,9 +84,9 @@ The engine should remember `track/channel/note` ownership and implement note-off
 - Do not assume MIDI timing is adequately served by the 18.2 Hz system tick. The chosen timing strategy needs accurate tempo and event handling without disrupting BIOS/DOS.
 - Do not treat port `61h` configuration as a guaranteed volume boost.
 
-## Recommended TandyAMP follow-ups
+## Current implementation and remaining follow-ups
 
-**First priority:** original 96+ note divider mapping, 128-step velocity attenuation, three voice states with correct note-off/stealing, and integer tempo scheduling. Next, pitch-bend interpolation and optional noise-channel drum accents. Leave routing changes, I/O pacing and visualizers until working hardware playback establishes a baseline.
+TandyAMP now has an independently computed integer note table, volume/expression attenuation, three-voice prioritization, pitch-bend handling, noise percussion, and a foreground PIT subtick scheduler; the original introductory research milestones are implemented in the project's own source. Remaining work is **real EX validation** of the newest serial mouse and automatic playlist features, further musical tuning of dense arrangements, and cautious performance profiling. Routing changes or artificial I/O delays should be attempted only with specific hardware evidence.
 
 ## References
 
