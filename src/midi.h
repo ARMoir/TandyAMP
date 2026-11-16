@@ -65,6 +65,7 @@ typedef struct {
     ta_u8 loaded, playing, paused;
     ta_u8 master_attenuation, mix_attenuation;
     ta_u8 master_boost; /* 0..5 extra attenuation steps recovered at 16..20. */
+    ta_u8 treble_soft; /* 0=original, 1=slightly soften notes C6 and up. */
     ta_u8 speaker_enabled; /* 0=OFF, 1=BASS, 2=ADAPT, persisted across songs. */
     ta_u8 speaker_octave_up; /* True if ADAPT currently sounds one octave up. */
     ta_u32 speaker_adapt_stamp; /* Lock octave for the entire MIDI note. */
@@ -81,6 +82,7 @@ void ta_pause(void);
 void ta_noteoff_all(void);
 void ta_set_volume(unsigned volume); /* 0=mute, 15=normal, 20=boost. */
 unsigned ta_get_volume(void); /* User-facing 0..20 master setting. */
+void ta_set_treble(unsigned soft); /* Conservative high-note balance switch. */
 void ta_set_speaker(unsigned mode); /* OFF -> BASS -> ADAPT, optional PIT2. */
 ta_u32 ta_elapsed_seconds(void);
 const char *ta_error(void);

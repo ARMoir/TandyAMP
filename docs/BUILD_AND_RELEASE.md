@@ -13,6 +13,7 @@
 | `tests/midi_test.c` | MIDI parser and format/boundary tests |
 | `tests/playback_test.c` | Event ordering and note/voice behavior |
 | `tests/mixer_test.c` | Mix model and volume/attenuation tests |
+| `tests/treble_test.c` | Upper-register priority continuity, C6/A6 trim, 165 ms sustain, volume-20 boost, hard MIDI silence and live toggle |
 | `tests/ui_test.c` | Simulated Tandy VRAM drawing, ten-button two-row layout (SPK4 and MUTE together), software mouse, minimal repaint and directory playlist auto-discovery |
 | `tests/speaker_test.c` | Optional fourth PIT2 voice allocation, live toggle and mute/stop regressions |
 | `tools/make_demo.py` | Produces an original 16-second `DEMO.MID` |
@@ -44,6 +45,8 @@ gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/playback_test tests/playback_t
 ./tests/playback_test
 gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/mixer_test tests/mixer_test.c
 ./tests/mixer_test
+gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/treble_test tests/treble_test.c
+./tests/treble_test
 gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/speaker_test tests/speaker_test.c
 ./tests/speaker_test
 python3 tests/check_docs.py
@@ -105,3 +108,7 @@ Host tests verify that SPK4 being **enabled** but not programmed into PIT2 displ
 ### Three-way SPK4 acceptance checks
 
 `tests/speaker_test.c` now checks the original BASS divider, adaptive octave placement, ±2-semitone pitch-overlap avoidance, quiet/loud PSG conditions, pitch-bend continuity, and the note-stamp lock (no mid-note octave jumping). `tests/ui_test.c` cycles OFF → BASS → ADAPT → OFF through both keyboard dispatch and captured serial mouse clicks, checks the three distinct button paint states and verifies that the VIS note label reflects a raised octave. `/SPK4`, `/SPK4:ADAPT`, and `/NOSPK4` are documented without changing the DOS release ZIP contents.
+
+### High-register improvement acceptance tests
+
+`tests/treble_test.c` validates the smooth scoring transition from MIDI 96 (C7) to 97 (C#7), that notes below C6 are untouched, C6+ gets one 2 dB hardware step, a sustained MIDI 93 (A6) gets a second step after ~165 ms, **the reduction survives maximum software volume 20**, and hard MIDI silence/stop is preserved. H toggles are live and neither detune held notes nor reset the MIDI clock. `tests/ui_test.c` verifies `HI SOFT` / `HI RAW` coloring and small-region redraw budgets. GitHub Actions runs both host regressions before the Open Watcom DOS build. The hardware still requires an A/B listening test; softening a PSG square wave by attenuation does not remove its odd harmonics.

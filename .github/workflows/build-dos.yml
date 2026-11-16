@@ -53,6 +53,10 @@ jobs:
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/speaker_test tests/speaker_test.c
           ./tests/speaker_test
+      - name: Check high-note priority and treble balance at 15/20 volume
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/treble_test tests/treble_test.c
+          ./tests/treble_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:

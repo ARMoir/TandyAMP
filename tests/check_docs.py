@@ -79,6 +79,15 @@ demand("TA_MIX_POWER_CEILING 6144U" in MIDI_SOURCE and "6,144" in README,
        "Loudness/limiter ceiling undocumented")
 demand("TA_MAX_VOLUME 20U" in MIDI_SOURCE and "volume>20" in CODE,
        "Master boosted volume range mismatch")
+demand("treble_extra_atten" in MIDI_SOURCE and "effective_note_atten" in MIDI_SOURCE,
+       "PSG treble shaping or limiter coherence is missing")
+demand('"/HISOFT"' in CODE and '"/NOHISOFT"' in CODE and "case 'H':" in CODE,
+       "High-register SOFT/RAW controls missing")
+demand("HI SOFT" in CODE and "HI SOFT" in README,
+       "Treble status not documented")
+demand("tests/treble_test.c" in README or "tests/treble_test.c" in
+       (ROOT / "docs/BUILD_AND_RELEASE.md").read_text(encoding="utf-8"),
+       "High-register regression tests not documented")
 demand("timer_start" in CODE and "mode 2" in ARCH,
        "PIT scheduling undocumented")
 demand("tests/check_docs.py" in README and "tests/check_docs.py" in WORKFLOW,

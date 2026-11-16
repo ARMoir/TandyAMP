@@ -34,6 +34,17 @@ static const ta_u16 power_level[16]={
 #define TA_UNBOOSTED_VOLUME 15U
 /* Preserve genuine silence: raw 15 is the PSG's mute code and MUST NOT
    be revived by software boost. Likewise master volume 0 stays silent. */
+/* The PSG can only make square waves, not filter harmonics.
+   Soften upper-register notes by 1 hardware attenuation step from C6,
+   2 steps from F#6 after ~165 ms of sustain. No added oscillators/ISRs.
+   This is a small perceptual level adjustment, not a low-pass filter.
+   It is applied BEFORE the limiter so accounting matches I/O output. */
+static ta_u8 treble_extra_atten(const TAActiveNote *n)
+{
+    if(!ta.treble_soft || n->note<84)return 0;
+    if(n->note>=90 && n->age_q8>=768U)return 2;
+    return 1;
+}
 static ta_u8 effective_atten(ta_u8 raw,unsigned mix)
 {
     unsigned out;
@@ -42,6 +53,16 @@ static ta_u8 effective_atten(ta_u8 raw,unsigned mix)
     if(out<=ta.master_boost)return 0;
     out-=ta.master_boost;
     return (ta_u8)(out>15U?15U:out);
+}
+/* Preserve treble trim even at master volume 20, whose software
+   gain would otherwise cancel the adjustment. Limit/mute bookkeeping
+   must use this exact same result as the physical PSG register writes. */
+static ta_u8 effective_note_atten(const TAActiveNote *n,unsigned mix)
+{
+    unsigned a=effective_atten(n->attenuation,mix);
+    if(a>=15U)return 15;
+    a+=treble_extra_atten(n);
+    return (ta_u8)(a>15U?15U:a);
 }
 
 static ta_u16 rd16(ta_u16 p)
@@ -262,8 +283,8 @@ static void render_voice(unsigned i)
             if(shifted>1023)shifted=1023;
             p=(ta_u16)shifted;
         }
-        a=effective_atten(ta.notes[v->source].attenuation,
-                          ta.mix_attenuation);
+        a=effective_note_atten(&ta.notes[v->source],
+                               ta.mix_attenuation);
     }
     if(v->level!=a || (a<15 && output_period[i]!=p)){
         ta_psg_tone(i,p,(ta_u8)a);
@@ -277,9 +298,13 @@ static ta_s32 note_priority(const TAActiveNote *n)
     ta_s32 score;
     if(n->note<0)return -100000L;
     score=(n->held?1000L:200L)+(ta_s32)n->gain*3L;
-    if(n->note>=60 && n->note<=96)score+=180L;
+    if(n->note>=60){
+        score+=180L; /* No abrupt priority cutoff at C#7 (MIDI 97). */
+        if(n->note>96)score-=((ta_s32)n->note-96L)*3L;
+    }
     if(n->note>=44 && n->note<60)score+=70L;
-    if(n->note<36 || n->note>104)score-=90L;
+    if(n->note<36)score-=90L;
+    if(n->note>104)score-=((ta_s32)n->note-104L)*5L;
     if(n->channel==0)score+=30L;
     score-=(ta_s32)n->env_step*12L; /* Prefer still-prominent parts. */
     return score;
@@ -465,7 +490,12 @@ static void rebuild_voices(void)
             score=note_priority(n);
             /* Reserve the first voice for the tune, next for available bass.
                This keeps long chords from replacing the audible melody. */
-            if(k==0 && n->note>=60 && n->note<=96)score+=5000L;
+            if(k==0 && n->note>=60){
+                /* Keep a treble melody across C7 instead of a 5000-point
+                   cliff at note 97. Taper only very high notes smoothly. */
+                score+=5000L-(n->note>96?
+                    ((ta_s32)n->note-96L)*60L:0L);
+            }
             if(k==1 && selected[0]>=0 &&
                ta.notes[selected[0]].note>=60 && n->note<60)score+=5000L;
             for(j=0;j<k;j++)if(selected[j]>=0 &&
@@ -534,7 +564,9 @@ static void flush_mix(void)
     for(g=0;g<15;g++){
         sum=0;
         for(i=0;i<4;i++){
-            a=effective_atten(raw[i],g);
+            a=(i<TA_VOICES && ta.voices[i].note>=0)?
+                effective_note_atten(&ta.notes[ta.voices[i].source],g):
+                effective_atten(raw[i],g);
             sum+=power_level[a];
         }
         if(sum<=TA_MIX_POWER_CEILING)break;
@@ -556,6 +588,15 @@ static void flush_mix(void)
 unsigned ta_get_volume(void)
 {
     return TA_UNBOOSTED_VOLUME-ta.master_attenuation+ta.master_boost;
+}
+void ta_set_treble(unsigned soft)
+{
+    soft=(soft!=0U);
+    if(ta.treble_soft==(ta_u8)soft)return;
+    ta.treble_soft=(ta_u8)soft;
+    /* No forced note-restart: recalculate actual output and mix budget. */
+    controllers_dirty=1;
+    if(ta.playing && !ta.paused)flush_mix();
 }
 void ta_set_volume(unsigned volume)
 {
@@ -638,11 +679,17 @@ static void update_tone_effects(ta_u16 elapsed_q8)
         envelope_clock=(ta_u16)(envelope_clock&127U);
         for(i=0;i<TA_ACTIVE_NOTES;i++){
             n=&ta.notes[i];
-            if(n->note<0 || n->style==0)continue;
+            if(n->note<0 || (n->style==0 && n->note<90))continue;
             if(n->age_q8<8192U){
+                unsigned old_age=n->age_q8;
                 unsigned age=n->age_q8+add;
                 n->age_q8=(ta_u16)(age>8192U?8192U:age);
+                if(n->note>=90 && old_age<768U && n->age_q8>=768U)
+                    controllers_dirty=1;
             }
+            /* Unspecified/sustained GM instruments still need a note
+               age for the delayed high-treble trim; no GM decay here. */
+            if(n->style==0)continue;
             if(n->style==1){
                 step=n->age_q8/512U;
                 if(step>6U)step=6U;

@@ -47,6 +47,29 @@ int main(void)
     draw_all();
     assert(color_at(9,188)==0); /* new black footer */
     assert(colored_pixels(11,189,220,7,15)>24);
+    /* The high-register SOFT/RAW control is deliberately keyboard-only;
+       it has a small independent track-header redraw, not another button. */
+    {
+        unsigned long before=ui_pixels_written;
+        ta_u32 clock=ta.clock_q8;
+        assert(!ta.treble_soft);
+        input_key('H');
+        assert(ta.treble_soft && ta.clock_q8==clock);
+        draw_dirty();
+        assert(ui_pixels_written-before>0 &&
+               ui_pixels_written-before<1100UL);
+        assert(colored_pixels(255,25,48,7,10)>10);
+        before=ui_pixels_written;
+        draw_dirty();
+        assert(ui_pixels_written==before); /* zero-write idle redraw */
+        input_key('H');
+        assert(!ta.treble_soft && ta.clock_q8==clock);
+        draw_dirty();
+        assert(colored_pixels(255,25,48,7,14)>10);
+        input_key('H'); /* leave enabled, matching normal DOS default */
+        draw_dirty();
+        assert(ta.treble_soft);
+    }
 
     /* Exact 5x2 grid: no button text crosses its 58x17 inset.
        Transport row is separate from the functional mode/mute row. */
@@ -387,7 +410,7 @@ int main(void)
     printf("PASS: auto-discovered alphabetical MIDI playlist, 64-file cap, "
            "and 10 clickable 5x2 controls including SPK4 and MUTE, title, zero-write idle, "
            "clock-only refresh, four accurate meters, SPK4 ready-vs-playing, "
-           "high contrast footer, software cursor restore, "
+           "high contrast footer, high-note SOFT/RAW toggle, software cursor restore, "
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;
 }

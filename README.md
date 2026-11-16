@@ -39,7 +39,9 @@ The ZIP contains only **`TANDYAMP.EXE`, `DEMO.MID`, and `LICENSE`**; Markdown do
 | `/GUI`, `-G` | 320×200 16-color Tandy GUI (default) |
 | `/TXT`, `-T`, `/TEXT` | Text-mode player; no mouse graphics |
 | `/LOOP`, `-L` | Repeat the playlist when its last song finishes |
-| `/VOL:0..20` | Master output: **0 = mute**, **15 = original full setting**, **16–20 = additional software gain** where PSG headroom exists (default 15) |
+| `/VOL:0..20` | Master output: **0 = mute**, **15 = normal**, **16–20 = additional software gain** where PSG headroom exists |
+| `/HISOFT` | Enable gentle high-register balancing (default) |
+| `/NOHISOFT` | Preserve original RAW treble levels for comparison |
 | `/DRUM16` | Force legacy MIDI channel 16 to percussion |
 | `/NODRUM16` | Treat channel 16 as melody |
 | `/AUTODRUM16` | Use conservative channel-16 drum detection (default) |
@@ -65,6 +67,7 @@ Options can be used with either an explicitly named song or the automatically di
 | `D` | Cycle legacy channel-16 drums: AUTO → ON → OFF; restarts the current song | DRUM |
 | `K` | Cycle OFF → BASS → ADAPT → OFF without restarting playback | SPK4 (second row) |
 | `M` | Mute or restore the previously audible master volume | MUTE (second row) |
+| `H` | Toggle high notes between **SOFT** and **RAW** without restarting | Keyboard only |
 | `+` / `-` | Increase / decrease master volume without restarting | Keyboard only |
 | `Q` / `Esc` | Silence PSG and quit to DOS | Keyboard only |
 
@@ -94,7 +97,7 @@ Only use that CuteMouse command if it matches your actual serial port/driver set
 | MIDI controls | Note-on/off, velocity, volume CC7, expression CC11, sustain CC64, pitch bend, stop/all-notes-off |
 | Percussion | General MIDI channel 10 uses the noise channel; optional auto/forced legacy channel-16 drums |
 | Pitches | Integer divider table, pitch bending, octave folding for bass below the PSG's frequency floor |
-| Loudness | Master volume `0..20` (15 normal, 16–20 extra PSG gain); corrected integer mix-power ceiling (6,144 instead of 1,024) with automatic peak leveling |
+| Loudness | Master volume `0..20` (15 normal, 16–20 extra PSG gain); integer 6,144-power limiter; optional SOFT/RAW high-register balancing with a small header indicator |
 | Timing | Foreground scheduling in ≤32/256 of a BIOS tick (~6.9 ms) using PIT channel 0; the normal BIOS IRQ rate is retained |
 | GUI | Tandy video mode `09h`, 320×200 × 16 colors; original 5×7 font; dirty-rectangle updates; optional INT 33h mouse |
 | Missing | SMPTE time division, more than three simultaneous tone voices, complete GM instruments, seeking, shuffle, file browser and a true EQ |
@@ -188,3 +191,13 @@ An analysis of the attached 30-second physical EX recording `3582.mp4` found the
 ADAPT considers only low MIDI **source** notes **24–52** and still requires three other distinct PSG notes. It may **raise the selected bass one octave**, never arbitrarily detune it or use higher melody notes as its source. Very deep bass (MIDI 24–35) is raised when no nearby PSG note would collide; middle-low notes (36–43) are raised only if at least two other PSG voices are strong (hardware attenuation 0–6) and there is no note within ±2 semitones of the raised pitch. Source bass 44–52 stays at its original octave. The decision uses **small integer comparisons**, occurs **once per MIDI note**, and is locked for that note's lifetime (even if the PSG gets louder). Pitch bend is still applied normally. The four-column VIS monitor displays the **actual pitched octave** when SPK4 sounds, appending a `^` indicator when raised (e.g., C2 becomes `C3^`).
 
 This is intended to improve perceived bass clarity on the small internal speaker, not to increase PC-speaker voltage or loudness. It remains **unverified on the real EX** and should be compared at the same master volume against faithful BASS mode.
+
+## High-register balance: new SOFT / RAW comparison
+
+TandyAMP now starts in **HI SOFT** mode. Press **H** while music plays to toggle **HI SOFT ↔ HI RAW** instantly, or use `/HISOFT` (default) or `/NOHISOFT` on the command line. The current mode is shown near **NOW PLAYING**. This uses a tiny independent status redraw, **not** another crowded control button; the established two rows of five stay unchanged.
+
+**SOFT** reduces the hardware amplitude of high melody notes *slightly*: notes starting at MIDI **84 (C6)** are reduced by one PSG attenuation step (~2 dB). Very high notes starting at MIDI **90 (F#6)** are reduced by a second step (~4 dB total) after approximately **165 ms** of continuous sustain. In particular, that targets the long A6-like ~1.75 kHz tone identified in the previous physical EX recording. The note's pitch, MIDI note-off and sustain-pedal behavior are **unchanged**. High melody priority also no longer collapses suddenly at MIDI 97 (C#7): it now tapers progressively instead of losing a 5,000-point bonus.
+
+The treble reduction is applied **after master boost**, so it still works at volume **20**, but **before final PSG output and in the same calculation used by the limiter**, so actual hardware attenuation, volume-budget accounting and the visualizer remain consistent. This is **not** frequency-domain filtering: the Tandy PSG produces square waves, and no software low-pass, EQ, octave substitution or PCM processing was added. SOFT simply reduces how dominant piercing upper notes sound. Integer operations and an existing envelope timer are reused. The default can be switched off instantly for a true A/B comparison.
+
+Recommended hardware test: play the same Canyon section with `/VOL:15` and alternate **H** between SOFT and RAW; then repeat at volume 18 or 20. Pay particular attention to the ~14–24-second high sustained tone. The new setting is tested by host regressions but has **not** yet been acoustically verified on the physical 7 MHz EX.

@@ -36,7 +36,8 @@ static ta_u32 song_ticks=0, last_refresh=0;
 #define UI_METERS   0x40U
 #define UI_SPK4     0x80U
 #define UI_MUTE     0x100U
-#define UI_ALL      0x1ffU
+#define UI_TREBLE   0x200U
+#define UI_ALL      0x3ffU
 /* Five consistently sized controls per row.  All labels fit in mode 09h. */
 #define UI_BUTTON_COUNT 10U
 #define UI_BUTTON_COLS 5U
@@ -569,12 +570,20 @@ static void draw_meters(void)
         meter_last_level[i]=level;
     }
 }
+static void draw_treble_status(void)
+{
+    /* Tiny stand-alone redraw; nothing beneath the player is touched. */
+    box(254,25,52,8,0);
+    label(255,25,ta.treble_soft?"HI SOFT":"HI RAW",
+          (ta_u8)(ta.treble_soft?10:14),8);
+}
 static void draw_track_info(void)
 {
     char filename[64];
     const char *mode;
     box(129,24,179,35,0);
     label(135,25,"NOW PLAYING",7,24);
+    draw_treble_status();
     if(song_count){
         strncpy(filename,leaf(songs[song_current]),27);
         filename[27]=0;
@@ -691,6 +700,7 @@ static void draw_dirty(void)
         if(flags&UI_MUTE)draw_button(9);
     }
     if(flags&UI_TRACK)draw_track_info();
+    else if(flags&UI_TREBLE)draw_treble_status();
     if((flags&UI_CLOCK) || clock_changed)draw_clock();
     if(flags&UI_STATE)draw_state();
     if(flags&UI_PROGRESS || progress_changed)draw_progress();
@@ -802,12 +812,15 @@ static void usage(void)
     puts("         /NODRUM16 force channel 16 drums off");
     puts("         /AUTODRUM16 auto drum routing (default)");
     puts("         /VOL:0..20 master volume, 15=normal, 16-20=boost");
+    puts("         /HISOFT   mild treble softening (default)");
+    puts("         /NOHISOFT original high-note balance");
     puts("         /HELP     display this help");
     puts("Auto level limiting always on. No playlist recursion or seek.");
     puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
     puts("      E voice monitor, L loop, D drums AUTO/ON/OFF");
     puts("      K cycles SPK4 OFF / BASS / ADAPT (bass-only)");
     puts("      M mute/unmute with previous volume restored");
+    puts("      H toggle treble SOFT / RAW while playing");
     puts("      + or - change volume; Q or ESC quit.");
     puts("Playlist: 64 files max, alphabetical if auto-discovered.");
     puts("MIDI format 0/1, up to 24 tracks, up to 44 KB per file.");
@@ -872,6 +885,11 @@ static void input_key(int key)
     case 'P':next_song(1);break;
     case 'L':loop_mode=!loop_mode;ui_dirty|=UI_BUTTONS;break;
     case 'E':show_equalizer=!show_equalizer;ui_dirty|=UI_PANEL|UI_BUTTONS|UI_METERS;break;
+    case 'H':
+        ta_set_treble(!ta.treble_soft);
+        if(text_mode)printf("TREBLE %s\n",ta.treble_soft?"SOFT":"RAW");
+        ui_dirty|=UI_TREBLE;
+        break;
     case 'K':
         ta_set_speaker((ta.speaker_enabled+1U)%3U);
         if(text_mode)printf("SPK4 %s\n",
@@ -1005,6 +1023,7 @@ int main(int argc,char **argv)
     int i,key;
     ta_u32 then,now,elapsed;
     unsigned next_index;
+    ta_set_treble(1); /* Conservative treble improvement; H toggles RAW. */
     for(i=1;i<argc;i++){
         const char *s=argv[i];
         if(same(s,"/HELP")||same(s,"-H")||same(s,"/?")){usage();return 0;}
@@ -1012,6 +1031,8 @@ int main(int argc,char **argv)
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
         if(same(s,"/NOMOUSE")){mouse_enabled=0;continue;}
+        if(same(s,"/HISOFT")){ta_set_treble(1);continue;}
+        if(same(s,"/NOHISOFT")){ta_set_treble(0);continue;}
         if(same(s,"/SPK4")){ta_set_speaker(TA_SPK_BASS);continue;}
         if(same(s,"/SPK4:ADAPT")){ta_set_speaker(TA_SPK_ADAPT);continue;}
         if(same(s,"/NOSPK4")){ta_set_speaker(TA_SPK_OFF);continue;}
