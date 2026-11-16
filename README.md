@@ -1,32 +1,91 @@
-# TandyAMP
+# TandyAMP v0.1
 
-**Planned DOS MIDI player for the Tandy 1000 three-voice sound chip (SN76489-compatible PSG).**
+**A Winamp-inspired MIDI player for the original Tandy 1000 EX** — real-mode DOS, 16-bit Open Watcom C, and the computer's onboard SN76489-compatible three-voice sound generator at port `0xC0`.
 
-TandyAMP aims to play ordinary Standard MIDI Files (`.MID`) with an efficient, Winamp-inspired graphical interface on original Tandy-class hardware, starting with the **Tandy 1000 EX, NEC V20 at 7 MHz**. The program will target the built-in three-tone-plus-noise PSG at I/O port `0xC0`, rather than requiring an MPU-401, Sound Blaster, or external MIDI hardware.
+The first version is a **compiled and automatically tested prototype**. It has **not yet been tested on the physical 7 MHz NEC V20 Tandy EX**. The graphical design is inspired by the reference Winamp screenshot supplied by the project owner; the program uses its own pixel font, UI layout, and original code/assets.
 
-> **Status: research / initial design.** This repository does not yet contain a working player, MIDI parser, or sound engine. The technical research below is a reference for clean-room development, not executable code.
+## Download / install
 
-## Research and design notes
+1. Open the latest **[TandyAMP DOS build](https://github.com/ARMoir/TandyAMP/actions/workflows/build-dos.yml)**.
+2. Download the `TandyAMP-DOS-v0.1` artifact ZIP.
+3. Extract `TANDYAMP.EXE` and `DEMO.MID` to the **same directory** on your Tandy's CF card.
+4. Reboot into plain DOS first if the SimCity `SCEXSND` TSR is installed: the music player needs exclusive access to the sound chip.
+5. Run:
 
-- **[TANDY.ADV reverse-engineering findings](docs/TANDY_ADV_ANALYSIS.md)** — observations from the Miles Tandy music driver supplied with DOS SimCity Classic v2.00, including pitch tables, MIDI-scale attenuation, three-voice arbitration, pitch bends, PSG register order, and cautious audio routing.
-- **[TandyAMP implementation blueprint](docs/PLAYER_ARCHITECTURE.md)** — which techniques to reuse conceptually, suggested MIDI event scheduler and voice allocator, and performance priorities for 7 MHz hardware.
+```dos
+TANDYAMP DEMO.MID
+```
 
-The existing [Tandy EX sound BIOS compatibility research](https://github.com/ARMoir/WIN31DSK/tree/TANDY30/tools/tandy30/simcity-ex-sound) relates to *digital effect approximation for SimCity v1.02*. **TandyAMP is a separate MIDI music player** and can take advantage of note-on/note-off and controller events directly.
+The demo is an original 16-second MIDI tune generated from `tools/make_demo.py`. No copyrighted music is bundled.
 
-## Intended features
+## Command-line options
 
-1. Standard MIDI File type 0/1 loading, tracks, variable-length delta times, running status, and tempo-map scheduling.
-2. Three prioritized PSG melody/harmony channels; optional noise/percussion mapped from MIDI channel 10.
-3. Note/velocity envelopes, pitch bend, sustain, and controlled channel stealing within three hardware voices.
-4. Winamp-inspired Tandy graphics, keyboard control, optional serial mouse, progress and playlist display.
-5. Small-memory, real-mode 16-bit DOS build, with playback scheduling kept independent of GUI redraws.
+```dos
+TANDYAMP DEMO.MID
+TANDYAMP SONG1.MID SONG2.MID SONG3.MID
+TANDYAMP /TXT DEMO.MID
+TANDYAMP /LOOP DEMO.MID SONG2.MID
+TANDYAMP /GUI DEMO.MID
+TANDYAMP /HELP
+```
 
-The most important milestone is **one ordinary MIDI file playing with correct timing and note-offs through all three tone channels on the real EX**. The GUI comes after reliable synthesis.
+| Option | What it does |
+| --- | --- |
+| `/GUI` or `-G` | Default Tandy 320×200, 16-color graphical player |
+| `/TXT` or `-T` | Text-mode player, useful in DOSBox or on other text displays |
+| `/LOOP` or `-L` | Loop the complete playlist |
+| `/HELP`, `-H`, `/?` | Show usage and keyboard controls |
 
-## Compatibility, rights and testing
+Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For the v0.1 prototype, files must be **28 KB or smaller** and use MIDI **type 0 or 1**, with **12 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
 
-- Hardware reference: Tandy 1000 EX with NEC V20 at 7 MHz and onboard three-voice sound. Other Tandy/PCjr systems will require verification.
-- The original Miles `TANDY.ADV` is **proprietary** and is not included. Its binary behavior is documented for independently written code; the music-driver protocol is not an interchangeable API for this project.
-- No DOS SimCity executables, Creative Voice sound effects, or other proprietary source/audio data are stored here.
-- Suggested third-party inspirations, subject to verifying licenses before incorporating code: [DOSMid](https://dosmid.sourceforge.net/) (MIDI sequencing) and [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker) (Tandy PSG playback).
+### Keyboard controls
 
+| Key | Action |
+| --- | --- |
+| `SPACE` | Pause/resume |
+| `S` | Stop |
+| `R` | Replay the current song |
+| `N` | Next track |
+| `P` | Previous track |
+| `E` | Toggle playlist / three-channel visualizer |
+| `L` | Toggle playlist loop |
+| `Q` or `Esc` | Quit, silence chip, return to DOS |
+
+The Winamp-style control buttons are **visual in v0.1**; use the keyboard. Serial-mouse support, clickable controls, a file picker, seeking, and a genuine equalizer are not yet implemented. The equalizer-inspired panel currently displays **three live channel levels**, not frequency-domain audio bands.
+
+## Current implementation
+
+- Real 8086-compatible, small-model DOS MZ executable, built with `wcl -bt=dos -0 -ms`.
+- Direct Tandy mode `09h`, 320×200, 16 colors, four-bank video memory, and a compact 5×7 pixel font (no VGA requirement).
+- Standard MIDI File type 0/1 parser; variable-length delta times, multi-track playback, running status, tempo changes.
+- Three PSG tone channels, per-note velocity and MIDI CC7/CC11 volume, CC64 sustain, all-notes-off, note-off and voice stealing.
+- Fixed-point integer pitch-bend approximation using our independently computed 128-note divider table, derived from the 3.579545 MHz PSG clock.
+- Playback advances using the BIOS **18.2 Hz tick** in the foreground. This is an intentionally simple first version; some fast passages and tight rhythmic events may suffer up to ~55 ms of quantization and UI redraw delays. A more precise timer is a future milestone.
+- No resident driver, no AUTOEXEC or Windows image changes.
+
+## Development / reproducible build
+
+Code and scripts are all in this repository:
+
+| File | Purpose |
+| --- | --- |
+| `src/main.c` | Original Winamp-inspired Tandy GUI, keyboard/CLI, PSG port I/O |
+| `src/midi.c` / `src/midi.h` | SMF decoder, tempo handling, MIDI channel state and three-voice synthesis |
+| `tools/make_demo.py` | Generates the included original `DEMO.MID` |
+| `tests/make_test_mid.py` | Creates test MIDI formats 0, 1 and malformed input |
+| `tests/midi_test.c` | Verifies parser and PSG behavior using host output stubs |
+| `.github/workflows/build-dos.yml` | Open Watcom 8086 DOS build and CI test artifacts |
+
+GitHub Actions compiles the MIDI engine under GCC/C89, runs the synthetic MIDI tests, installs Open Watcom and produces a real-mode MZ DOS executable. **Passing CI does not establish actual audio, graphics or timing performance on a physical EX**, which remains the immediate next test.
+
+## TANDY.ADV reverse-engineering reference
+
+Our original engineering research on the Miles `TANDY.ADV` driver is preserved in [docs/TANDY_ADV_ANALYSIS.md](docs/TANDY_ADV_ANALYSIS.md). It covers the note period and MIDI attenuation lookup tables, three-tone voice allocation, pitch bends, register write ordering and risks of blindly setting audio multiplexer port `0x61`.
+
+The proprietary Miles `TANDY.ADV` driver and original SimCity assets are **not** part of this project.
+
+See [docs/PLAYER_ARCHITECTURE.md](docs/PLAYER_ARCHITECTURE.md) for the longer-term design.
+
+## License
+
+The newly written TandyAMP code and generated demo are MIT-licensed; see [LICENSE](LICENSE). No third-party MIDI player code has yet been copied into the project.
