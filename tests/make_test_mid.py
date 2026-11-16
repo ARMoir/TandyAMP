@@ -41,5 +41,15 @@ Path("tests/dense.mid").write_bytes(header(0,1)+chunk(b"MTrk",dense))
 padding=b"\x00\xff\x7f"+vlq(34000)+bytes(34000)
 large=(tempo+padding+note(0,0x90,60,100)+note(96,0x80,60,0)+ending)
 Path("tests/large.mid").write_bytes(header(0,1)+chunk(b"MTrk",large))
+# Legacy channel 16 is clearly percussion (kick, snare, hats).
+legacy=(tempo+note(0,0x9f,36,110)+note(12,0x9f,42,90)+
+        note(12,0x9f,38,110)+note(12,0x9f,42,95)+
+        note(12,0x9f,36,100)+note(12,0x9f,46,90)+ending)
+Path("tests/legacy16.mid").write_bytes(header(0,1)+chunk(b"MTrk",legacy))
+# A channel-16 melody must NOT auto-detect as percussion.
+mel16=(tempo+note(0,0x9f,60,105)+note(12,0x9f,62,105)+
+       note(12,0x9f,64,105)+note(12,0x9f,65,105)+
+       note(12,0x9f,67,105)+note(12,0x9f,69,105)+ending)
+Path("tests/melody16.mid").write_bytes(header(0,1)+chunk(b"MTrk",mel16))
 Path("tests/bad.mid").write_bytes(b"MThd"+b"\x00"*12)
 print("PASS: generated deterministic MIDI inputs")
