@@ -12,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import mido
 from arranger import Note, normalize, prepare, select_voices, make_midi
-from postprocess import classify_drum_bands, clean_stem_notes, refine_drum_hits
+from postprocess import (classify_drum_bands, classify_drum_transient,
+                         clean_stem_notes, drum_velocity, join_bass_fragments,
+                         normalize_drum_fluxes, refine_drum_hits)
 from preview import assign_preview_voices, preview_wav
 
 
@@ -23,6 +25,45 @@ class SpectralDrumTests(unittest.TestCase):
         self.assertEqual(classify_drum_bands(.5, 2, 11), 42)
         self.assertIsNone(classify_drum_bands(5, 5, 5))
         self.assertIsNone(classify_drum_bands(0, 0, 0))
+
+    def test_recording_relative_spectral_novelty_can_find_all_three_drums(self):
+        # Synthesized BOOMY drum stem with strong bass in every transient.
+        # Raw absolute low energy dominates, so calibration must preserve
+        # unique broadband snare/hat attacks instead of all-kick output.
+        bands = [
+            (120, 5, 2), (110, 6, 3), (115, 5, 2),
+            (88, 55, 30), (70, 10, 70),
+        ]
+        relative = normalize_drum_fluxes(bands)
+        self.assertEqual(classify_drum_transient(*relative[0]), 36)
+        self.assertEqual(classify_drum_transient(*relative[3]), 38)
+        self.assertEqual(classify_drum_transient(*relative[4]), 42)
+
+    def test_empty_and_ambiguous_drums_do_not_invent_notes(self):
+        self.assertEqual(normalize_drum_fluxes([]), [])
+        self.assertIsNone(classify_drum_transient(0, 0, 0))
+        self.assertIsNone(classify_drum_transient(1, 1, 1))
+        self.assertIsNone(classify_drum_transient(1, 1, 1, True))
+
+    def test_percussion_velocity_uses_track_range_without_saturation(self):
+        values = [drum_velocity(i, 1, 10) for i in (1, 4, 7, 10)]
+        self.assertEqual(values[0], 56)
+        self.assertEqual(values[-1], 110)
+        self.assertEqual(len(set(values)), 4)
+
+    def test_one_class_percussion_gets_sparser_not_fabricated_snares(self):
+        hits = [Note(i*.15, i*.15+.07, 36, 90, 'drums')
+                for i in range(60)]
+        reduced = refine_drum_hits(hits)
+        self.assertLess(len(reduced), 35)
+        self.assertEqual({n.pitch for n in reduced}, {36})
+
+    def test_louder_snare_can_displace_quieter_simultaneous_kick(self):
+        hits = [Note(0, .07, 36, 62, 'drums'),
+                Note(.025, .085, 38, 100, 'drums')]
+        kept = prepare(hits, 'balanced')
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].pitch, 38)
 
     def test_snare_chatter_is_rejected(self):
         events = [
@@ -52,6 +93,23 @@ class StemCleanupTests(unittest.TestCase):
         ]
         out = clean_stem_notes(riff, 'bass')
         self.assertEqual([n.pitch for n in out], [40, 40, 38])
+
+    def test_bass_velocity_is_not_forced_to_107(self):
+        notes = [Note(0, .2, 40, 68, 'bass'),
+                 Note(.3, .5, 40, 97, 'bass'),
+                 Note(.6, .8, 38, 110, 'bass')]
+        out = normalize(notes, 'balanced')
+        self.assertEqual([n.velocity for n in out], [68, 97, 110])
+
+    def test_bass_fragment_joins_only_near_identical_weak_restarts(self):
+        notes = [Note(0, .2, 40, 80, 'bass'),
+                 Note(.222, .4, 40, 83, 'bass'),
+                 Note(.46, .63, 40, 95, 'bass'),
+                 Note(.67, .83, 38, 85, 'bass')]
+        result = join_bass_fragments(notes)
+        self.assertEqual(len(result), 3)
+        self.assertAlmostEqual(result[0].end, .4)
+        self.assertEqual([n.pitch for n in result], [40, 40, 38])
 
     def test_removes_short_harmonic_artifact_without_losing_lead(self):
         melody = [

@@ -91,8 +91,93 @@ def clean_stem_notes(notes: list[Note], part: str) -> list[Note]:
                     n.velocity < min(before.velocity, after.velocity)):
                 continue
         filtered.append(n)
-    return _limit_polyphony(filtered, 2 if part == 'harmony' else 1)
+    selected = _limit_polyphony(filtered, 2 if part == 'harmony' else 1)
+    if part == 'bass':
+        selected = join_bass_fragments(selected)
+    return selected
 
+
+
+def join_bass_fragments(notes: list[Note], gap: float = .027) -> list[Note]:
+    """Join same-pitch fragments caused by transcription, not articulated riffs.
+
+    Distinct repeated notes with a clear gap or new strong attack remain
+    separate, preserving the famous guitar/bass riff's articulation.
+    """
+    result: list[Note] = []
+    for n in sorted(notes, key=lambda n: (n.start, n.end)):
+        if result:
+            prev = result[-1]
+            delta = n.start-prev.end
+            if (prev.pitch == n.pitch and 0 <= delta <= gap
+                    and abs(prev.velocity - n.velocity) <= 12
+                    and prev.end-prev.start >= .085):
+                result[-1] = replace(prev, end=max(prev.end, n.end),
+                                     velocity=round((prev.velocity+n.velocity)/2))
+                continue
+        result.append(n)
+    return result
+
+
+def normalize_drum_fluxes(rows: list[tuple[float, float, float]]
+                         ) -> list[tuple[float, float, float]]:
+    """Calibrate low/mid/high spectral novelty to this track.
+
+    Distorted/boomy recordings may have >20x more low-band power than
+    mid/high content. Compare attacks against each band's 80th-percentile
+    activity, with a floor so silent bands are not amplified from noise.
+    """
+    if not rows:
+        return []
+    columns = list(zip(*rows))
+    levels = []
+    for col in columns:
+        values = sorted(max(0.0, float(v)) for v in col)
+        levels.append(values[int((len(values)-1)*.80)])
+    floor = max(levels)*.025
+    scales = [max(v, floor, 1e-9) for v in levels]
+    return [
+        (max(0.0, row[0])/scales[0],
+         max(0.0, row[1])/scales[1],
+         max(0.0, row[2])/scales[2])
+        for row in rows
+    ]
+
+
+def classify_drum_transient(low_flux: float, mid_flux: float, high_flux: float,
+                            backbeat_hint: bool = False) -> int | None:
+    """Classify *new* spectral energy, not bass-heavy absolute stem energy.
+
+    Demucs separated drum stems frequently contain sustained low-end bleed.
+    Compare attack spectrum against preceding audio first. If no distinctive
+    transient exists, do not invent a drum. Beat position is a *small* hint,
+    never a mandatory or exclusive drum-class rule.
+    """
+    l = max(0.0, low_flux)
+    m = max(0.0, mid_flux)
+    h = max(0.0, high_flux)
+    total = l + m + h
+    if total <= 0:
+        return None
+    l, m, h = l/total, m/total, h/total
+    if l >= .49 and l >= 1.35*m and h <= .37:
+        return 36
+    if h >= .56 and h >= 1.20*m:
+        return 42
+    if m >= .37 and m+h >= .60 and l <= .40 and (h >= .10 or m >= .60):
+        return 38
+    # Weak musical-time hint for an otherwise plausible broadband snare.
+    if backbeat_hint and m >= .34 and m+h >= .75 and l <= .25:
+        return 38
+    return None
+
+
+def drum_velocity(strength: float, quiet: float, loud: float) -> int:
+    """Stable stem-relative dynamic scaling without 118-velocity saturation."""
+    if loud <= quiet + 1e-6:
+        return 80
+    fraction = max(0.0, min(1.0, (strength-quiet)/(loud-quiet)))
+    return max(48, min(110, round(56+54*fraction)))
 
 def classify_drum_bands(low: float, mid: float, high: float) -> int | None:
     """Conservative drum-stem spectral classifier: 36 kick, 38 snare, 42 hat.
@@ -128,6 +213,17 @@ def refine_drum_hits(notes: list[Note], beats: list[float] | None = None) -> lis
     last_type: dict[int, float] = {}
     result: list[Note] = []
     typical = median(n.velocity for n in notes)
+    from collections import Counter
+    distribution = Counter(n.pitch for n in notes)
+    dominant, dominant_count = distribution.most_common(1)[0]
+    collapsed = len(notes) >= 30 and dominant_count/len(notes) >= .88
+    if collapsed:
+        # A track full of one drum voice is more likely bleed / a weak
+        # classifier than a real 8th-note kick for three minutes.
+        minimum[dominant] = max(minimum[dominant], .38 if dominant == 36 else .32)
+        print('WARNING: drum analysis heavily favors MIDI note {} ({} of {}). '
+              'Reducing repetitions, not inventing other drums.'.format(
+                  dominant, dominant_count, len(notes)), flush=True)
     for n in sorted(notes, key=lambda x: (x.start, {36: 0, 38: 1, 42: 2}.get(x.pitch, 3))):
         if n.pitch not in minimum or n.velocity < max(38, .48 * typical):
             continue

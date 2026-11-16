@@ -15,6 +15,20 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
 
+## Audio quality: balanced drums and bass
+
+With `--stems`, the converter now measures **spectral attack novelty** in the separated drum stem instead of classifying drums from the recording's absolute low-frequency energy. Per-song low/mid/high calibration and weak beat-position hints help distinguish kick (MIDI 36), snare (38), and hat (42). Ambiguous onsets are discarded rather than assigned a made-up class. Hit-to-hit velocity differences are preserved instead of saturating near maximum.
+
+The arranger **no longer forces all bass notes to velocity 107**. It retains dynamics with a minimum level for useful PSG bass; sufficiently quiet notes may still be gated off by the one-bit PIT2 speaker. Tiny same-pitch bass fragmentation can be merged without destroying separate riff attacks. The offline arranger's SPK4 ADAPT mode now matches the DOS engine's two-other-distinct-pitch requirement, while BASS keeps three.
+
+**This cleanup happens when the laptop transcribes new audio**, not when importing an already-generated MIDI file. Rerun from the source audio with the latest Studio code:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=VIDEO_ID" --stems --preset balanced --spk4 adapt --preview -o "C:\Music\TANDY_V3"
+```
+
+The conversion log prints the kick/snare/hat breakdown and bass velocity range. A heavily lopsided drum output emits a warning instead of silently pretending it is accurate. The produced MIDI remains format 0 and DOS-size-limited. These are heuristic improvements; audio quality still needs listening tests.
+
 ## Audio transcription troubleshooting
 
 **Basic Pitch loads, then fails with `No module named 'pkg_resources'`:** This is not a missing Basic Pitch installation. An older `resampy` dependency still imports `pkg_resources`, which setuptools **82+** removed. In the same Python 3.11 environment used by the launcher, run:

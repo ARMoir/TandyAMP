@@ -21,9 +21,9 @@ TEMPO = 500000
 TICKS_PER_SECOND = PPQN * 1_000_000 / TEMPO
 PART_CHANNEL = {'melody': 0, 'bass': 1, 'harmony': 2, 'drums': 9}
 PRESETS = {
-    'quality': {'high': 92, 'min_duration': 0.040, 'drum_gap': 0.055},
-    'balanced': {'high': 86, 'min_duration': 0.065, 'drum_gap': 0.075},
-    'performance': {'high': 81, 'min_duration': 0.090, 'drum_gap': 0.100},
+    'quality': {'high': 92, 'min_duration': 0.040, 'drum_gap': 0.085},
+    'balanced': {'high': 86, 'min_duration': 0.065, 'drum_gap': 0.105},
+    'performance': {'high': 81, 'min_duration': 0.090, 'drum_gap': 0.125},
 }
 
 
@@ -124,7 +124,10 @@ def normalize(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
             while p > config['high']: p -= 12
         velocity = max(24, min(127, n.velocity))
         if n.part == 'bass':
-            velocity = max(107, velocity)  # pass the PIT2 audibility gate
+            # Preserve the model's relative bass dynamics. The old max(107)
+            # forced almost every bass event to identical volume and made
+            # the PSG relentless. Soft notes may intentionally gate PIT2 off.
+            velocity = max(64, min(114, velocity))
         result.append(replace(n, pitch=p, velocity=velocity))
     return sorted(result, key=lambda n: (n.start, n.end, n.pitch))
 
@@ -140,12 +143,17 @@ def _psg_pitch(n: Note) -> int:
     return p
 
 
-def select_voices(notes: Iterable[Note], spk4: bool = True) -> list[Note]:
+def select_voices(notes: Iterable[Note], spk4: bool | str = True) -> list[Note]:
     """Emit a bounded event arrangement: three distinct PSG pitches plus eligible PIT2 bass.
 
     Offline scoring applies at note boundaries, with a continuity bonus to
     reduce unnecessary voice switches. No real-time CPU cost on the Tandy.
     """
+    mode = ('bass' if spk4 is True else 'off' if spk4 is False
+            else spk4)
+    if mode not in ('off', 'bass', 'adapt'):
+        raise ValueError('SPK4 mode must be off, bass, or adapt')
+    need_other = 2 if mode == 'adapt' else 3
     source = [n for n in notes if n.part != 'drums']
     drums = [n for n in notes if n.part == 'drums']
     events = []
@@ -167,13 +175,16 @@ def select_voices(notes: Iterable[Note], spk4: bool = True) -> list[Note]:
             pos += 1
         ranked = sorted(active, key=lambda i: (-_priority(source[i], i in chosen), i))
         bass = None
-        if spk4:
+        if mode != 'off':
             for i in ranked:
                 n = source[i]
                 if n.part != 'bass' or not BASS_MIN <= n.pitch <= BASS_MAX:
                     continue
-                distinct = {_psg_pitch(source[k]) for k in ranked if k != i and source[k].part != 'drums'}
-                if len(distinct) >= 3:
+                distinct = {
+                    _psg_pitch(source[k]) for k in ranked
+                    if k != i and source[k].pitch != n.pitch
+                }
+                if len(distinct) >= need_other:
                     bass = i
                     break
         selected = set()
@@ -210,15 +221,17 @@ def reduce_drums(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
     result = []
     for n in drums:
         if result and n.start - result[-1].start < gap:
-            # Drums only have one PSG noise oscillator: prefer kick/snare.
-            if {36: 3, 38: 2, 42: 1}.get(n.pitch, 0) > {36: 3, 38: 2, 42: 1}.get(result[-1].pitch, 0):
+            # One PSG noise oscillator: favor the strongest transient,
+            # using kick/snare only as a mild tie-breaker (not a veto).
+            score = lambda hit: hit.velocity + {36: 6, 38: 5, 42: 0}.get(hit.pitch, 0)
+            if score(n) > score(result[-1]):
                 result[-1] = n
         else:
             result.append(n)
     return result
 
 
-def prepare(notes: Iterable[Note], preset: str = 'balanced', spk4: bool = True) -> list[Note]:
+def prepare(notes: Iterable[Note], preset: str = 'balanced', spk4: bool | str = True) -> list[Note]:
     normalized = normalize(notes, preset)
     arranged = select_voices(normalized, spk4)
     return sorted([n for n in arranged if n.part != 'drums'] + reduce_drums(arranged, preset), key=lambda n: (n.start, n.end, n.pitch))

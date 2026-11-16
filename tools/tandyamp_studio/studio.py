@@ -27,6 +27,21 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     print(f'Extracted {len(notes)} note events', flush=True)
     arranged = prepare(notes, preset, spk4)
     print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
+    # Diagnostic counts help identify the "all kicks" / "all bass velocity
+    # 107" regressions without requiring music uploads for every conversion.
+    from collections import Counter
+    drums = Counter(n.pitch for n in arranged if n.part == 'drums')
+    bass_velocities = [n.velocity for n in arranged if n.part == 'bass']
+    if drums:
+        print('  Drums: kick={} snare={} hat={}'.format(
+            drums[36], drums[38], drums[42]), flush=True)
+        if max(drums.values()) / sum(drums.values()) > .88 and sum(drums.values()) > 25:
+            print('  WARNING: one drum type dominates; classification may be unreliable.',
+                  flush=True)
+    if bass_velocities:
+        print('  Bass: {} notes, velocity range {}..{}, {} distinct levels'.format(
+            len(bass_velocities), min(bass_velocities), max(bass_velocities),
+            len(set(bass_velocities))), flush=True)
     target = output_dir / (target_name + '_TANDY')
     if saved_mp3 is not None and (target / 'SOURCE.MP3').exists():
         raise FileExistsError(f'Refusing to overwrite existing SOURCE.MP3 in {target}')

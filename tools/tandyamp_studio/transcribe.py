@@ -52,10 +52,11 @@ def _predict(path: Path, part: str | None) -> list[Note]:
 
 
 def _drum_onsets(path: Path) -> list[Note]:
-    """Conservative beat-aware kick/snare/hat detection on Demucs' DRUM stem.
+    """Onset-novelty drum classifier with beat hints and preserved dynamics.
 
-    Band energy and onset strength are more useful than centroid alone:
-    ambiguous events are not automatically assigned to the snare.
+    The previous detector used absolute spectral energy, so bass bleed
+    dominated almost every event and forced all hits to kick. Compare each
+    new attack with the preceding 46 ms instead; do not force class quotas.
     """
     try:
         import librosa
@@ -65,10 +66,13 @@ def _drum_onsets(path: Path) -> list[Note]:
             'Drum onset analysis requires librosa and numpy. '
             'Run: py -3.11 -m pip install -r requirements-audio.txt'
         ) from exc
-    from postprocess import classify_drum_bands, refine_drum_hits
+    from bisect import bisect_left
+    from collections import Counter
+    from postprocess import (classify_drum_transient, drum_velocity,
+                             normalize_drum_fluxes, refine_drum_hits)
 
     samples, sr = librosa.load(str(path), sr=22050, mono=True)
-    if len(samples) < 512:
+    if len(samples) < 2048:
         return []
     hop = 256
     envelope = librosa.onset.onset_strength(y=samples, sr=sr, hop_length=hop)
@@ -78,30 +82,11 @@ def _drum_onsets(path: Path) -> list[Note]:
     if not len(frames):
         return []
 
-    candidates = []
-    positive = envelope[envelope > 0]
-    typical_strength = float(np.median(positive)) if len(positive) else 1.0
-    for frame in frames:
-        at = float(librosa.frames_to_time(frame, sr=sr, hop_length=hop))
-        i = int(at * sr)
-        lo = max(0, i-int(.010*sr))
-        hi = min(len(samples), i+int(.080*sr))
-        window = samples[lo:hi]
-        if len(window) < 512:
-            continue
-        window = window * np.hanning(len(window))
-        power = np.abs(np.fft.rfft(window)) ** 2
-        freq = np.fft.rfftfreq(len(window), 1.0/sr)
-        low = float(power[(freq >= 40) & (freq < 250)].sum())
-        mid = float(power[(freq >= 350) & (freq < 3800)].sum())
-        high = float(power[(freq >= 4700) & (freq < 10000)].sum())
-        category = classify_drum_bands(low, mid, high)
-        if category is None:
-            continue
-        strength = float(envelope[min(int(frame), len(envelope)-1)])
-        velocity = int(max(48, min(118, 65 + 22 * strength /
-                                   max(.01, typical_strength))))
-        candidates.append(Note(at, at+.08, category, velocity, 'drums', 0))
+    # Calibrate dynamics from the distribution of this drum stem's onsets,
+    # not from each onset divided by its median (which saturates at 118).
+    strengths = np.asarray([envelope[min(int(i), len(envelope)-1)]
+                            for i in frames], dtype=float)
+    quiet, loud = np.percentile(strengths, [18, 90])
 
     beats = []
     try:
@@ -110,13 +95,63 @@ def _drum_onsets(path: Path) -> list[Note]:
         )
         beats = list(librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop))
     except (ValueError, TypeError, RuntimeError):
-        # Beat estimation is best-effort; onset classification still works.
         pass
-    result = refine_drum_hits(candidates, beats)
-    print(f'Drum onsets: {len(frames)} detected, {len(candidates)} '
-          f'classified, {len(result)} retained for PSG noise', flush=True)
-    return result
 
+    size = 1024  # 46 ms at 22.05 kHz; independent windows around the onset
+    taper = np.hanning(size)
+    freqs = np.fft.rfftfreq(size, 1.0/sr)
+    bands = (
+        (freqs >= 40) & (freqs < 270),
+        (freqs >= 300) & (freqs < 4200),
+        (freqs >= 4500) & (freqs < 10400),
+    )
+    raw_attacks = []
+    for idx, frame in enumerate(frames):
+        at = float(librosa.frames_to_time(frame, sr=sr, hop_length=hop))
+        center = int(at*sr)
+        # A preceding window measures continuing bass/room bleed;
+        # the following window measures the actual transient's novelty.
+        before_end = center-int(.012*sr)
+        before_start = before_end-size
+        after_start = center+int(.003*sr)
+        if before_start < 0 or after_start+size > len(samples):
+            continue
+        before = np.abs(np.fft.rfft(samples[before_start:before_end]*taper))
+        after = np.abs(np.fft.rfft(samples[after_start:after_start+size]*taper))
+        novel = np.maximum(after-.88*before, 0) ** 2
+        low, mid, high = [float(novel[mask].sum()) for mask in bands]
+
+        backbeat_hint = False
+        if len(beats) >= 4:
+            j = bisect_left(beats, at)
+            nearby = [k for k in (j-1, j) if 0 <= k < len(beats)]
+            if nearby:
+                closest = min(nearby, key=lambda k: abs(at-beats[k]))
+                backbeat_hint = (abs(at-beats[closest]) <= .065 and
+                                 closest % 2 == 1)
+        raw_attacks.append((at, low, mid, high, backbeat_hint,
+                            float(strengths[idx])))
+
+    calibrated = normalize_drum_fluxes([
+        (entry[1], entry[2], entry[3]) for entry in raw_attacks
+    ])
+    candidates = []
+    for (at, _low, _mid, _high, hint, strength), bands in zip(
+            raw_attacks, calibrated):
+        category = classify_drum_transient(*bands, backbeat_hint=hint)
+        if category is None:
+            continue
+        velocity = drum_velocity(strength, float(quiet), float(loud))
+        candidates.append(Note(at, at+.07, category, velocity, 'drums', 0))
+
+    result = refine_drum_hits(candidates, beats)
+    before = dict(Counter(n.pitch for n in candidates))
+    after = dict(Counter(n.pitch for n in result))
+    print('Drum analysis: {} onsets, {} classified {}, {} retained {} '
+          '(36=kick, 38=snare, 42=hat)'.format(
+              len(frames), len(candidates), before, len(result), after),
+          flush=True)
+    return result
 
 def transcribe_audio(path: Path, stems: bool = False) -> list[Note]:
     """Transcribe and clean notes on the laptop; MIDI imports are unaffected."""
