@@ -391,12 +391,16 @@ static void draw_button(unsigned i)
     ta_u8 face,ink;
     if(i>=UI_BUTTON_COUNT)return;
     pressed=button_pressed(i);
+    /* OFF/BASS/ADAPT must be three distinct cached button states, not
+       the old on/off flag: cycling BASS->ADAPT must repaint the label. */
+    if(i==8)pressed=(int)ta.speaker_enabled;
     if((button_cache_valid&(1U<<i)) &&
        button_cache[i]==(ta_u8)pressed)return;
     button_cache_valid|=(1U<<i);
     button_cache[i]=(ta_u8)pressed;
     caption=button_labels[i];
-    if(i==8)caption=pressed?"SPK4 ON":"SPK4 OFF";
+    if(i==8)caption=pressed==TA_SPK_ADAPT?"SPK4 ADPT":
+                     pressed==TA_SPK_BASS?"SPK4 BASS":"SPK4 OFF";
     else if(i==9)caption=pressed?"MUTE ON":"MUTE OFF";
     x=button_x(i);y=button_y(i);
     face=(ta_u8)(pressed?1:7);
@@ -411,7 +415,8 @@ static void draw_button(unsigned i)
         /* State is explicit, not inferred solely from a pressed bevel. */
         label(tx,ty,caption,ink,4);
         label(tx+30,ty,caption+5,
-              (ta_u8)(pressed?(i==8?10:14):4),3);
+              (ta_u8)(i==8?pressed==TA_SPK_ADAPT?14:
+                      pressed==TA_SPK_BASS?10:4:pressed?14:4),4);
     }else label(tx,ty,caption,ink,5);
 }
 static void draw_buttons(void)
@@ -472,7 +477,8 @@ static ta_u8 meter_mode(unsigned i)
 static signed short meter_note(unsigned i,ta_u8 mode)
 {
     return mode==2U?(i<TA_VOICES?ta.voices[i].note:
-                     ta.speaker_voice.note):-1;
+                     (ta.speaker_voice.note+
+                      (ta.speaker_octave_up?12:0))):-1;
 }
 static ta_u8 meter_level(unsigned i,ta_u8 mode)
 {
@@ -549,6 +555,8 @@ static void draw_meters(void)
                 box(x+2,UI_METER_TOP+27U-h,UI_METER_W-4U,1,15);
             }
             note_caption(info,note);
+            if(i==3U && ta.speaker_octave_up)
+                strcat(info,"^"); /* chosen adaptive octave, not bend */
             textcolor=(ta_u8)(i==3U?14:10);
         }else if(i==3U){
             strcpy(info,mode==0U?"OFF":mode==3U?"PAUSE":"READY");
@@ -787,7 +795,8 @@ static void usage(void)
     puts("         /GUI      Tandy 320x200 16-color screen (default)");
     puts("         /LOOP     repeat the entire playlist");
     puts("         /NOMOUSE  disable DOS mouse detection / pointer");
-    puts("         /SPK4     enable fourth PC speaker tone");
+    puts("         /SPK4     fourth PC speaker original BASS mode");
+    puts("         /SPK4:ADAPT  adaptive bass octave mode");
     puts("         /NOSPK4   disable PC speaker tone (default)");
     puts("         /DRUM16   force legacy channel 16 drums on");
     puts("         /NODRUM16 force channel 16 drums off");
@@ -797,7 +806,7 @@ static void usage(void)
     puts("Auto level limiting always on. No playlist recursion or seek.");
     puts("Keys: SPACE pause, S stop, R replay, N next, P previous");
     puts("      E voice monitor, L loop, D drums AUTO/ON/OFF");
-    puts("      K toggle fourth PC speaker voice (SPK4 button)");
+    puts("      K cycles SPK4 OFF / BASS / ADAPT (bass-only)");
     puts("      M mute/unmute with previous volume restored");
     puts("      + or - change volume; Q or ESC quit.");
     puts("Playlist: 64 files max, alphabetical if auto-discovered.");
@@ -864,9 +873,11 @@ static void input_key(int key)
     case 'L':loop_mode=!loop_mode;ui_dirty|=UI_BUTTONS;break;
     case 'E':show_equalizer=!show_equalizer;ui_dirty|=UI_PANEL|UI_BUTTONS|UI_METERS;break;
     case 'K':
-        ta_set_speaker(!ta.speaker_enabled);
-        if(text_mode)printf("SPK4 %s\n",ta.speaker_enabled?"ON":"OFF");
-        /* The fourth bar reacts to engine state; no full-panel repaint. */
+        ta_set_speaker((ta.speaker_enabled+1U)%3U);
+        if(text_mode)printf("SPK4 %s\n",
+            ta.speaker_enabled==TA_SPK_ADAPT?"ADAPT":
+            ta.speaker_enabled==TA_SPK_BASS?"BASS":"OFF");
+        /* The fourth bar follows actual PIT2 output independently. */
         ui_dirty|=UI_SPK4;
         break;
     case 'D':
@@ -1001,8 +1012,9 @@ int main(int argc,char **argv)
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
         if(same(s,"/NOMOUSE")){mouse_enabled=0;continue;}
-        if(same(s,"/SPK4")){ta_set_speaker(1);continue;}
-        if(same(s,"/NOSPK4")){ta_set_speaker(0);continue;}
+        if(same(s,"/SPK4")){ta_set_speaker(TA_SPK_BASS);continue;}
+        if(same(s,"/SPK4:ADAPT")){ta_set_speaker(TA_SPK_ADAPT);continue;}
+        if(same(s,"/NOSPK4")){ta_set_speaker(TA_SPK_OFF);continue;}
         if(same(s,"/DRUM16")){ta.drum_mode=TA_DRUM_ON;continue;}
         if(same(s,"/NODRUM16")){ta.drum_mode=TA_DRUM_OFF;continue;}
         if(same(s,"/AUTODRUM16")){ta.drum_mode=TA_DRUM_AUTO;continue;}

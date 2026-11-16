@@ -44,8 +44,9 @@ The ZIP contains only **`TANDYAMP.EXE`, `DEMO.MID`, and `LICENSE`**; Markdown do
 | `/NODRUM16` | Treat channel 16 as melody |
 | `/AUTODRUM16` | Use conservative channel-16 drum detection (default) |
 | `/NOMOUSE` | No DOS mouse initialization or on-screen mouse pointer |
-| `/SPK4` | Enable optional fourth pitched note via the PC speaker and PIT channel 2 (default OFF) |
-| `/NOSPK4` | Disable the extra speaker voice |
+| `/SPK4` | Fourth PC-speaker voice in faithful BASS mode (original octave) |
+| `/SPK4:ADAPT` | Experimental adaptive bass-octave mode |
+| `/NOSPK4` | Disable the extra speaker voice (default OFF) |
 | `/HELP`, `-H`, `/?` | Print command-line help |
 
 Options can be used with either an explicitly named song or the automatically discovered directory playlist. `/TXT` is useful for debugging or displays without Tandy graphics.
@@ -62,12 +63,12 @@ Options can be used with either an explicitly named song or the automatically di
 | `E` | Toggle playlist / PSG voice monitor | VIS |
 | `L` | Toggle playlist looping | LOOP |
 | `D` | Cycle legacy channel-16 drums: AUTO → ON → OFF; restarts the current song | DRUM |
-| `K` | Toggle the fourth PC-speaker voice without restarting playback | SPK4 (second row) |
+| `K` | Cycle OFF → BASS → ADAPT → OFF without restarting playback | SPK4 (second row) |
 | `M` | Mute or restore the previously audible master volume | MUTE (second row) |
 | `+` / `-` | Increase / decrease master volume without restarting | Keyboard only |
 | `Q` / `Esc` | Silence PSG and quit to DOS | Keyboard only |
 
-The ten controls now form **two evenly spaced rows of five 58×17-pixel buttons**. The first row is PREV, PLAY, PAUSE, STOP, NEXT; the second is VIS, LOOP, DRUM, SPK4, MUTE. The SPK4 and MUTE buttons display explicit ON/OFF labels. Each button skips repainting when its pressed state hasn't changed. The lower pane shows up to seven visible playlist rows or a **four-column output monitor** (three PSG tones plus optional SPK4 bass); it is **not an audio equalizer**. PSG bars follow the final programmed attenuation rather than raw MIDI velocity. SPK4 explicitly shows **OFF**, **READY**, **PAUSE**, or its currently programmed bass note (e.g., **C2**), so enabled and actually sounding are distinguishable. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
+The ten controls now form **two evenly spaced rows of five 58×17-pixel buttons**. The first row is PREV, PLAY, PAUSE, STOP, NEXT; the second is VIS, LOOP, DRUM, SPK4, MUTE. SPK4 displays OFF / BASS / ADPT (short for Adaptive), and MUTE displays ON/OFF. Each button skips repainting when its pressed state hasn't changed. The lower pane shows up to seven visible playlist rows or a **four-column output monitor** (three PSG tones plus optional SPK4 bass); it is **not an audio equalizer**. PSG bars follow the final programmed attenuation rather than raw MIDI velocity. SPK4 explicitly shows **OFF**, **READY**, **PAUSE**, or its currently programmed bass note (e.g., **C2**), so enabled and actually sounding are distinguishable. The small moving line is an **activity marker**, not a draggable seek bar. There is currently **no shuffle, file chooser, direct playlist-row selection, or seek command**. The source preserves the original Winamp-like appearance without copying its assets.
 
 ## Serial mouse on the EX
 
@@ -154,13 +155,13 @@ The three-voice selector now more strongly favors keeping the same audible notes
 
 ## Optional fourth pitched voice — SPK4
 
-**Default OFF.** The **SPK4** button is now grouped with the other audio controls in the second row, alongside DRUM and MUTE, and is clickable using the serial mouse. Press **K** to toggle it with the keyboard, or launch with `TANDYAMP /SPK4` (also works when auto-loading all `*.MID` files). Use `/NOSPK4` or press K again to turn it off. Toggle changes take effect **without restarting** a song.
+**Default OFF.** The **SPK4** button is now grouped with the other audio controls in the second row, alongside DRUM and MUTE, and is clickable using the serial mouse. Press **K** or click SPK4 to cycle **OFF → BASS → ADAPT → OFF**, without restarting the song. `/SPK4` launches in faithful BASS mode; `/SPK4:ADAPT` launches with adaptive bass octaves; `/NOSPK4` disables it. All options also work with automatically discovered `*.MID` playlists.
 
 SPK4 is **strictly bass-only**: it accepts MIDI notes **24–52 (C1–E3)**, never melody or high notes. When the song contains an eligible low bass **plus three other distinct PSG pitches**, the bass is reserved for **PIT channel 2** while the other three notes play through the Tandy PSG. This potentially gives four simultaneous pitched notes **plus PSG noise percussion**. If fewer than three other distinct pitches exist, or no low bass is eligible, the PC speaker stays silent and normal three-tone playback continues. The selected bass uses a native 1.193182 MHz PIT2 divider, keeping its **real low octave** rather than playing the PSG's octave-folded approximation, including ±2-semitone pitch bend. It stops immediately when released, paused, muted, switched off or when the player exits. The MIDI timing PIT channel 0 remains at its normal frequency. This is an implementation inspired by the independent fourth-track mechanism documented in [TNDY Tracker](https://github.com/JKnipperts/TNDY-Tracker); no original tracker code was copied.
 
 **Important hardware difference:** PIT2 has **no independent volume register or instrument timbre**. An extra tone is therefore gated on only when its computed attenuation is sufficiently strong, but when on it can sound harsher or louder than PSG notes. On the Tandy 1000 EX the PIT2 source can mix with the PSG; output through particular external audio connections can depend on port 61h routing. TandyAMP intentionally changes **only speaker gate bits 0–1** of port 61h and leaves other audio-route bits intact; it does not override the motherboard's routing to force an external output. The physical EX sound balance must still be checked. Disable with K if the extra note is distracting.
 
-**Current SPK4 interface:** The button is in row two at x=190–247, y=91–107, showing **SPK4 ON** (green) or **SPK4 OFF** (red). It can be clicked or toggled using K, and only its 58×17 region is repainted. The speaker remains bass-only (MIDI 24–52). The tone choice and interface changes are covered by host tests; confirm the physical sound level on the EX.
+**Current SPK4 interface:** The button remains in row two (x=190–247, y=91–107), with three short, readable labels: **SPK4 OFF**, **SPK4 BASS**, **SPK4 ADPT**. The switch updates its cached display even when transitioning between BASS and ADPT (both active), repainting only its own 58×17 region. Only source MIDI bass notes 24–52 are considered for PIT2. The tone choice and interface changes are covered by host tests; confirm the physical sound level on the EX.
 
 ### Two equal rows and the MUTE button
 
@@ -179,3 +180,11 @@ The **VIS** view now displays four columns: **CH1, CH2, CH3, SPK4**. The three P
 The monitor now checks for changes approximately **six times per second** while open, but only repaints columns whose note, hardware level, or activity changed. It doesn't perform FFT or add sound-processing work to the V20. The lower shortcut legend is now **white text on black**, addressing the poor contrast seen in the owner's EX recording.
 
 An analysis of the attached 30-second physical EX recording `3582.mp4` found the recorded RMS rose from roughly **−54 dBFS** (0–3 s) to **−36 dBFS** (18–24 s). The highest recorded sample was around **−18 dBFS**, with **no observed digital clipping**. A stable prominent tone around **1.75 kHz** persisted for about **10 seconds**, approximately 14–24 s. That might be an intentional MIDI sustain or a note-off issue; a phone recording cannot establish which. The new note labels should make future comparisons against the original MIDI easier. [See the detailed recording review](docs/HARDWARE_AUDIO_REVIEW_3582.md). These are *recording* levels affected by the microphone, distance and automatic gain, not calibrated Tandy speaker SPL measurements.
+
+### Experimental SPK4 Adaptive Bass
+
+**Three states:** SPK4 OFF (no extra tone); **SPK4 BASS** (original true-octave bass); **SPK4 ADPT** (experimental adaptive bass). Use the button or **K** to cycle, or launch `TANDYAMP /SPK4:ADAPT CANYON.MID`. The existing `/SPK4` remains the original faithful bass mode and the default is still OFF.
+
+ADAPT considers only low MIDI **source** notes **24–52** and still requires three other distinct PSG notes. It may **raise the selected bass one octave**, never arbitrarily detune it or use higher melody notes as its source. Very deep bass (MIDI 24–35) is raised when no nearby PSG note would collide; middle-low notes (36–43) are raised only if at least two other PSG voices are strong (hardware attenuation 0–6) and there is no note within ±2 semitones of the raised pitch. Source bass 44–52 stays at its original octave. The decision uses **small integer comparisons**, occurs **once per MIDI note**, and is locked for that note's lifetime (even if the PSG gets louder). Pitch bend is still applied normally. The four-column VIS monitor displays the **actual pitched octave** when SPK4 sounds, appending a `^` indicator when raised (e.g., C2 becomes `C3^`).
+
+This is intended to improve perceived bass clarity on the small internal speaker, not to increase PC-speaker voltage or loudness. It remains **unverified on the real EX** and should be compared at the same master volume against faithful BASS mode.

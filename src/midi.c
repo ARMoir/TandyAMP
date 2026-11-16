@@ -127,6 +127,8 @@ static void clear_synth(void)
     ta_pc_speaker(0);
     speaker_output=0;
     ta.speaker_divider=0;
+    ta.speaker_octave_up=0;
+    ta.speaker_adapt_stamp=0;
     ta.noise_left=0;
     ta.noise_length=0;
     ta.noise_last=15;
@@ -352,6 +354,27 @@ static signed short choose_speaker_bass(void)
     }
     return best;
 }
+/* Choose octave once per new note, never continuously modulate pitch
+   with the other voices' volume. Square-wave PIT2 has no volume control.
+   Higher octave may read more clearly through a small Tandy speaker.
+   Avoid duplicate/nearby pitches in the PSG melody and harmony. */
+static ta_u8 choose_adaptive_octave(ta_u8 note)
+{
+    unsigned i,loud=0;
+    unsigned raised=(unsigned)note+12U;
+    if(note>=44U)return 0; /* E2 and above keep their original octave. */
+    for(i=0;i<TA_VOICES;i++){
+        TAVoice *v=&ta.voices[i];
+        unsigned other;
+        if(v->note<0 || v->level>=15U)continue;
+        other=(unsigned)v->note;
+        if(other+2U>=raised && other<=raised+2U)
+            return 0; /* avoid octave doubling/clashing with PSG */
+        if(v->level<=6U)loud++;
+    }
+    if(note<=35U)return 1; /* very low bass: favour audibility */
+    return (ta_u8)(loud>=2U); /* otherwise only in a busy/loud mix */
+}
 static void render_speaker(void)
 {
     TAVoice *v=&ta.speaker_voice;
@@ -363,9 +386,19 @@ static void render_speaker(void)
             ta.mix_attenuation+ta.master_attenuation;
         /* No volume register on PIT2. Don't let quiet notes sound loud:
            gate the fourth voice out when software attenuation is high. */
-        if(speaker_note_audible(n) && att<=8U)
+        if(speaker_note_audible(n) && att<=8U){
+            if(ta.speaker_enabled==TA_SPK_ADAPT){
+                if(ta.speaker_adapt_stamp!=v->stamp){
+                    ta.speaker_octave_up=choose_adaptive_octave((ta_u8)n->note);
+                    ta.speaker_adapt_stamp=v->stamp;
+                }
+            }else ta.speaker_octave_up=0;
             divisor=speaker_divider_for((ta_u8)n->note,
                                         ta.pitchbend[n->channel]);
+            if(ta.speaker_enabled==TA_SPK_ADAPT &&
+               ta.speaker_octave_up)
+                divisor=(ta_u16)((divisor+1U)/2U);
+        }
     }
     if(divisor!=speaker_output){
         ta_pc_speaker(divisor);
@@ -375,9 +408,14 @@ static void render_speaker(void)
        The UI must never show activity simply because /SPK4 was set. */
     ta.speaker_divider=divisor;
 }
-void ta_set_speaker(unsigned enabled)
+void ta_set_speaker(unsigned mode)
 {
-    ta.speaker_enabled=(ta_u8)(enabled!=0U);
+    if(mode>TA_SPK_ADAPT)mode=TA_SPK_OFF;
+    if(ta.speaker_enabled!=(ta_u8)mode){
+        ta.speaker_adapt_stamp=0; /* fresh choice when entering ADAPT */
+        ta.speaker_octave_up=0;
+    }
+    ta.speaker_enabled=(ta_u8)mode;
     if(!ta.speaker_enabled){
         ta.speaker_voice.source=-1;
         ta.speaker_voice.note=-1;

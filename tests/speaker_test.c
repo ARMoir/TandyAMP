@@ -128,7 +128,52 @@ int main(void)
     ta_set_speaker(0);
     assert(!ta.speaker_enabled && !pit_divider);
 
+    /* Three modes preserve the original BASS output. ADAPT may move
+       the same low MIDI note up one octave for small-speaker clarity. */
+    assert(TA_SPK_OFF==0 && TA_SPK_BASS==1 && TA_SPK_ADAPT==2);
+    ta_set_speaker(TA_SPK_BASS);
+    play_four(24);
+    assert(ta.speaker_divider==36485 && ta.speaker_octave_up==0);
+    ta_set_speaker(TA_SPK_ADAPT);
+    assert(ta.speaker_enabled==TA_SPK_ADAPT);
+    check_bass_exclusive(24,18243); /* C1 -> C2 */
+    assert(ta.speaker_octave_up==1 && ta.speaker_voice.note==24);
+    {
+        ta_u32 stable_stamp=ta.speaker_adapt_stamp;
+        ta_u16 stable_divider=ta.speaker_divider;
+        unsigned j;
+        /* Even a big PSG loudness change must not shift THIS held
+           bass note's octave. Pitch only follows its MIDI bend. */
+        for(j=0;j<TA_VOICES;j++)ta.voices[j].level=14;
+        render_speaker();
+        assert(ta.speaker_divider==stable_divider);
+        assert(ta.speaker_adapt_stamp==stable_stamp);
+        assert(ta.speaker_octave_up==1);
+        ta.pitchbend[3]=4096;
+        render_channel(3);flush_mix();
+        assert(ta.speaker_divider<stable_divider);
+        assert(ta.speaker_octave_up==1);
+    }
+    /* Original octave is still required for upper bass notes. */
+    play_four(48);
+    assert(ta.speaker_divider==9121 && !ta.speaker_octave_up);
+    /* Adaptive placement considers whether melody overlaps the raised
+       octave and whether the rest of the music masks the bass. */
+    play_four(36);
+    for(i=0;i<TA_VOICES;i++)ta.voices[i].level=4;
+    assert(choose_adaptive_octave(36)==1);
+    for(i=0;i<TA_VOICES;i++)ta.voices[i].level=12;
+    assert(choose_adaptive_octave(36)==0);
+    ta.voices[1].note=48;ta.voices[1].level=0;
+    assert(choose_adaptive_octave(36)==0); /* overlap with raised C3 */
+    /* Non-bass source notes remain strictly excluded in adaptive mode. */
+    play_four(60);
+    assert(!ta.speaker_divider && ta.speaker_voice.source<0);
+    ta_set_speaker(TA_SPK_OFF);
+    assert(ta.speaker_divider==0 && !ta.speaker_enabled);
+    assert(ta.speaker_octave_up==0);
+
     puts("PASS: MIDI 24..52 bass-only PIT2 (true octave), bends, "
-         "high-note exclusion, live toggle, fallback, pause/stop/mute");
+         "three-way adaptive octave lock, note collisions, live toggle and mute");
     return 0;
 }

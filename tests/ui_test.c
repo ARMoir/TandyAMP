@@ -104,7 +104,14 @@ int main(void)
         assert(colored_pixels(button_x(8)+38,button_y(8)+5,11,7,10)>3);
         before=ui_pixels_written;
         click_button(8);
-        assert(ta.speaker_enabled==0 && ta.clock_q8==clock);
+        assert(ta.speaker_enabled==TA_SPK_ADAPT && ta.clock_q8==clock);
+        draw_dirty();
+        assert(ui_pixels_written-before>0 &&
+               ui_pixels_written-before<2600UL);
+        assert(colored_pixels(button_x(8)+32,button_y(8)+5,23,7,14)>3);
+        before=ui_pixels_written;
+        click_button(8);
+        assert(ta.speaker_enabled==TA_SPK_OFF && ta.clock_q8==clock);
         draw_dirty();
         assert(ui_pixels_written-before<2600UL);
         assert(colored_pixels(button_x(8)+38,button_y(8)+5,17,7,4)>3);
@@ -193,6 +200,12 @@ int main(void)
     delta=ui_pixels_written-prior;
     assert(delta>0 && delta<2500UL);
     assert(meter_mode(3)==2 && meter_last_note[3]==36);
+    ta.speaker_octave_up=1; /* C2 physically rendered as C3 */
+    draw_dirty();
+    assert(meter_last_note[3]==48);
+    ta.speaker_octave_up=0;
+    draw_dirty();
+    assert(meter_last_note[3]==36);
     assert(colored_pixels(UI_METER_X+3U*UI_METER_STEP+2,
             UI_METER_TOP,UI_METER_W-4,UI_METER_H,14)>40);
     prior=ui_pixels_written;
@@ -295,7 +308,11 @@ int main(void)
                      button_x(8)+17,button_y(8)+8);
         mouse_sample(button_x(8)+17,button_y(8)+8,0,1,
                      button_x(8)+17,button_y(8)+8);
-        assert(ta.speaker_enabled==0);
+        assert(ta.speaker_enabled==TA_SPK_ADAPT);
+        draw_dirty();
+        mouse_sample(button_x(8)+17,button_y(8)+8,0,1,
+                     button_x(8)+17,button_y(8)+8);
+        assert(ta.speaker_enabled==TA_SPK_OFF);
         draw_dirty();
         mouse_sample(button_x(9)+17,button_y(9)+8,0,1,
                      button_x(9)+17,button_y(9)+8);

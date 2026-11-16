@@ -101,3 +101,7 @@ Current host framebuffer tests validate both five-button rows, all ten 58×17 la
 ### Four-channel monitor and audio-review regression
 
 Host tests verify that SPK4 being **enabled** but not programmed into PIT2 displays **READY**, while an actual nonzero `ta.speaker_divider` displays the yellow fourth bar and bass pitch. They check that the three PSG meters depend on final attenuation, changing only MIDI velocity without changing hardware output causes **zero redraw writes**, the speaker output is cleared on stop/pause, and the shortcut footer has high contrast. The enhanced monitor is polled roughly **6 times/s** only while visible and retains the low-redraw strategy. See the separate [audio and recording review](HARDWARE_AUDIO_REVIEW_3582.md) for observations from physical hardware.
+
+### Three-way SPK4 acceptance checks
+
+`tests/speaker_test.c` now checks the original BASS divider, adaptive octave placement, ±2-semitone pitch-overlap avoidance, quiet/loud PSG conditions, pitch-bend continuity, and the note-stamp lock (no mid-note octave jumping). `tests/ui_test.c` cycles OFF → BASS → ADAPT → OFF through both keyboard dispatch and captured serial mouse clicks, checks the three distinct button paint states and verifies that the VIS note label reflects a raised octave. `/SPK4`, `/SPK4:ADAPT`, and `/NOSPK4` are documented without changing the DOS release ZIP contents.

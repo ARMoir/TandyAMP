@@ -46,7 +46,10 @@ demand("#define UI_BUTTON_COUNT 10U" in CODE and "ten" in UI,
        "Ten-button control count mismatch")
 demand("#define UI_BUTTON_COLS 5U" in CODE and "two" in UI,
        "Two even rows of five missing")
-demand('"/SPK4"' in CODE and '"/NOSPK4"' in CODE, "Missing speaker CLI options")
+demand('"/SPK4"' in CODE and '"/NOSPK4"' in CODE
+       and '"/SPK4:ADAPT"' in CODE, "Missing three SPK4 CLI modes")
+demand("TA_SPK_ADAPT" in MIDI and "choose_adaptive_octave" in MIDI_SOURCE
+       and "SPK4 ADPT" in UI, "Adaptive bass mode undocumented")
 demand("ta_set_speaker" in CODE and "SPK4" in README, "Speaker toggle undocumented")
 demand("#define UI_BUTTON_HEIGHT 17U" in CODE and "58×17" in UI,
        "58×17 control dimensions inconsistent")
