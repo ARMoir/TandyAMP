@@ -118,7 +118,7 @@ void ta_pause(void)
         unsigned i;
         for(i=0;i<TA_VOICES;i++){
             TAVoice *v=&ta.voices[i];
-            if(v->note>=0)ta_psg_tone((int)i, 1, 15);
+            if(v->note>=0)render_voice(i);
         }
     }
 }
@@ -129,14 +129,14 @@ static const ta_u16 note_period[128]={
 1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
 1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
 1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,1023,
-1023,1023,1023,1023,1023,1023,1023,1023
+1023,1023,1023,1023,1023,1023,1023,1023,1023,1017,960,906,
+855,807,762,719,679,641,605,571,539,508,480,453,
+428,404,381,360,339,320,302,285,269,254,240,226,
+214,202,190,180,170,160,151,143,135,127,120,113,
+107,101,95,90,85,80,76,71,67,64,60,57,
+53,50,48,45,42,40,38,36,34,32,30,28,
+27,25,24,22,21,20,19,18,17,16,15,14,
+13,13,12,11,11,10,9,9
 };
 static ta_u16 period_for(ta_u8 note, signed short bend)
 {
@@ -160,6 +160,7 @@ static ta_u8 attenuation(ta_u8 chan,ta_u8 velocity)
     if(level>15)level=15;
     return (ta_u8)(15-level);
 }
+static void render_voice(unsigned i);
 static void render_voice(unsigned i)
 {
     TAVoice *v=&ta.voices[i];
@@ -375,8 +376,8 @@ void ta_tick(void)
 }
 ta_u32 ta_elapsed_seconds(void)
 {
-    /* Approximate displayed time from MIDI ticks at latest tempo.
-       UI clock is maintained separately by the platform. */
-    return (ta.clock_q8>>8)/(ta.division?ta.division:96);
+    /* Approximate MIDI time at the current tempo; GUI uses BIOS ticks. */
+    ta_u32 quarters=(ta.clock_q8>>8)/(ta.division?ta.division:96);
+    return (quarters*(ta.tempo_us/1000UL))/1000UL;
 }
 const char *ta_error(void){return last_error;}
