@@ -7,6 +7,8 @@
 
 TAEngine ta;
 static void render_voice(unsigned i);
+static void rebuild_voices(void);
+static void silence_noise(void);
 static const char *last_error="OK";
 
 static ta_u16 rd16(ta_u16 p)
@@ -68,12 +70,17 @@ static void clear_synth(void)
         ta.cc_sustain[c]=0;
         ta.pitchbend[c]=0;
     }
+    for(v=0;v<TA_ACTIVE_NOTES;v++)ta.notes[v].note=-1;
     for(v=0;v<TA_VOICES;v++){
+        ta.voices[v].source=-1;
         ta.voices[v].note=-1;
         ta.voices[v].held=0;
         ta.voices[v].sustained=0;
         ta.voices[v].level=15;
     }
+    ta.noise_left=0;
+    ta.noise_length=0;
+    ta.noise_last=15;
     ta_psg_silence();
 }
 void ta_noteoff_all(void)
@@ -99,6 +106,7 @@ void ta_begin(void)
     ta.tempo_us=500000UL;
     set_step();
     ta.clock_q8=0;
+    ta.clock_carry=0;
     ta.playing=1;
     ta.paused=0;
     prepare_tracks();
@@ -107,6 +115,7 @@ void ta_stop(void)
 {
     ta.playing=0;
     ta.paused=0;
+    silence_noise();
     ta_psg_silence();
 }
 void ta_pause(void)
@@ -121,6 +130,7 @@ void ta_pause(void)
             TAVoice *v=&ta.voices[i];
             if(v->note>=0)render_voice(i);
         }
+        if(ta.noise_left)ta_psg_noise(ta.noise_mode,ta.noise_last);
     }
 }
 /* MIDI note 0..127 to SN76489 divider at 3.579545 MHz / 32.
@@ -141,7 +151,11 @@ static const ta_u16 note_period[128]={
 };
 static ta_u16 period_for(ta_u8 note, signed short bend)
 {
-    ta_u16 p=note_period[note];
+    ta_u16 p;
+    /* Hardware cannot make pitches below ~109 Hz. Fold bass up octaves
+       instead of rendering all low notes as one indistinct 109 Hz buzz. */
+    while(note<45)note=(ta_u8)(note+12);
+    p=note_period[note];
     ta_u16 edge;
     ta_s32 result,d;
     if(bend>0)edge=note_period[note<125?note+2:127];
@@ -171,6 +185,135 @@ static void render_voice(unsigned i)
                     attenuation(v->channel,v->velocity));
     }
 }
+/* Keep independent note-on state even when the three hardware channels
+   are full. A stolen held note can resume when a channel becomes free. */
+static ta_s32 note_priority(const TAActiveNote *n)
+{
+    ta_s32 score;
+    if(n->note<0)return -100000L;
+    score=(n->held?1000L:200L)+(ta_s32)n->velocity*3L;
+    if(n->note>=60 && n->note<=96)score+=180L;
+    if(n->note>=44 && n->note<60)score+=70L;
+    if(n->note<36 || n->note>104)score-=90L;
+    if(n->channel==0)score+=30L;
+    return score;
+}
+static void rebuild_voices(void)
+{
+    signed short selected[TA_VOICES];
+    unsigned k,i,j;
+    ta_s32 best,score;
+    int found,already;
+    for(k=0;k<TA_VOICES;k++){
+        best=-200000L;
+        found=-1;
+        for(i=0;i<TA_ACTIVE_NOTES;i++){
+            TAActiveNote *n=&ta.notes[i];
+            if(n->note<0)continue;
+            already=0;
+            for(j=0;j<k;j++)if(selected[j]==(signed short)i)already=1;
+            if(already)continue;
+            score=note_priority(n);
+            /* Reserve the first voice for the tune, next for available bass.
+               This keeps long chords from replacing the audible melody. */
+            if(k==0 && n->note>=60 && n->note<=96)score+=5000L;
+            if(k==1 && selected[0]>=0 &&
+               ta.notes[selected[0]].note>=60 && n->note<60)score+=5000L;
+            for(j=0;j<k;j++)if(selected[j]>=0 &&
+                ta.notes[selected[j]].channel==n->channel)score-=100L;
+            for(j=0;j<TA_VOICES;j++)
+                if(ta.voices[j].source==(signed short)i)score+=35L;
+            if(score>best || (score==best && found>=0 &&
+                n->stamp>ta.notes[found].stamp)){
+                best=score;
+                found=(int)i;
+            }
+        }
+        selected[k]=(signed short)found;
+    }
+    /* Mute only evicted physical slots, not all three on every note. */
+    for(i=0;i<TA_VOICES;i++){
+        already=0;
+        for(k=0;k<TA_VOICES;k++)
+            if(selected[k]>=0 && selected[k]==ta.voices[i].source)already=1;
+        if(!already && ta.voices[i].source>=0){
+            ta.voices[i].source=-1;
+            ta.voices[i].note=-1;
+            render_voice(i);
+        }
+    }
+    for(k=0;k<TA_VOICES;k++){
+        TAActiveNote *n;
+        TAVoice *v;
+        if(selected[k]<0)continue;
+        for(i=0;i<TA_VOICES;i++)if(ta.voices[i].source==selected[k])break;
+        if(i==TA_VOICES)
+            for(i=0;i<TA_VOICES;i++)if(ta.voices[i].source<0)break;
+        if(i==TA_VOICES)continue;
+        n=&ta.notes[selected[k]];
+        v=&ta.voices[i];
+        if(v->source!=selected[k] || v->note!=n->note ||
+           v->velocity!=n->velocity || v->channel!=n->channel){
+            v->source=selected[k];
+            v->note=n->note;
+            v->channel=n->channel;
+            v->velocity=n->velocity;
+            v->held=n->held;
+            v->sustained=n->sustained;
+            v->stamp=n->stamp;
+            render_voice(i);
+        }else{
+            v->held=n->held;
+            v->sustained=n->sustained;
+        }
+    }
+}
+static void silence_noise(void)
+{
+    ta.noise_left=0;
+    ta.noise_last=15;
+    ta_psg_noise_level(15);
+}
+/* SN76489 independent fourth (noise) channel: drums do not consume tones. */
+static void drum_on(ta_u8 channel,ta_u8 note,ta_u8 velocity)
+{
+    ta_u8 mode=5;
+    ta_u16 life=620;
+    switch(note){
+    case 35:case 36:mode=2;life=900;break; /* bass drum */
+    case 38:case 40:mode=5;life=720;break; /* snare */
+    case 42:case 44:mode=4;life=240;break; /* closed hat */
+    case 46:mode=4;life=550;break;         /* open hat */
+    case 49:case 51:case 57:mode=4;life=1300;break; /* cymbals */
+    case 41:case 43:case 45:case 47:case 48:case 50:
+        mode=1;life=800;break; /* toms */
+    default:mode=5;life=520;break;
+    }
+    ta.noise_mode=mode;
+    ta.noise_length=life;
+    ta.noise_left=life;
+    ta.noise_base=attenuation(channel,velocity);
+    ta.noise_last=ta.noise_base;
+    ta_psg_noise(mode,ta.noise_base);
+}
+static void update_noise(ta_u16 elapsed_q8)
+{
+    ta_u32 step;
+    ta_u8 volume;
+    if(!ta.noise_left)return;
+    if(elapsed_q8>=ta.noise_left){
+        silence_noise();
+        return;
+    }
+    ta.noise_left=(ta_u16)(ta.noise_left-elapsed_q8);
+    step=((ta_u32)(ta.noise_length-ta.noise_left)*9UL)/ta.noise_length;
+    volume=(ta_u8)(ta.noise_base+step);
+    if(volume>15)volume=15;
+    if(volume!=ta.noise_last){
+        ta.noise_last=volume;
+        ta_psg_noise_level(volume);
+    }
+}
 static void render_channel(ta_u8 channel)
 {
     unsigned i;
@@ -181,47 +324,48 @@ static void render_channel(ta_u8 channel)
 static void off(ta_u8 channel,ta_u8 note)
 {
     unsigned i;
-    for(i=0;i<TA_VOICES;i++){
-        TAVoice *v=&ta.voices[i];
-        if(v->note==note && v->channel==channel && v->held){
-            v->held=0;
-            if(ta.cc_sustain[channel])v->sustained=1;
-            else {
-                v->note=-1;
-                v->sustained=0;
-                render_voice(i);
-            }
+    if(channel==9 || (channel==15 && ta.drum16))return;
+    for(i=0;i<TA_ACTIVE_NOTES;i++){
+        TAActiveNote *n=&ta.notes[i];
+        if(n->note==note && n->channel==channel && n->held){
+            n->held=0;
+            if(ta.cc_sustain[channel])n->sustained=1;
+            else {n->note=-1;n->sustained=0;}
         }
     }
+    rebuild_voices();
 }
 static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
 {
     unsigned i,slot=0;
-    ta_u32 oldest=0xffffffffUL;
+    ta_s32 worst=200000L,score;
     if(vel==0){off(channel,note);return;}
-    /* Prefer re-articulation, then an idle slot; otherwise steal oldest. */
-    for(i=0;i<TA_VOICES;i++){
-        if(ta.voices[i].note==note && ta.voices[i].channel==channel){
-            slot=i;break;
-        }
+    if(channel==9 || (channel==15 && ta.drum16)){
+        drum_on(channel,note,vel);
+        return;
     }
-    if(i==TA_VOICES){
-        for(i=0;i<TA_VOICES;i++)if(ta.voices[i].note<0){slot=i;break;}
-        if(i==TA_VOICES){
-            for(i=0;i<TA_VOICES;i++)
-                if(ta.voices[i].stamp<oldest){
-                    oldest=ta.voices[i].stamp;
-                    slot=i;
-                }
+    /* Rearticulate same note; then find an unused pool entry. */
+    for(i=0;i<TA_ACTIVE_NOTES;i++)
+        if(ta.notes[i].note==note && ta.notes[i].channel==channel)break;
+    if(i==TA_ACTIVE_NOTES)
+        for(i=0;i<TA_ACTIVE_NOTES;i++)if(ta.notes[i].note<0)break;
+    if(i==TA_ACTIVE_NOTES){
+        for(i=0;i<TA_ACTIVE_NOTES;i++){
+            score=note_priority(&ta.notes[i]);
+            if(score<worst || (score==worst &&
+               ta.notes[i].stamp<ta.notes[slot].stamp)){
+                worst=score;slot=i;
+            }
         }
+        i=slot;
     }
-    ta.voices[slot].note=note;
-    ta.voices[slot].channel=channel;
-    ta.voices[slot].velocity=vel;
-    ta.voices[slot].held=1;
-    ta.voices[slot].sustained=0;
-    ta.voices[slot].stamp=ta.sequence++;
-    render_voice(slot);
+    ta.notes[i].note=note;
+    ta.notes[i].channel=channel;
+    ta.notes[i].velocity=vel;
+    ta.notes[i].held=1;
+    ta.notes[i].sustained=0;
+    ta.notes[i].stamp=ta.sequence++;
+    rebuild_voices();
 }
 static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
 {
@@ -230,19 +374,20 @@ static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
     if(cc==11){ta.cc_expression[c]=val;render_channel(c);}
     if(cc==64){
         ta.cc_sustain[c]=(val>=64);
-        if(val<64)for(i=0;i<TA_VOICES;i++){
-            TAVoice *v=&ta.voices[i];
-            if(v->note>=0 && v->channel==c && v->sustained && !v->held){
-                v->note=-1;
-                v->sustained=0;
-                render_voice(i);
-            }
+        if(val<64)for(i=0;i<TA_ACTIVE_NOTES;i++){
+            TAActiveNote *n=&ta.notes[i];
+            if(n->note>=0 && n->channel==c && n->sustained && !n->held)
+                n->note=-1;
         }
+        rebuild_voices();
     }
-    if(cc==120 || cc==123)for(i=0;i<TA_VOICES;i++)
-        if(ta.voices[i].note>=0 && ta.voices[i].channel==c) {
-            ta.voices[i].note=-1;render_voice(i);
-        }
+    if(cc==120 || cc==123){
+        for(i=0;i<TA_ACTIVE_NOTES;i++)
+            if(ta.notes[i].note>=0 && ta.notes[i].channel==c)
+                ta.notes[i].note=-1;
+        rebuild_voices();
+        if(c==9 || (c==15 && ta.drum16))silence_noise();
+    }
 }
 static void consume_event(TATrack *t)
 {
@@ -315,9 +460,13 @@ int ta_load(const char *filename)
     ta_psg_silence();
     f=fopen(filename,"rb");
     if(!f){last_error="Cannot open MIDI file";return 0;}
-    n=fread(ta.data,1,TA_MAX_FILE+1U,f);
+    n=fread(ta.data,1,TA_MAX_FILE,f);
+    if(n==TA_MAX_FILE && fgetc(f)!=EOF){
+        fclose(f);
+        last_error="MIDI too large (44 KB limit)";
+        return 0;
+    }
     fclose(f);
-    if(n>TA_MAX_FILE){last_error="MIDI too large (28 KB limit)";return 0;}
     ta.bytes=(ta_u16)n;
     if(!within(0,14) || memcmp(ta.data,"MThd",4)!=0){
         last_error="Not a Standard MIDI File";return 0;
@@ -330,7 +479,7 @@ int ta_load(const char *filename)
     ta.track_count=rd16(10);
     ta.division=rd16(12);
     if(ta.format>1 || ta.track_count<1 || ta.track_count>TA_MAX_TRACKS){
-        last_error="Use type 0/1 with at most 12 tracks";return 0;
+        last_error="Use type 0/1 with at most 24 tracks";return 0;
     }
     if(!ta.division || (ta.division&0x8000)){
         last_error="SMPTE division not supported";return 0;
@@ -352,13 +501,17 @@ int ta_load(const char *filename)
     ta.playing=0;
     return 1;
 }
-void ta_tick(void)
+void ta_advance(ta_u16 elapsed_q8)
 {
     unsigned i,remaining=384;
     int active;
-    if(!ta.playing || ta.paused)return;
-    ta.clock_q8+=ta.step_q8;
-    /* Bound processing to protect 7 MHz CPUs from hostile/corrupt files. */
+    ta_u32 motion;
+    if(!ta.playing || ta.paused || !elapsed_q8)return;
+    update_noise(elapsed_q8);
+    /* Q8 MIDI time, with another Q8 carry for sub-BIOS-tick scheduling. */
+    motion=ta.step_q8*(ta_u32)elapsed_q8+ta.clock_carry;
+    ta.clock_q8+=motion>>8;
+    ta.clock_carry=(ta_u16)(motion&255UL);
     do{
         active=0;
         for(i=0;i<ta.track_count && remaining;i++){
@@ -373,6 +526,10 @@ void ta_tick(void)
     active=0;
     for(i=0;i<ta.track_count;i++)if(ta.tracks[i].active)active=1;
     if(!active)ta_stop();
+}
+void ta_tick(void)
+{
+    ta_advance(256U);
 }
 ta_u32 ta_elapsed_seconds(void)
 {

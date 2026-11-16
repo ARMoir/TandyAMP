@@ -5,6 +5,8 @@
 #include <string.h>
 
 static unsigned on_count=0, mute_count=0, max_simultaneous=0;
+static unsigned noise_count=0, noise_mute_count=0;
+static unsigned saw_melody=0, saw_bass=0;
 void ta_psg_tone(int slot,ta_u16 period,ta_u8 attenuation)
 {
     unsigned active=0,i;
@@ -13,12 +15,22 @@ void ta_psg_tone(int slot,ta_u16 period,ta_u8 attenuation)
     for(i=0;i<3;i++)if(ta.voices[i].note>=0)active++;
     if(active>max_simultaneous)max_simultaneous=active;
 }
+void ta_psg_noise(ta_u8 mode,ta_u8 attenuation)
+{
+    if(mode>7 || attenuation>15)abort();
+    if(attenuation<15)noise_count++;
+}
+void ta_psg_noise_level(ta_u8 attenuation)
+{
+    if(attenuation>15)abort();
+    if(attenuation==15)noise_mute_count++;
+}
 void ta_psg_silence(void){mute_count++;}
 
 int main(int argc,char **argv)
 {
     unsigned n,i,live;
-    if(argc<4)return 2;
+    if(argc<5)return 2;
     for(n=1;n<3;n++){
         if(!ta_load(argv[n])){fprintf(stderr,"LOAD %s: %s\n",argv[n],ta_error());return 3;}
         if(ta.format!=n-1){fprintf(stderr,"Incorrect SMF format\n");return 4;}
@@ -30,7 +42,23 @@ int main(int argc,char **argv)
         if(live>3 || max_simultaneous>3){fprintf(stderr,"Too many hardware notes\n");return 6;}
     }
     if(ta_load(argv[3])){fprintf(stderr,"Malformed file accepted\n");return 7;}
+    if(!ta_load(argv[4])){fprintf(stderr,"LOAD %s: %s\n",argv[4],ta_error());return 9;}
+    ta_begin();
+    ta_advance(32);
+    for(i=0;i<3;i++){
+        if(ta.voices[i].note==76)saw_melody=1;
+        if(ta.voices[i].note==45)saw_bass=1;
+    }
+    if(!saw_melody || !saw_bass){
+        fprintf(stderr,"Melody or bass lost in dense chord\n");return 10;
+    }
+    if(!noise_count){
+        fprintf(stderr,"Channel 10 drums failed to reach noise channel\n");return 11;
+    }
+    for(i=0;i<250 && ta.playing;i++)ta_advance(32);
+    if(ta.playing){fprintf(stderr,"Dense MIDI did not terminate\n");return 12;}
+    if(!noise_mute_count){fprintf(stderr,"Noise envelope never silenced\n");return 13;}
     if(!on_count || !mute_count){fprintf(stderr,"PSG had no notes or mute\n");return 8;}
-    printf("PASS: SMF0/SMF1, tempo, note-on/off, chord stealing, MIDI bounds; %u PSG writes\n",on_count);
+    printf("PASS: SMF0/1, dense melody/bass, 4th noise channel, note releases, subtick scheduler; %u PSG writes\n",on_count);
     return 0;
 }

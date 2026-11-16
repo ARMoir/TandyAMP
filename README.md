@@ -2,7 +2,7 @@
 
 **A Winamp-inspired MIDI player for the original Tandy 1000 EX** — real-mode DOS, 16-bit Open Watcom C, and the computer's onboard SN76489-compatible three-voice sound generator at port `0xC0`.
 
-The first version is a **compiled and automatically tested prototype**. It has **not yet been tested on the physical 7 MHz NEC V20 Tandy EX**. The graphical design is inspired by the reference Winamp screenshot supplied by the project owner; the program uses its own pixel font, UI layout, and original code/assets.
+The project is a **compiled and automatically tested prototype**. It has **not yet been tested on the physical 7 MHz NEC V20 Tandy EX**. The graphical design is inspired by the reference Winamp screenshot supplied by the project owner; the program uses its own pixel font, UI layout, and original code/assets.
 
 ## Download / install
 
@@ -24,6 +24,7 @@ The demo is an original 16-second MIDI tune generated from `tools/make_demo.py`.
 TANDYAMP DEMO.MID
 TANDYAMP SONG1.MID SONG2.MID SONG3.MID
 TANDYAMP /TXT DEMO.MID
+TANDYAMP /DRUM16 CANYON.MID
 TANDYAMP /LOOP DEMO.MID SONG2.MID
 TANDYAMP /GUI DEMO.MID
 TANDYAMP /HELP
@@ -35,8 +36,9 @@ TANDYAMP /HELP
 | `/TXT` or `-T` | Text-mode player, useful in DOSBox or on other text displays |
 | `/LOOP` or `-L` | Loop the complete playlist |
 | `/HELP`, `-H`, `/?` | Show usage and keyboard controls |
+| `/DRUM16` | Also treat channel 16 as percussion in early legacy MIDI files (try with original Windows 3.x CANYON.MID) |
 
-Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For the v0.1 prototype, files must be **28 KB or smaller** and use MIDI **type 0 or 1**, with **12 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
+Supply up to **8 MIDI filenames** on the command line, separated by spaces. MIDI files with spaces in DOS-visible names must be quoted using the shell's normal rules. For this build, files must be **44 KB or smaller** and use MIDI **type 0 or 1**, with **24 tracks or fewer** and PPQN timing (SMPTE time division is not yet supported).
 
 ### Keyboard controls
 
@@ -58,9 +60,12 @@ The Winamp-style control buttons are **visual in v0.1**; use the keyboard. Seria
 - Real 8086-compatible, small-model DOS MZ executable, built with `wcl -bt=dos -0 -ms`.
 - Direct Tandy mode `09h`, 320×200, 16 colors, four-bank video memory, and a compact 5×7 pixel font (no VGA requirement).
 - Standard MIDI File type 0/1 parser; variable-length delta times, multi-track playback, running status, tempo changes.
-- Three PSG tone channels, per-note velocity and MIDI CC7/CC11 volume, CC64 sustain, all-notes-off, note-off and voice stealing.
+- Three PSG tone channels with 32 active MIDI notes remembered; melody/bass-aware allocation means temporarily stolen notes can return after release.
+- General MIDI channel 10 percussion uses independent SN76489 noise channel with short volume envelopes. Optional `/DRUM16` also treats channel 16 as percussion for old MIDI arrangements.
+- Per-note velocity, MIDI CC7/CC11 volume, CC64 sustain, all-notes-off and pitch bend.
 - Fixed-point integer pitch-bend approximation using our independently computed 128-note divider table, derived from the 3.579545 MHz PSG clock.
-- Playback advances using the BIOS **18.2 Hz tick** in the foreground. This is an intentionally simple first version; some fast passages and tight rhythmic events may suffer up to ~55 ms of quantization and UI redraw delays. A more precise timer is a future milestone.
+- Foreground playback reads the original BIOS tick and the latched PIT counter without installing an IRQ handler or altering BIOS/DOS time. Music is scheduled in at most ~6.9 ms slices instead of ~55 ms chunks. GUI drawing can still delay events on a 7 MHz V20; hardware timing needs another recording.
+- Low bass pitches below the SN76489's ~109 Hz floor are octave-folded rather than all clamped to one note.
 - No resident driver, no AUTOEXEC or Windows image changes.
 
 ## Development / reproducible build

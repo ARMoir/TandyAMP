@@ -22,12 +22,28 @@ static unsigned song_count=0, song_current=0;
 static int text_mode=0, loop_mode=0, show_equalizer=0;
 static int stopped=0, program_exit=0, fast_redraw=1;
 static ta_u32 song_ticks=0, last_refresh=0;
+static unsigned song_tick_part=0;
 
 #ifdef __WATCOMC__
 static unsigned char far * const vram=(unsigned char far *)MK_FP(0xB800,0);
 static volatile ta_u32 far * const bios_tick=(volatile ta_u32 far*)MK_FP(0x40,0x6c);
 static void put_sound(ta_u8 value){outp(0xc0,value);}
-static ta_u32 get_ticks(void){return *bios_tick;}
+/* Read free-running PIT channel 0: no new IRQ, no BIOS tick rate change.
+   256 subunits per 54.9ms tick (~0.215ms timer resolution). */
+static ta_u32 get_clock_q8(void)
+{
+    ta_u32 before,after;
+    unsigned low,high,remaining;
+    do {
+        before=*bios_tick;
+        outp(0x43,0x00);
+        low=inp(0x40);
+        high=inp(0x40);
+        after=*bios_tick;
+    } while(before!=after);
+    remaining=(high<<8)|low;
+    return (after<<8) + ((65535U-remaining)>>8);
+}
 static void set_mode(unsigned char mode)
 {
     union REGS r;
@@ -42,7 +58,7 @@ static unsigned char host_screen[32768];
 static unsigned char * const vram=host_screen;
 static ta_u32 fake_clock=0;
 static void put_sound(ta_u8 value){(void)value;}
-static ta_u32 get_ticks(void){return fake_clock++;}
+static ta_u32 get_clock_q8(void){return (fake_clock++)<<8;}
 static void set_mode(unsigned char mode){(void)mode;}
 static int key_ready(void){return 0;}
 static int next_key(void){return 'q';}
@@ -60,6 +76,16 @@ void ta_psg_tone(int slot,ta_u16 divider,ta_u8 attenuation)
     put_sound((ta_u8)(latch|(divider&15)));
     put_sound((ta_u8)((divider>>4)&63));
     put_sound((ta_u8)(volume|attenuation));
+}
+void ta_psg_noise_level(ta_u8 attenuation)
+{
+    if(attenuation>15)attenuation=15;
+    put_sound((ta_u8)(0xf0|attenuation));
+}
+void ta_psg_noise(ta_u8 mode,ta_u8 attenuation)
+{
+    put_sound((ta_u8)(0xe0|(mode&7)));
+    ta_psg_noise_level(attenuation);
 }
 void ta_psg_silence(void)
 {
@@ -301,10 +327,11 @@ static void usage(void)
     puts("Options: /TXT     text-only player (no Tandy graphics)");
     puts("         /GUI     Tandy 320x200 16-color display (default)");
     puts("         /LOOP    repeat entire playlist");
+    puts("         /DRUM16  legacy drum channel 16 (early CANYON.MID)");
     puts("         /HELP    this help");
     puts("Keys: SPACE pause/resume, S stop, R replay, N next, P previous");
     puts("      E visualizer/playlist, L loop toggle, Q or ESC quit");
-    puts("Supports MIDI format 0 and 1, 12 tracks, files <= 28 KB.");
+    puts("Supports MIDI format 0/1, 24 tracks, files <= 44 KB.");
 }
 static int start_song(unsigned n)
 {
@@ -318,6 +345,7 @@ static int start_song(unsigned n)
     }
     ta_begin();
     song_ticks=0;
+    song_tick_part=0;
     stopped=0;
     if(text_mode)printf("Playing %u/%u: %s\n",song_current+1,song_count,songs[song_current]);
     fast_redraw=1;
@@ -356,6 +384,7 @@ int main(int argc,char **argv)
         if(same(s,"/TXT")||same(s,"-T")||same(s,"/TEXT")){text_mode=1;continue;}
         if(same(s,"/GUI")||same(s,"-G")){text_mode=0;continue;}
         if(same(s,"/LOOP")||same(s,"-L")){loop_mode=1;continue;}
+        if(same(s,"/DRUM16")){ta.drum16=1;continue;}
         if(s[0]=='-'||s[0]=='/'){printf("Unknown option: %s\n",s);usage();return 1;}
         if(song_count>=MAX_SONGS){puts("Maximum 8 playlist entries.");return 1;}
         if(strlen(s)>=PATHLEN){puts("Filename too long (63 characters).");return 1;}
@@ -367,17 +396,27 @@ int main(int argc,char **argv)
         set_mode(9);
         draw_all();
     }else usage();
-    then=get_ticks();
+    then=get_clock_q8();
     while(!program_exit){
-        now=get_ticks();
-        elapsed=now-then;
+        now=get_clock_q8();
+        /* BIOS time wraps at midnight. Ignore the unusual wrap sample. */
+        elapsed=(now>=then)?now-then:0;
+        then=now;
         if(elapsed){
-            if(elapsed>50UL)elapsed=50UL;
-            then=now;
-            while(elapsed--){
+            if(elapsed>12800UL)elapsed=12800UL;
+            /* Schedule events in <= 6.9ms slices, even during dense chords. */
+            while(elapsed){
+                ta_u16 slice=(ta_u16)(elapsed>32UL?32UL:elapsed);
                 int was_playing=ta.playing;
-                if(ta.playing && !ta.paused)song_ticks++;
-                ta_tick();
+                elapsed-=slice;
+                if(ta.playing && !ta.paused){
+                    song_tick_part+=slice;
+                    if(song_tick_part>=256U){
+                        song_ticks++;
+                        song_tick_part-=256U;
+                    }
+                }
+                ta_advance(slice);
                 if(was_playing && !ta.playing && !stopped){
                     if(song_current+1<song_count || loop_mode){
                         next_index=(song_current+1)%song_count;
