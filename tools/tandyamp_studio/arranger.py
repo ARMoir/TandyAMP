@@ -127,10 +127,7 @@ def normalize(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
             # Preserve the model's relative bass dynamics. The old max(107)
             # forced almost every bass event to identical volume and made
             # the PSG relentless. Soft notes may intentionally gate PIT2 off.
-            # Do not flatten the quiet third of a transcribed bass line to
-            # MIDI velocity 64. Weaker notes may not meet PIT2's audible gate,
-            # which is preferable to making every bass event equally loud.
-            velocity = max(46, min(114, velocity))
+            velocity = max(64, min(114, velocity))
         result.append(replace(n, pitch=p, velocity=velocity))
     return sorted(result, key=lambda n: (n.start, n.end, n.pitch))
 

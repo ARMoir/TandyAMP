@@ -15,7 +15,8 @@ from arranger import Note, normalize, prepare, select_voices, make_midi
 from postprocess import (classify_drum_bands, classify_drum_transient,
                          clean_stem_notes, drum_velocity, join_bass_fragments,
                          normalize_drum_fluxes, refine_drum_hits,
-                         recover_high_hats)
+                         recover_high_hats, infer_snare_backbeat,
+                         prune_weak_rock_kicks)
 from preview import assign_preview_voices, preview_wav
 
 
@@ -86,6 +87,51 @@ class SpectralDrumTests(unittest.TestCase):
         existing = [Note(.50, .57, 38, 95, 'drums')]
         attacks = [(.52, 3.0, .1, .2, 3.0)]
         self.assertEqual(recover_high_hats(attacks, existing, 'rock'), [])
+
+    def test_backbeat_inferred_from_observed_snare_not_an_assumption(self):
+        beats = [i*.36 for i in range(32)]
+        snares = [Note(i*.36, i*.36+.06, 38, 95, 'drums')
+                  for i in range(1, 24, 2)]
+        self.assertEqual(infer_snare_backbeat(snares, beats), 1)
+        self.assertIsNone(infer_snare_backbeat(snares[:2], beats))
+        ambiguous = snares[:6] + [Note(i*.36, i*.36+.06, 38, 95, 'drums')
+                                   for i in range(2, 14, 2)]
+        self.assertIsNone(infer_snare_backbeat(ambiguous, beats))
+
+    def test_rock_pulse_keeps_strong_kicks_and_reduces_weak_backbeats(self):
+        beats = [i*.36 for i in range(48)]
+        kicks = [Note(i*.36, i*.36+.07, 36,
+                      98 if i % 2 == 0 else 55, 'drums')
+                 for i in range(32)]
+        snares = [Note(i*.36, i*.36+.065, 38, 85, 'drums')
+                  for i in range(1, 32, 2)]
+        result = prune_weak_rock_kicks(kicks+snares, beats)
+        kick_result = [n for n in result if n.pitch == 36]
+        self.assertLess(len(kick_result), len(kicks))
+        self.assertTrue(all(n.velocity == 98 for n in kick_result
+                            if n.start >= .5 and n.start < 10.5))
+        self.assertEqual(len([n for n in result if n.pitch == 38]),
+                         len(snares))
+
+    def test_rock_pulse_does_not_remove_uniform_strength_kicks(self):
+        kicks = [Note(i*.36, i*.36+.07, 36, 72, 'drums')
+                 for i in range(32)]
+        self.assertEqual(prune_weak_rock_kicks(kicks, []), kicks)
+
+    def test_hats_can_replace_only_weak_kicks_with_clear_high_attack(self):
+        kick = Note(.50, .57, 36, 56, 'drums')
+        events = [(.52, 8.0, .1, .1, 8.0)]
+        hats = recover_high_hats(events, [kick], style='rock')
+        self.assertEqual(len(hats), 1)
+        reduced = refine_drum_hits([kick] + hats, style='rock')
+        self.assertEqual([n.pitch for n in reduced], [42])
+        strong = Note(.50, .57, 36, 90, 'drums')
+        self.assertEqual(recover_high_hats(events, [strong], 'rock'), [])
+
+    def test_hats_do_not_replace_snare_backbeat(self):
+        snare = Note(.5, .565, 38, 65, 'drums')
+        events = [(.52, 9.0, .05, .1, 9.0)]
+        self.assertEqual(recover_high_hats(events, [snare], 'rock'), [])
 
     def test_rock_mode_more_sparing_kicks_and_stronger_snares(self):
         dense = [Note(i*.21, i*.21+.07, 36, 80, 'drums')

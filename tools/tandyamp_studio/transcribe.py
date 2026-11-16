@@ -51,17 +51,13 @@ def _predict(path: Path, part: str | None) -> list[Note]:
     return notes
 
 
-def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
-    """Recover three rock drum classes without manufacturing rhythmic notes.
+def _drum_onsets(path: Path) -> list[Note]:
+    """Onset-novelty drum classifier with beat hints and preserved dynamics.
 
-    Two onset detectors run on the *separated drum stem*:
-    (1) full-spectrum onsets for kick/snare and
-    (2) >6 kHz spectral novelty for hats/cymbals that a kick-led detector
-        regularly misses. The Tandy's single noise oscillator is respected
-        when deconflicting candidates.
+    The previous detector used absolute spectral energy, so bass bleed
+    dominated almost every event and forced all hits to kick. Compare each
+    new attack with the preceding 46 ms instead; do not force class quotas.
     """
-    if style not in ('auto', 'rock'):
-        raise ValueError('Drum style must be auto or rock')
     try:
         import librosa
         import numpy as np
@@ -73,8 +69,7 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
     from bisect import bisect_left
     from collections import Counter
     from postprocess import (classify_drum_transient, drum_velocity,
-                             normalize_drum_fluxes, recover_high_hats,
-                             refine_drum_hits)
+                             normalize_drum_fluxes, refine_drum_hits)
 
     samples, sr = librosa.load(str(path), sr=22050, mono=True)
     if len(samples) < 2048:
@@ -87,6 +82,8 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
     if not len(frames):
         return []
 
+    # Calibrate dynamics from the distribution of this drum stem's onsets,
+    # not from each onset divided by its median (which saturates at 118).
     strengths = np.asarray([envelope[min(int(i), len(envelope)-1)]
                             for i in frames], dtype=float)
     quiet, loud = np.percentile(strengths, [18, 90])
@@ -100,110 +97,63 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
     except (ValueError, TypeError, RuntimeError):
         pass
 
-    fft_size = 1024
-    taper = np.hanning(fft_size)
-    freqs = np.fft.rfftfreq(fft_size, 1.0/sr)
+    size = 1024  # 46 ms at 22.05 kHz; independent windows around the onset
+    taper = np.hanning(size)
+    freqs = np.fft.rfftfreq(size, 1.0/sr)
     bands = (
         (freqs >= 40) & (freqs < 270),
         (freqs >= 300) & (freqs < 4200),
         (freqs >= 4500) & (freqs < 10400),
     )
-
-    def attack_at(frame: int):
+    raw_attacks = []
+    for idx, frame in enumerate(frames):
         at = float(librosa.frames_to_time(frame, sr=sr, hop_length=hop))
         center = int(at*sr)
+        # A preceding window measures continuing bass/room bleed;
+        # the following window measures the actual transient's novelty.
         before_end = center-int(.012*sr)
-        before_start = before_end-fft_size
+        before_start = before_end-size
         after_start = center+int(.003*sr)
-        if before_start < 0 or after_start+fft_size > len(samples):
-            return None
-        before = np.abs(np.fft.rfft(samples[before_start:before_end]*taper))
-        after = np.abs(np.fft.rfft(samples[after_start:after_start+fft_size]*taper))
-        novel = np.maximum(after-.88*before, 0)**2
-        low, mid, high = [float(novel[mask].sum()) for mask in bands]
-        return (at, low, mid, high)
-
-    raw = []
-    for idx, frame in enumerate(frames):
-        attack = attack_at(int(frame))
-        if attack is None:
+        if before_start < 0 or after_start+size > len(samples):
             continue
-        at, low, mid, high = attack
+        before = np.abs(np.fft.rfft(samples[before_start:before_end]*taper))
+        after = np.abs(np.fft.rfft(samples[after_start:after_start+size]*taper))
+        novel = np.maximum(after-.88*before, 0) ** 2
+        low, mid, high = [float(novel[mask].sum()) for mask in bands]
+
         backbeat_hint = False
         if len(beats) >= 4:
             j = bisect_left(beats, at)
-            near = [k for k in (j-1, j) if 0 <= k < len(beats)]
-            if near:
-                closest = min(near, key=lambda k: abs(at-beats[k]))
+            nearby = [k for k in (j-1, j) if 0 <= k < len(beats)]
+            if nearby:
+                closest = min(nearby, key=lambda k: abs(at-beats[k]))
                 backbeat_hint = (abs(at-beats[closest]) <= .065 and
                                  closest % 2 == 1)
-        raw.append((at, low, mid, high, backbeat_hint,
-                    float(strengths[idx])))
+        raw_attacks.append((at, low, mid, high, backbeat_hint,
+                            float(strengths[idx])))
 
-    # Independent high-frequency onset envelope: don't infer hats merely
-    # from the scarcity of MIDI note 42 in the classification results.
-    spectrum = np.abs(librosa.stft(samples, n_fft=fft_size,
-                                   hop_length=hop)).astype('float32')
-    high_mask = (freqs >= 6000) & (freqs < 10400)
-    high_envelope = np.zeros(spectrum.shape[1], dtype='float32')
-    if high_mask.any() and spectrum.shape[1] > 1:
-        high_envelope[1:] = np.maximum(
-            np.diff(spectrum[high_mask, :], axis=1), 0
-        ).sum(axis=0)
-    del spectrum
-
-    high_raw = []
-    if high_envelope.max() > 0:
-        high_frames = librosa.onset.onset_detect(
-            onset_envelope=high_envelope, sr=sr, hop_length=hop,
-            backtrack=False, wait=8, pre_max=3, post_max=3,
-            pre_avg=8, post_avg=8, delta=.035
-        )
-        positive = high_envelope[high_envelope > 0]
-        floor = max(float(np.percentile(positive, 52)),
-                    float(high_envelope.max())*.035)
-        for frame in high_frames:
-            frame = int(frame)
-            strength = float(high_envelope[min(frame, len(high_envelope)-1)])
-            if strength < floor:
-                continue
-            attack = attack_at(frame)
-            if attack is not None:
-                high_raw.append((attack, strength))
-
-    # Calibrate *all* attack spectra on the recording itself, not against
-    # a hardcoded power level from some other song.
-    all_bands = [(x[1], x[2], x[3]) for x in raw]
-    all_bands.extend((x[0][1], x[0][2], x[0][3]) for x in high_raw)
-    calibrated = normalize_drum_fluxes(all_bands)
-
+    calibrated = normalize_drum_fluxes([
+        (entry[1], entry[2], entry[3]) for entry in raw_attacks
+    ])
     candidates = []
-    for (at, _l, _m, _h, hint, strength), xyz in zip(raw, calibrated):
-        category = classify_drum_transient(*xyz, backbeat_hint=hint)
-        if category is not None:
-            velocity = drum_velocity(strength, float(quiet), float(loud))
-            candidates.append(Note(at, at+.07, category, velocity,
-                                   'drums', 0))
-    high_offset = len(raw)
-    recovered = recover_high_hats(
-        [(item[0][0], item[1], *xyz)
-         for item, xyz in zip(high_raw, calibrated[high_offset:])],
-        candidates, style=style
-    )
-    combined = candidates + recovered
-    result = refine_drum_hits(combined, beats, style=style)
-    before = dict(Counter(n.pitch for n in combined))
+    for (at, _low, _mid, _high, hint, strength), bands in zip(
+            raw_attacks, calibrated):
+        category = classify_drum_transient(*bands, backbeat_hint=hint)
+        if category is None:
+            continue
+        velocity = drum_velocity(strength, float(quiet), float(loud))
+        candidates.append(Note(at, at+.07, category, velocity, 'drums', 0))
+
+    result = refine_drum_hits(candidates, beats)
+    before = dict(Counter(n.pitch for n in candidates))
     after = dict(Counter(n.pitch for n in result))
-    print('Drum analysis: {} broad onsets, {} independent high-band attacks, '
-          '{} recovered hats; {} classified {}, {} retained {} '
+    print('Drum analysis: {} onsets, {} classified {}, {} retained {} '
           '(36=kick, 38=snare, 42=hat)'.format(
-              len(frames), len(high_raw), len(recovered), len(combined),
-              before, len(result), after), flush=True)
+              len(frames), len(candidates), before, len(result), after),
+          flush=True)
     return result
 
-
-def transcribe_audio(path: Path, stems: bool = False,
-                     drum_style: str = 'auto') -> list[Note]:
+def transcribe_audio(path: Path, stems: bool = False) -> list[Note]:
     """Transcribe and clean notes on the laptop; MIDI imports are unaffected."""
     from postprocess import clean_stem_notes
 
@@ -239,5 +189,5 @@ def transcribe_audio(path: Path, stems: bool = False,
         drums = root / 'drums.wav'
         if drums.exists():
             print('Estimating beat-aware kick/snare/hat onsets...', flush=True)
-            notes.extend(_drum_onsets(drums, style=drum_style))
+            notes.extend(_drum_onsets(drums))
         return notes

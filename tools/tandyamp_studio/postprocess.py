@@ -233,8 +233,14 @@ def recover_high_hats(events: list[tuple[float, float, float, float, float]],
             continue
         # Tandy has only ONE noise oscillator: don't add an inaudible hat
         # on top of a kick/snare with a nearly simultaneous attack.
-        if any(abs(n.start-at) < .090 for n in existing):
-            continue
+        near = [n for n in existing if abs(n.start-at) < .085]
+        if near:
+            # Only an unmistakable high-band transient may displace a
+            # *weak* kick. Never sacrifice a genuine snare backbeat for hats.
+            if (style != 'rock' or
+                any(n.pitch != 36 or n.velocity > 64 for n in near) or
+                strength < .73*strengths[-1]):
+                continue
         if any(abs(n.start-at) < .090 for n in result):
             continue
         relative = min(1.0, max(0.0, strength / max(strengths[-1], 1e-10)))
@@ -242,6 +248,97 @@ def recover_high_hats(events: list[tuple[float, float, float, float, float]],
         result.append(Note(at, at+.045, 42, velocity, 'drums', 0))
     return result
 
+
+
+def infer_snare_backbeat(snare: list[Note], beats: list[float]) -> int | None:
+    """Find a plausible alternating backbeat from *actual* snare evidence.
+
+    Avoid assuming beat phase when tempo is half/double or detection is weak.
+    The result is only a bias for pruning weak kicks, never a reason to
+    invent snare notes.
+    """
+    if len(beats) < 8 or len(snare) < 6:
+        return None
+    from bisect import bisect_left
+    weights = [0.0, 0.0]
+    hits = [0, 0]
+    for n in snare:
+        at = bisect_left(beats, n.start)
+        options = [i for i in (at - 1, at) if 0 <= i < len(beats)]
+        if not options:
+            continue
+        idx = min(options, key=lambda i: abs(n.start - beats[i]))
+        if abs(n.start - beats[idx]) > .11:
+            continue
+        phase = idx % 2
+        weights[phase] += n.velocity
+        hits[phase] += 1
+    total = sum(weights)
+    winner = 0 if weights[0] >= weights[1] else 1
+    if hits[winner] < 5 or total <= 0 or weights[winner] / total < .72:
+        return None
+    return winner
+
+
+def prune_weak_rock_kicks(notes: list[Note], beats: list[float]) -> list[Note]:
+    """Keep accents and the authentic pulse; remove weak repetitive attacks.
+
+    Works only on detected kick *candidates*. A strong neighboring kick and
+    significant dynamics are required before suppressing one. Clear on-beat
+    kicks not occupying the snare's backbeat are protected when a reliable
+    alternating snare phase exists.
+    """
+    kicks = sorted((n for n in notes if n.pitch == 36), key=lambda n: n.start)
+    if len(kicks) < 12:
+        return notes
+    velocities = sorted(n.velocity for n in kicks)
+    p20 = velocities[int((len(velocities)-1)*.20)]
+    p40 = velocities[int((len(velocities)-1)*.40)]
+    p80 = velocities[int((len(velocities)-1)*.80)]
+    if p80 - p20 < 12:
+        return notes  # no reliable strength contrast: preserve the groove
+    threshold = p40 + .30*(p80-p40)
+    snare_phase = infer_snare_backbeat(
+        [n for n in notes if n.pitch == 38], beats
+    )
+    from bisect import bisect_left
+    kept: list[Note] = []
+    rejected: set[int] = set()
+    for n in kicks:
+        if n.velocity >= threshold:
+            kept.append(n)
+            continue
+        stronger = any(
+            0 < abs(other.start-n.start) <= .52
+            and other.velocity >= n.velocity + 16
+            for other in kicks
+        )
+        if not stronger or (kept and n.start-kept[-1].start > .65):
+            kept.append(n)
+            continue
+        if beats and snare_phase is not None:
+            j = bisect_left(beats, n.start)
+            options = [i for i in (j - 1, j) if 0 <= i < len(beats)]
+            if options:
+                idx = min(options, key=lambda i: abs(n.start-beats[i]))
+                if abs(n.start-beats[idx]) <= .08:
+                    if idx % 2 != snare_phase:
+                        kept.append(n)  # protect an actual kick-phase beat
+                        continue
+        # If snare phase isn't reliable, require a larger difference before
+        # suppressing a kick; don't assume an alternating metronome.
+        if snare_phase is None and not any(
+            0 < abs(other.start-n.start) <= .52
+            and other.velocity >= n.velocity + 21
+            for other in kicks
+        ):
+            kept.append(n)
+            continue
+        rejected.add(id(n))
+    if rejected:
+        print('Rock rhythm: suppressed {} weaker repeated kick candidates'.format(
+            len(rejected)), flush=True)
+    return [n for n in notes if n.pitch != 36 or id(n) not in rejected]
 
 
 def refine_drum_hits(notes: list[Note], beats: list[float] | None = None,
@@ -262,6 +359,8 @@ def refine_drum_hits(notes: list[Note], beats: list[float] | None = None,
     # backbeats and cymbal attacks (no invented quarter/eighth-note hats).
     minimum = ({36: .28, 38: .25, 42: .11} if style == 'rock'
                else {36: .20, 38: .28, 42: .105})
+    if style == 'rock':
+        notes = prune_weak_rock_kicks(notes, beats)
     last_type: dict[int, float] = {}
     result: list[Note] = []
     typical = median(n.velocity for n in notes)

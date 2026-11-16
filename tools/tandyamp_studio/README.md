@@ -15,6 +15,22 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. Rock drum analysis requires `--stems`. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
 
+## V5 rock beat awareness and preview balance
+
+The **rock** drum option now looks for a plausible alternating snare backbeat in the **detected** tempo grid, and suppresses only **weaker kick candidates** when stronger nearby kick evidence exists. If no reliable snare phase or meaningful dynamic contrast is found, it behaves conservatively rather than assuming a metronomic beat. It never synthesizes new kick, snare or hi-hat events, and does not touch the vocal/guitar transcription. This reduces weak repeated kick attacks without blindly deleting real accents.
+
+A strong independent high-frequency hat onset can now replace a nearby **weak** kick in rock mode, when it has clear spectral evidence. Strong kicks and snares remain protected, and the one PSG noise channel still handles only one event at a time.
+
+The **preview WAV only** has a quieter bass PSG voice, quieter PIT2-bass simulation and less dominant noise-channel drums, so the guitar line is easier to judge. This does **not** alter the real DOS TANDYAMP sound or the 16-bit build. The preview remains approximate, not a cycle-accurate SN76489 or PIT emulator.
+
+To compare with earlier versions, use the same source and preset but a new output directory:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --stems --drum-style rock --preset balanced --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_V5"
+```
+
+The cached YouTube MP3 is reused automatically, though stem separation/transcription still runs each time. Judge improvements by listening on the actual Tandy as well as the preview.
+
 ## Rock rhythm improvements (experimental)
 
 The Studio GUI now has a **Drums** selector: **auto** (existing style, default) or **rock**. The CLI equivalent is `--drum-style rock`, and it only affects drum transcription when you use `--stems`. Neither mode alters an existing user-supplied MIDI file or the pitched guitar melody.

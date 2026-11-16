@@ -116,7 +116,10 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                 release = min(1.0, max(0.0, n.end-t)/.012)
                 # Harsh treble softening; long plucks decay gently.
                 fade = math.exp(-age/1.3) if n.part == 'harmony' else 1.0
-                amp = .145 * (n.velocity/127.0) * attack * release * fade
+                # Balance the laptop preview for listening tests: leave
+                # melody present and reduce persistent low square-wave energy.
+                tone_gain = .118 if n.part == 'bass' else .145
+                amp = tone_gain * (n.velocity/127.0) * attack * release * fade
                 f = _freq(n.pitch)
                 if f > 1500:
                     amp *= .75
@@ -128,11 +131,11 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                 raised = (spk4 == 'adapt' and n.pitch < 44 and n.pitch <= 35)
                 f = _freq(n.pitch + (12 if raised else 0), speaker=True)
                 # Actual PIT2 is one-bit and has no volume register.
-                mix += .105 * gate * (1.0 if (t*f)%1.0 < .5 else -1.0)
+                mix += .080 * gate * (1.0 if (t*f)%1.0 < .5 else -1.0)
             if drum is not None:
                 age = max(0.0, t-drum.start)
                 decay = {36: .048, 38: .032, 42: .014}.get(drum.pitch, .027)
-                level = .21 * (drum.velocity/127.0) * math.exp(-age/decay)
+                level = .135 * (drum.velocity/127.0) * math.exp(-age/decay)
                 noise = rng.uniform(-1.0, 1.0)
                 if drum.pitch == 36:
                     noise = .55*noise + .45*math.sin(2*math.pi*75*t)
