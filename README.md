@@ -85,7 +85,7 @@ Only use that CuteMouse command if it matches your actual serial port/driver set
 | Tracks | At most **24** tracks per MIDI file |
 | Playlist | **64** filenames max, 63 characters per stored name; automatic scan is current-directory only |
 | Music | Three simultaneous SN76489-compatible tone outputs; fourth noise channel for drums |
-| Arrangement | Tracks up to **32 active MIDI notes** in software; tone choices prioritize melody/bass, avoid duplicate hardware pitches, and can restore held notes after a voice becomes free |
+| Arrangement | Tracks up to **32 active MIDI notes** in software; tone choices prioritize melody/bass, avoid duplicate hardware pitches, and can restore held notes after a voice becomes free; increased voice-continuity weighting reduces unnecessary switching |
 | MIDI controls | Note-on/off, velocity, volume CC7, expression CC11, sustain CC64, pitch bend, stop/all-notes-off |
 | Percussion | General MIDI channel 10 uses the noise channel; optional auto/forced legacy channel-16 drums |
 | Pitches | Integer divider table, pitch bending, octave folding for bass below the PSG's frequency floor |
@@ -110,6 +110,7 @@ The authoritative source is on **[GitHub](https://github.com/ARMoir/TandyAMP)**:
 | `tests/make_test_mid.py` | Generate reproducible MIDI test files |
 | `tests/midi_test.c` | MIDI format, drum and parser regression tests |
 | `tests/playback_test.c` / `tests/mixer_test.c` | Note/event ordering, voice allocation and mix-level checks |
+| `tests/expressive_test.c` | Program-change envelopes, controller 1 vibrato, envelope timing and note-off regressions |
 | `tests/ui_test.c` | Pixel-font bounds, button hit areas, software cursor, minimal redraws and directory playlist discovery |
 | `tests/check_docs.py` | Checks documentation links, feature limits and release packaging against source |
 | `.github/workflows/build-dos.yml` | Test, compile, package and publish DOS builds |
@@ -139,3 +140,9 @@ The GitHub workflow runs host tests, installs Open Watcom 2.0, builds a real-mod
 ## Rights
 
 TandyAMP code and its generated demo are MIT licensed; see [LICENSE](LICENSE). It ships no proprietary SimCity/Miles audio or code, no Winamp assets, and no user-owned Canyon MIDI file.
+
+## New native expressive PSG features (build after #33)
+
+No preconversion is required: ordinary `.MID` files play directly on the EX. When a file sends a MIDI **Program Change**, piano/keyboard and guitar/plucked families receive a gentle stepped decay, bass/wind families a slower stepped decay, and sustained families keep their note level. Files that do not specify a program retain the older sustained tone behavior. MIDI **CC1 modulation-wheel** messages now apply a small integer pitch vibrato to already-playing notes. Note-offs remain immediate to avoid stuck notes. These effects cost at most a small amount of integer work every ~27 ms, plus occasional port writes. Some instrument/program mappings are necessarily approximate on three square-wave channels.
+
+The three-voice selector now more strongly favors keeping the same audible notes when musical importance is similar. Final PSG I/O is cached: unchanged registers are not resent; new drum hits still retrigger the noise latch. These changes are not a wavetable/sound-font renderer, cannot create more than three simultaneous tone voices, and remain **hardware-audio-unverified** until listened to on the real EX.

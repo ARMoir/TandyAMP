@@ -49,6 +49,9 @@ Command line: explicit files OR current-directory *.MID discovery
 
 ### MIDI synthesis and arrangement
 
+New live expressive engine: Program Change events are stored per MIDI channel; selected zero-based GM families use lightweight original pluck/soft/sustain profiles, each note remembering its shape and age. The player also responds to CC1 with a restrained ~5 Hz triangle vibrato using integer PSG-divider modulation. Voice scoring now gives stronger continuity preference. Final tone/volume I/O is cached (noise mode writes intentionally always retrigger). **No preprocessing or altered MIDI formats** are required; these are V20-side features. Note-off remains immediate and there is currently no full ADSR release tail, polyphonic arpeggiation, or complex program timbre emulation.
+
+
 - Stores up to **32** active notes (held/sustained/eligible), maps them to **three hardware tone voices** while avoiding simultaneous duplicate PSG dividers.
 - Prioritizes musically salient notes, can restore a held note after a stolen voice is freed, and updates selection when CC volume/expression changes. Bass notes below the normal SN76489 pitch floor are octave-folded.
 - Uses hardware noise for General MIDI channel 10 drums, with short envelopes. A conservative pre-scan can recognize legacy channel-16 drum patterns; `/DRUM16` and `/NODRUM16` override it. Changing drum mode with `D` restarts the song.

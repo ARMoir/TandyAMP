@@ -180,6 +180,35 @@ int main(void)
         mouse_was_down=0;
     }
 
+    /* Cached PSG writes: unchanged tones and volumes cause NO I/O.
+       Volume-only change costs 1 byte, pitch change 2, full note 3.
+       A same-mode drum retrigger MUST still reset the noise shift register. */
+    {
+        unsigned long writes;
+        ta_psg_silence();
+        test_psg_writes=0;
+        ta_psg_tone(0,254,6);
+        assert(test_psg_writes==3);
+        writes=test_psg_writes;
+        ta_psg_tone(0,254,6);
+        assert(test_psg_writes==writes);
+        ta_psg_tone(0,254,7);
+        assert(test_psg_writes==writes+1);
+        writes=test_psg_writes;
+        ta_psg_tone(0,255,7);
+        assert(test_psg_writes==writes+2);
+        writes=test_psg_writes;
+        ta_psg_noise(5,9);
+        assert(test_psg_writes==writes+2);
+        writes=test_psg_writes;
+        ta_psg_noise(5,9);
+        assert(test_psg_writes==writes+1);
+        ta_psg_silence();
+        writes=test_psg_writes;
+        ta_psg_tone(0,254,6);
+        assert(test_psg_writes==writes+3);
+    }
+
     /* Directory playlist logic is shared with the DOS build. */
     {
         unsigned j;

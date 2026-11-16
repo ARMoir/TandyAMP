@@ -34,6 +34,8 @@ typedef struct {
     signed short note;
     ta_u8 channel, velocity, held, sustained;
     ta_u8 gain, attenuation; /* Cached for cheap 8086 voice selection. */
+    ta_u8 style, env_step; /* Original program-aware PSG envelope. */
+    ta_u16 age_q8; /* Elapsed tone age, 1/256 of a BIOS tick, saturating. */
     ta_u16 period; /* Actual folded/bent hardware pitch. */
     ta_u32 stamp;
 } TAActiveNote;
@@ -46,6 +48,8 @@ typedef struct {
     TAActiveNote notes[TA_ACTIVE_NOTES];
     ta_u8 cc_volume[TA_CHANNELS], cc_expression[TA_CHANNELS];
     ta_u8 cc_sustain[TA_CHANNELS];
+    ta_u8 cc_program[TA_CHANNELS]; /* 0-127, 255 until program change. */
+    ta_u8 cc_modulation[TA_CHANNELS]; /* MIDI CC1 vibrato depth. */
     signed short pitchbend[TA_CHANNELS];
     ta_u32 tempo_us, step_q8, clock_q8, max_ticks, sequence;
     ta_u16 clock_carry; /* Subtick fractional MIDI clock accumulation. */

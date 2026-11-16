@@ -13,6 +13,10 @@ static const char *last_error="OK";
 static ta_u8 synth_dirty=0, controllers_dirty=0;
 static ta_u16 output_period[TA_VOICES];
 static ta_u16 release_clock=0;
+static ta_u16 envelope_clock=0, vibrato_clock=0;
+static ta_u8 vibrato_phase=0;
+/* One original 8-step, zero-centered triangle, no run-time sin/floating point. */
+static const signed char vibrato_curve[8]={0,1,2,1,0,-1,-2,-1};
 static ta_u8 noise_output=15, noise_trigger=0, mix_dirty=0;
 static void flush_mix(void);
 /* Approximate power at the PSG's 2 dB attenuation steps, no float on DOS. */
@@ -76,12 +80,16 @@ static void clear_synth(void)
     synth_dirty=controllers_dirty=0;
     ta.mix_attenuation=0;
     release_clock=0;
+    envelope_clock=vibrato_clock=0;
+    vibrato_phase=0;
     noise_output=15;noise_trigger=0;
     mix_dirty=0;
     for(c=0;c<TA_CHANNELS;c++){
         ta.cc_volume[c]=127;
         ta.cc_expression[c]=127;
         ta.cc_sustain[c]=0;
+        ta.cc_program[c]=255; /* No explicit program change => neutral. */
+        ta.cc_modulation[c]=0;
         ta.pitchbend[c]=0;
     }
     for(v=0;v<TA_ACTIVE_NOTES;v++)ta.notes[v].note=-1;
@@ -185,6 +193,16 @@ static ta_u16 period_for(ta_u8 note, signed short bend)
     if(result>1023L)result=1023;
     return (ta_u16)result;
 }
+/* Program numbers are zero-based GM. Without a program change preserve
+   the older plain PSG sound; otherwise use a modest instrument profile. */
+static ta_u8 style_for_program(ta_u8 program)
+{
+    if(program<=15 || (program>=24 && program<=31))return 1; /* keys/plucks */
+    if((program>=16 && program<=23) ||
+       (program>=32 && program<=47) ||
+       (program>=104 && program<=111))return 2; /* soft wind/bass/ethnic */
+    return 0; /* organ, strings, brass, pads or unknown -> sustained */
+}
 static ta_u8 attenuation(ta_u8 chan,ta_u8 velocity)
 {
     /* 0..127 velocity * channel volume * expression mapped to 16 PSG steps.
@@ -201,6 +219,14 @@ static void render_voice(unsigned i)
     unsigned a=15;
     if(v->note>=0 && !ta.paused){
         p=ta.notes[v->source].period;
+        if(ta.cc_modulation[v->channel]){
+            ta_s32 change=(ta_s32)p*ta.cc_modulation[v->channel]*
+                vibrato_curve[vibrato_phase]/32768L;
+            ta_s32 shifted=(ta_s32)p+change;
+            if(shifted<1)shifted=1;
+            if(shifted>1023)shifted=1023;
+            p=(ta_u16)shifted;
+        }
         a=ta.notes[v->source].attenuation+ta.mix_attenuation
           +ta.master_attenuation;
         if(a>15)a=15;
@@ -221,6 +247,7 @@ static ta_s32 note_priority(const TAActiveNote *n)
     if(n->note>=44 && n->note<60)score+=70L;
     if(n->note<36 || n->note>104)score-=90L;
     if(n->channel==0)score+=30L;
+    score-=(ta_s32)n->env_step*12L; /* Prefer still-prominent parts. */
     return score;
 }
 static void rebuild_voices(void)
@@ -249,7 +276,7 @@ static void rebuild_voices(void)
             for(j=0;j<k;j++)if(selected[j]>=0 &&
                 ta.notes[selected[j]].channel==n->channel)score-=100L;
             for(j=0;j<TA_VOICES;j++)
-                if(ta.voices[j].source==(signed short)i)score+=35L;
+                if(ta.voices[j].source==(signed short)i)score+=110L; /* voice-leading hysteresis */
             if(score>best || (score==best && found>=0 &&
                 n->stamp>ta.notes[found].stamp)){
                 best=score;
@@ -391,6 +418,60 @@ static void update_noise(ta_u16 elapsed_q8)
         mix_dirty=1;
     }
 }
+/* Update tone shapes at most every 128 sub-ticks (~27.5ms).  The V20
+   never evaluates any full PCM or general MIDI oscillator envelopes.
+   A plucked/keyboard note loses one PSG attenuation step every ~110ms
+   (at most six); a softer voice fades at ~330ms (up to two steps).
+   Sustained or unspecified instruments retain the original note level.
+   Note-off stays immediate: no lingering tail or stuck-note hazard. */
+static void update_tone_effects(ta_u16 elapsed_q8)
+{
+    unsigned i,step,add,changed=0;
+    TAActiveNote *n;
+    envelope_clock=(ta_u16)(envelope_clock+elapsed_q8);
+    if(envelope_clock>=128U){
+        add=(unsigned)(envelope_clock&(~127U));
+        envelope_clock=(ta_u16)(envelope_clock&127U);
+        for(i=0;i<TA_ACTIVE_NOTES;i++){
+            n=&ta.notes[i];
+            if(n->note<0 || n->style==0)continue;
+            if(n->age_q8<8192U){
+                unsigned age=n->age_q8+add;
+                n->age_q8=(ta_u16)(age>8192U?8192U:age);
+            }
+            if(n->style==1){
+                step=n->age_q8/512U;
+                if(step>6U)step=6U;
+            }else{
+                step=n->age_q8/1536U;
+                if(step>2U)step=2U;
+            }
+            if(step!=n->env_step){
+                unsigned a=(unsigned)attenuation(n->channel,n->velocity)+step;
+                if(a>15U)a=15U;
+                n->env_step=(ta_u8)step;
+                n->attenuation=(ta_u8)a;
+                changed=1;
+            }
+        }
+        if(changed)synth_dirty=1;
+    }
+    /* Only a MIDI modulation command enables vibrato. A four-cycle
+       triangle at ~5 Hz changes a handful of divider bits, never a
+       global note-pool reallocation. */
+    vibrato_clock=(ta_u16)(vibrato_clock+elapsed_q8);
+    if(vibrato_clock>=120U){
+        vibrato_clock=(ta_u16)(vibrato_clock%120U);
+        vibrato_phase=(ta_u8)((vibrato_phase+1U)&7U);
+        for(i=0;i<TA_VOICES;i++){
+            TAVoice *v=&ta.voices[i];
+            if(v->note>=0 && ta.cc_modulation[v->channel]){
+                controllers_dirty=1;
+                break;
+            }
+        }
+    }
+}
 static void render_channel(ta_u8 channel)
 {
     unsigned i;
@@ -399,7 +480,10 @@ static void render_channel(ta_u8 channel)
         if(n->note<0 || n->channel!=channel)continue;
         n->gain=(ta_u8)((ta_u32)n->velocity*ta.cc_volume[channel]
                        *ta.cc_expression[channel]/16129UL);
-        n->attenuation=attenuation(channel,n->velocity);
+        {
+            unsigned a=(unsigned)attenuation(channel,n->velocity)+n->env_step;
+            n->attenuation=(ta_u8)(a>15U?15U:a);
+        }
         n->period=period_for((ta_u8)n->note,ta.pitchbend[channel]);
     }
     synth_dirty=controllers_dirty=1;
@@ -448,6 +532,9 @@ static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
     ta.notes[i].gain=(ta_u8)((ta_u32)vel*ta.cc_volume[channel]
                            *ta.cc_expression[channel]/16129UL);
     ta.notes[i].attenuation=attenuation(channel,vel);
+    ta.notes[i].style=style_for_program(ta.cc_program[channel]);
+    ta.notes[i].env_step=0;
+    ta.notes[i].age_q8=0;
     ta.notes[i].period=period_for(note,ta.pitchbend[channel]);
     ta.notes[i].held=1;
     ta.notes[i].sustained=0;
@@ -457,6 +544,7 @@ static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
 static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
 {
     unsigned i;
+    if(cc==1){ta.cc_modulation[c]=val;controllers_dirty=1;}
     if(cc==7){ta.cc_volume[c]=val;render_channel(c);}
     if(cc==11){ta.cc_expression[c]=val;render_channel(c);}
     if(cc==64){
@@ -529,6 +617,7 @@ static void consume_event(TATrack *t)
     case 0x80: off(c,d1);break;
     case 0x90: on(c,d1,d2);break;
     case 0xb0: handle_cc(c,d1,d2);break;
+    case 0xc0: ta.cc_program[c]=d1;break;
     case 0xe0:
         ta.pitchbend[c]=(signed short)((((ta_u16)d2<<7)|d1)-8192);
         render_channel(c);
@@ -674,6 +763,7 @@ void ta_advance(ta_u16 elapsed_q8)
         else release_clock=(ta_u16)(release_clock+elapsed_q8);
     }
     update_noise(elapsed_q8);
+    update_tone_effects(elapsed_q8);
     /* Q8 MIDI time, with another Q8 carry for sub-BIOS-tick scheduling. */
     motion=ta.step_q8*(ta_u32)elapsed_q8+ta.clock_carry;
     ta.clock_q8+=motion>>8;

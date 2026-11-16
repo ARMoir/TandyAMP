@@ -45,6 +45,10 @@ jobs:
           ./tests/mixer_test
       - name: Verify current documentation and local links
         run: python3 tests/check_docs.py
+      - name: Test V20-scale instrument envelopes and MIDI modulation
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/expressive_test tests/expressive_test.c
+          ./tests/expressive_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:

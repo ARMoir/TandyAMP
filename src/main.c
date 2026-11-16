@@ -110,7 +110,12 @@ static unsigned char * const vram=host_screen;
 static ta_u32 fake_clock=0;
 static void timer_start(void){}
 static void timer_stop(void){}
+#ifdef TANDYAMP_UI_TEST
+static unsigned long test_psg_writes=0;
+static void put_sound(ta_u8 value){(void)value;test_psg_writes++;}
+#else
 static void put_sound(ta_u8 value){(void)value;}
+#endif
 static ta_u32 get_clock_q8(void){return (fake_clock++)<<8;}
 static void set_mode(unsigned char mode){(void)mode;}
 static int key_ready(void){return 0;}

@@ -18,13 +18,13 @@
 | Noise percussion on GM channel 10; optional channel 16 | **Implemented** | `drum_on()`, `update_noise()`, `detect_drum16()` |
 | Volume peak limiting based on logarithmic 2 dB hardware steps | **Implemented** | `flush_mix()`; simulated power, not acoustic measurement |
 | PIT subtick scheduling instead of original 18 Hz event grid | **Implemented** | Foreground mode-2 PIT polling and ~6.9 ms slices |
-| Per-instrument ATTACK/DECAY/SUSTAIN/RELEASE tone envelopes | **Not implemented** | Tone velocity and note-off are handled, but there is no instrument-aware per-note ADSR/envelope engine |
-| GM program-change-aware timbre / decay categories | **Not implemented** | `consume_event()` recognizes channel messages but does not store/interpret Program Change 0xC0 |
-| Automatic vibrato (MIDI modulation wheel CC1) / portamento | **Not implemented** | Pitch bend 0xE0 works; CC1 and GM program-driven vibrato do not |
+| Per-instrument pluck, soft and sustained tone envelopes | **Implemented (lightweight)** | Program Change sets a simple per-note decay profile; immediate note-off, not full ADSR release |
+| GM program-change-aware envelope categories | **Implemented (limited)** | Zero-based GM programs select pluck/soft/sustain; no realistic instrument waveforms |
+| MIDI modulation wheel CC1 vibrato / portamento | **Partial** | CC1 now applies restrained divider modulation. Automatic program-based vibrato and portamento remain unimplemented |
 | Selective high-rate arpeggiation of chords on a single PSG channel | **Not implemented** | Three-voice allocator selects a note per voice; it does not time-multiplex extra chord tones |
 | Tracker-style tone slides, step envelopes, echo/retrigger | **Not implemented** | Candidate for a small optional synthesis layer; avoid expensive high-rate FX |
 | Offline MIDI → three-voice optimized stream / optional compact format | **Not implemented** | Native MID parsing remains on the EX. A host-side converter could precompute reduced polyphony, dividers, envelopes and event timing |
-| Time-saving PSG register-difference cache at the final I/O layer | **Partially optimized** | Dirty-state/voice selection avoids some writes, but direct `ta_psg_tone()` still writes tone latch, high divider, volume on each call |
+| Time-saving PSG register-difference cache at the final I/O layer | **Implemented** | Tone divider changes issue two writes, volume-only changes one, unchanged registers zero; noise latch always retriggers |
 | Noise timed from third tone channel (noise mode 3/7) | **Not implemented** | Can create pitched noise/deeper rhythmic textures, **but ties up tone channel 2** and may interfere with a third melody |
 | Native Tandy 15-bit noise modeling in a host reference synthesizer | **Not implemented** | Tandy noise LFSR behavior differs from several Sega variants; relevant for offline preview, not for playing registers on real hardware |
 | Direct `TANDY.ADV` use / BIOS audio-routing write `out 61h,68h` | **Intentionally not implemented** | Proprietary Miles driver cannot serve as our native music engine; blindly rewriting 61h may disturb EX hardware selection |
@@ -80,12 +80,12 @@ All sources below are for **independent algorithm study**. Check and honor licen
 | Priority | Experiment | Why it matters | Resource / risk |
 | --- | --- | --- | --- |
 | **P1** | Offline MIDI→PSG analysis tool on modern PC: annotate melody/bass/harmony, note contention, out-of-range pitches and estimated PSG register writes; produce an **audio-free report first** | Quickly reveals what Canyon loses without increasing EX CPU usage | Low hardware risk |
-| **P1** | Optional program-aware **volume envelopes** (pluck/soft/sustain), using 16-step integer decay with 2–4 frequency/volume updates per 50–100 ms only when notes change | Adds expressive instrument distinction with bounded PSG writes | Low–medium, benchmark CPU |
+| **Implemented; tune on EX** | Original program-aware **volume envelopes** (pluck/soft/sustain), bounded stepped attenuation from the MIDI program | Adds some instrument distinction while keeping note-off immediate | Hardware listening still required |
 | **P1** | **Voice-leading hysteresis**: penalize pointless voice swaps, retain coherent bass and melody, and add short retrigger damping | Improves recognizable music and reduces clicks from crowded chords | Medium, extensive golden MIDI tests |
 | **P2** | Compact **pre-rendered PSG event cache** `.TAM` (optional), with a native `.MID` fallback | Simplifies playback work on 7 MHz V20 and permits offline higher-quality reduction | Medium–high file format / code |
 | **P2** | Optional, restrained **software arpeggio** for overflow chords, 1 voice at a time, disable when it destabilizes timing | Approximate extra polyphony and fuller harmonies | Medium–high; can make tunes warble |
-| **P2** | Cache most recent divider and attenuation per hardware slot and write only changed register values | Saves I/O port operations and reduces crackle/slow foreground time | Medium; verify interrupt / latch ordering |
-| **P3** | Pitch/volume effects: vibrato from CC1, portamento and retrigger envelopes when musical context warrants | Makes long melodic notes livelier | Medium CPU and risk of wobble |
+| **Implemented; benchmark** | Cache hardware divider and attenuation per PSG tone slot; retain deliberate drum retrigger | Reduces unnecessary I/O writes | Hardware listening still required |
+| **CC1 implemented; rest P3** | Restrained integer CC1 vibrato now works; portamento and extra retrigger envelopes remain experiments | More expressive held melody | Keep vibrato modest on real hardware |
 | **P3** | Tandy-specific PSG/noise preview renderer and alternate tone2-clocked percussion | Better offline comparison and special drum textures | Nontrivial modeling, possible loss of third melody |
 | **Defer** | Per-sample PCM on PSG, complex reverb, full FFT, arbitrary filter chains | Exceed hardware budget; not sensible for 7 MHz V20 during polyphonic MIDI | High risk, low benefit |
 
