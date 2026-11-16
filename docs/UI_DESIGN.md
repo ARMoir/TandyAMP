@@ -37,3 +37,7 @@ Planned: higher-precision, safe MIDI timer; input-driven clickable buttons throu
 ## External reference
 
 Owner-provided Winamp 2-era screenshot in the conversation, used as a visual reference only. It is intentionally not redistributed with the project.
+
+## Winamp source-code UI research
+
+The original [Winamp classic player repository](https://github.com/alexfreud/winamp) has been reviewed for conceptual ideas: main player, playlist, equalizer display, button event handling and spectrum visualizer. For a file-by-file analysis and the restrictions against copying the original code or bitmaps, see [WINAMP_REFERENCE.md](WINAMP_REFERENCE.md). The three Tandy tone channels need a lightweight voice monitor, **not** Winamp's PCM FFT spectrum code.
