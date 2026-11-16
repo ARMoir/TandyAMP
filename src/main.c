@@ -40,6 +40,10 @@ static signed short meter_last_note[3]={-2,-2,-2};
 static ta_u8 meter_last_velocity[3]={255,255,255};
 static ta_u8 meter_last_active[3]={255,255,255};
 static unsigned song_tick_part=0;
+#ifdef TANDYAMP_UI_TEST
+/* Host-only visual regression instrumentation; zero DOS binary overhead. */
+static unsigned long ui_pixels_written=0UL;
+#endif
 
 #ifdef __WATCOMC__
 static unsigned char far * const vram=(unsigned char far *)MK_FP(0xB800,0);
@@ -171,6 +175,9 @@ static void plot(unsigned x,unsigned y,ta_u8 c)
     unsigned off;
     ta_u8 old;
     if(x>=SCREEN_W||y>=SCREEN_H)return;
+#ifdef TANDYAMP_UI_TEST
+    ui_pixels_written++;
+#endif
     off=((y&3U)*VRAM_BANK)+((y>>2)*VRAM_STRIDE)+(x>>1);
     old=vram[off];
     if(x&1U)vram[off]=(ta_u8)((old&0xf0)|(c&15));
@@ -188,7 +195,12 @@ static void box(unsigned x,unsigned y,unsigned w,unsigned h,ta_u8 c)
         left=x;
         right=x+w;
         if(left&1U){plot(left,row,c);left++;}
-        for(col=left;col+1<right;col+=2)vram[offset+(col>>1)]=both;
+        for(col=left;col+1<right;col+=2){
+            vram[offset+(col>>1)]=both;
+#ifdef TANDYAMP_UI_TEST
+            ui_pixels_written+=2UL;
+#endif
+        }
         if(right&1U)plot(right-1,row,c);
     }
 }
