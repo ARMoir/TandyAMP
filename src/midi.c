@@ -6,6 +6,7 @@
 #include <string.h>
 
 TAEngine ta;
+static void render_voice(unsigned i);
 static const char *last_error="OK";
 
 static ta_u16 rd16(ta_u16 p)
@@ -160,7 +161,6 @@ static ta_u8 attenuation(ta_u8 chan,ta_u8 velocity)
     if(level>15)level=15;
     return (ta_u8)(15-level);
 }
-static void render_voice(unsigned i);
 static void render_voice(unsigned i)
 {
     TAVoice *v=&ta.voices[i];
