@@ -26,6 +26,12 @@ Future `requirements-audio.txt` installs include the temporary setuptools compat
 
 TandyAMP Studio now accepts a **single YouTube video URL** in both the GUI input box and the CLI. This uses [yt-dlp](https://github.com/yt-dlp/yt-dlp)'s embedded Python API and FFmpeg to extract an MP3 first, then feeds it to the optional Basic Pitch / Demucs transcription pipeline. The downloader does **not** use a YouTube API key, save login cookies, scrape playlists, or bypass DRM/paywalls. Download only audio you own or are permitted to download, and follow the site's terms.
 
+### Guided FFmpeg setup inside Studio
+
+The new **Check / Install FFmpeg** button detects whether both ffmpeg.exe and ffprobe.exe are on PATH. If either is missing, the GUI shows the Windows command (winget install --id Gyan.FFmpeg --exact), asks for **explicit permission** to install a third-party tool, and runs winget in the background only if approved. It never runs an installer at startup or without approval. The Convert button offers the same guided setup before a YouTube download when FFmpeg is missing.
+
+Close and reopen Studio after installation so its process sees the updated PATH. In noninteractive CLI mode, no installation is performed; a missing dependency produces a copyable winget command and a manual download URL. Windows Package Manager may require additional Windows prompts.
+
 ### Install YouTube support (Windows)
 
 From `tools\tandyamp_studio` in Command Prompt:

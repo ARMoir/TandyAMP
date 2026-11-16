@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 from arranger import PRESETS, export, load_midi, prepare
+from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
 from youtube import download_youtube_mp3, is_youtube_url, safe_name
 
 
@@ -133,9 +134,48 @@ def gui(initial_input: str = '') -> None:
         root.dnd_bind('<<Drop>>', lambda event: path.set(root.tk.splitlist(event.data)[0]))
     pool = ThreadPoolExecutor(max_workers=1)
 
+    def offer_ffmpeg_install() -> None:
+        missing = missing_ffmpeg()
+        if not missing:
+            messagebox.showinfo('FFmpeg ready', 'ffmpeg and ffprobe were found on PATH.')
+            return
+        explanation = ffmpeg_help(missing)
+        if sys.platform != 'win32':
+            messagebox.showerror('FFmpeg missing', explanation)
+            return
+        if not messagebox.askyesno(
+            'Install FFmpeg?',
+            explanation + '\n\nRun Windows Package Manager (winget) now? '
+            'This installs third-party software and may request Windows approval.'
+        ):
+            message.set('FFmpeg missing. You can install it manually with winget.')
+            return
+        run_button.config(state='disabled')
+        check_button.config(state='disabled')
+        message.set('Installing FFmpeg with winget...')
+        future = pool.submit(install_ffmpeg_windows)
+
+        def poll_install() -> None:
+            if not future.done():
+                root.after(200, poll_install)
+                return
+            run_button.config(state='normal')
+            check_button.config(state='normal')
+            try:
+                result = future.result()
+                message.set(result)
+                messagebox.showinfo('FFmpeg installation', result)
+            except Exception as exc:
+                message.set('FFmpeg installation failed: ' + str(exc))
+                messagebox.showerror('FFmpeg installation failed', str(exc))
+        root.after(200, poll_install)
+
     def launch() -> None:
         if not path.get().strip():
             messagebox.showerror('Missing input', 'Select a file or paste a YouTube URL first.')
+            return
+        if is_youtube_url(path.get()) and missing_ffmpeg():
+            offer_ffmpeg_install()
             return
         run_button.config(state='disabled')
         message.set('Working... YouTube download or AI transcription can take several minutes.')
@@ -156,7 +196,9 @@ def gui(initial_input: str = '') -> None:
         root.after(200, poll)
 
     run_button = ttk.Button(outer, text='Convert / Download', command=launch)
-    run_button.grid(row=8, column=0, columnspan=3, sticky='ew', pady=8)
+    run_button.grid(row=8, column=0, columnspan=2, sticky='ew', pady=8, padx=(0, 8))
+    check_button = ttk.Button(outer, text='Check / Install FFmpeg', command=offer_ffmpeg_install)
+    check_button.grid(row=8, column=2, sticky='ew', pady=8)
     root.protocol('WM_DELETE_WINDOW', lambda: (pool.shutdown(wait=False, cancel_futures=True), root.destroy()))
     root.mainloop()
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
-import shutil
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -77,10 +76,8 @@ def download_youtube_mp3(url: str, workspace: Path, quality: str = '192') -> Aud
     url = validate_video_url(url)
     if quality not in ('128', '192', '256', '320'):
         raise ValueError('MP3 quality must be 128, 192, 256, or 320 kbps')
-    missing = [tool for tool in ('ffmpeg', 'ffprobe') if shutil.which(tool) is None]
-    if missing:
-        raise RuntimeError('YouTube MP3 conversion requires FFmpeg and ffprobe on PATH. '
-                           f'Missing: {", ".join(missing)}. See tools/tandyamp_studio/README.md')
+    from dependencies import require_ffmpeg
+    require_ffmpeg()
     try:
         from yt_dlp import YoutubeDL
     except ImportError as exc:
