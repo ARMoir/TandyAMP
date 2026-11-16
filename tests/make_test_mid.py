@@ -8,6 +8,13 @@ def header(fmt,tracks,ppqn=96):
     return chunk(b"MThd",struct.pack(">HHH",fmt,tracks,ppqn))
 def note(dt,st,n,v):
     return bytes([dt,st,n,v])
+def vlq(n):
+    result=[n&127]
+    n>>=7
+    while n:
+        result.insert(0,(n&127)|128)
+        n>>=7
+    return bytes(result)
 tempo=b"\x00\xff\x51\x03\x07\xa1\x20"
 ending=b"\x00\xff\x2f\x00"
 # Type 0: chord, sustain pedal, velocity-zero note-off, and tempo changes.
@@ -25,9 +32,14 @@ Path("tests/test1.mid").write_bytes(header(1,2)+chunk(b"MTrk",metatrack)+chunk(b
 # General MIDI channel 10 drums must use independent noise channel.
 dense=(tempo+note(0,0x90,76,120)+note(0,0x91,45,95)+
        note(0,0x92,64,82)+note(0,0x93,69,70)+
-       note(0,0x99,38,110)+note(0,0x99,42,95)+
+       note(0,0x99,38,110)+note(0,0x99,42,95)+note(0,0x9f,38,100)+
        note(48,0x80,76,0)+note(0,0x81,45,0)+
        note(0,0x82,64,0)+note(0,0x83,69,0)+ending)
 Path("tests/dense.mid").write_bytes(header(0,1)+chunk(b"MTrk",dense))
+# Regression: original Windows 3.x CANYON.MID is roughly 34 KB.
+# Long ignored meta event validates large files and 16-bit track offsets.
+padding=b"\x00\xff\x7f"+vlq(34000)+bytes(34000)
+large=(tempo+padding+note(0,0x90,60,100)+note(96,0x80,60,0)+ending)
+Path("tests/large.mid").write_bytes(header(0,1)+chunk(b"MTrk",large))
 Path("tests/bad.mid").write_bytes(b"MThd"+b"\x00"*12)
 print("PASS: generated deterministic MIDI inputs")

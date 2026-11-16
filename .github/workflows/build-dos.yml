@@ -32,7 +32,7 @@ jobs:
       - name: Compile and test MIDI engine on host
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/midi_test tests/midi_test.c src/midi.c
-          ./tests/midi_test tests/test0.mid tests/test1.mid tests/bad.mid tests/dense.mid
+          ./tests/midi_test tests/test0.mid tests/test1.mid tests/bad.mid tests/dense.mid tests/large.mid
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:
