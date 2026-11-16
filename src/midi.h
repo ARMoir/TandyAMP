@@ -34,6 +34,7 @@ typedef struct {
     signed short note;
     ta_u8 channel, velocity, held, sustained;
     ta_u8 gain, attenuation; /* Cached for cheap 8086 voice selection. */
+    ta_u16 period; /* Actual folded/bent hardware pitch. */
     ta_u32 stamp;
 } TAActiveNote;
 
@@ -54,6 +55,7 @@ typedef struct {
     ta_u8 drum_mode; /* AUTO, ON, OFF; persists between songs. */
     ta_u8 drum_detected; /* File-scanning decision before override. */
     ta_u8 loaded, playing, paused;
+    ta_u8 master_attenuation, mix_attenuation;
 } TAEngine;
 
 extern TAEngine ta;
@@ -64,6 +66,7 @@ void ta_tick(void); /* Legacy 1-BIOS-tick API for tests. */
 void ta_advance(ta_u16 elapsed_q8); /* Units of 1/256 BIOS tick. */
 void ta_pause(void);
 void ta_noteoff_all(void);
+void ta_set_volume(unsigned volume); /* 0=mute, 15=full; leveling stays on. */
 ta_u32 ta_elapsed_seconds(void);
 const char *ta_error(void);
 

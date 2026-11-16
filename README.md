@@ -123,9 +123,41 @@ Normal mode 3 is restored on exit. No new interrupt handler is installed.
 
 Validation covers synthetic multi-track ordering, dense chord write counts,
 volume/expression voice recovery, the existing MIDI suite and UI redraw tests.
-The supplied 23,066-byte `01 - Trip Through the Grand Canyon.mid` was located
-but its download failed in the review environment, so these changes are not
-claimed to have been verified against that exact arrangement or real hardware.
+The supplied 23,066-byte `01 - Trip Through the Grand Canyon.mid` has now been
+run through the host playback engine for its complete duration. Its 60-second
+hardware recording also matched the build-28 timing at approximately normal speed.
+The new mixer still needs a listening check on the physical Tandy.
 Use `TANDYAMP CANYON.MID` after giving your local copy a DOS-compatible name;
 automatic channel-16 percussion detection and the D override remain available.
+
+## Unique pitches and comfortable volume
+
+Voice selection now compares actual PSG dividers after octave folding and
+pitch bend. Duplicate notes from different instruments share one tone slot;
+other held notes can use the remaining slots. Each original note remains
+tracked independently, so ending one doubled part does not end the other.
+Pitch bends that separate the pitches can use separate slots again.
+
+Automatic loudness leveling is enabled by default and always active. An
+integer lookup table estimates combined tone and percussion power from the
+PSG's 2 dB volume steps. Loud mixes receive immediate common attenuation;
+recovery is limited to one step about every 220 ms. Quiet passages are never
+boosted. This reduces sudden level changes while retaining musical dynamics.
+It estimates chip output, not measured room loudness; set the speaker volume
+to suit your listening distance.
+
+- Press **+ / -** to adjust master volume without restarting the song.
+- The now-playing panel shows **VOL 00..15**; **00 is mute**.
+- Use `TANDYAMP /VOL:12 CANYON.MID` for a lower starting level.
+- Default master volume is 15, with automatic leveling still applied.
+- Master volume affects both tones and percussion and persists across songs.
+
+Full-file Canyon simulation found zero duplicate audible dividers at every
+6.9 ms scheduler slice, with estimated combined output within the mix budget.
+For the 15-20 second passage, mean simulated tone power fell about 7.5 dB
+versus build 28. The modeled opening-to-that-passage difference fell from
+about 11.7 dB to 6.1 dB. These are tone-power estimates, not microphone SPL
+measurements. Original synthetic tests also cover folded unisons, independent
+note-offs, bend separation/rejoining, release timing, percussion, master mute,
+pause/resume and stop. The user-owned Canyon MIDI is not bundled or committed.
 

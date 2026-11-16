@@ -301,7 +301,7 @@ static void draw_base(void)
     box(8,67,302,3,0);
     box(10,68,298,1,8);
     frame(1,101,318,97,8);
-    label(8,188,"D DRUMS SPACE PAUSE N NEXT E VIS Q QUIT",7,47);
+    label(8,188,"+/- VOL D DRUMS SPACE PAUSE N NEXT Q QUIT",7,47);
 }
 static void draw_playlist(void)
 {
@@ -385,7 +385,12 @@ static void draw_track_info(void)
         mode=ta.drum16?"DR16 AUTO ON":"DR16 AUTO OFF";
     else if(ta.drum_mode==TA_DRUM_ON)mode="DR16 FORCED ON";
     else mode="DR16 FORCED OFF";
-    label(135,51,mode,7,27);
+    label(135,51,mode,7,15);
+    {
+        char volume[8];
+        sprintf(volume,"VOL %02u",15U-ta.master_attenuation);
+        label(250,51,volume,7,7);
+    }
 }
 static void draw_clock(void)
 {
@@ -460,9 +465,12 @@ static void usage(void)
     puts("         /DRUM16  force channel 16 drums on");
     puts("         /NODRUM16 force channel 16 drums off");
     puts("         /AUTODRUM16 auto-detect drums (default)");
+    puts("         /VOL:0..15 master volume, 0=mute (default 15)");
+    puts("         Automatic peak leveling is always enabled.");
     puts("         /HELP    this help");
     puts("Keys: SPACE pause/resume, S stop, R replay, N next, P previous");
     puts("      E visualizer, L loop, D drums AUTO/ON/OFF");
+    puts("      + or - adjusts volume without restarting playback.");
     puts("      Q or ESC quit. D restarts the current song.");
     puts("Supports MIDI format 0/1, 24 tracks, files <= 44 KB.");
 }
@@ -500,6 +508,12 @@ static void input_key(int key)
 {
     if(key==0 || key==0xe0)return;
     switch(toupper(key&255)){
+    case '+':case '=':
+        ta_set_volume(16U-ta.master_attenuation);
+        ui_dirty|=UI_TRACK;break;
+    case '-':case '_':
+        ta_set_volume(ta.master_attenuation<15?14U-ta.master_attenuation:0);
+        ui_dirty|=UI_TRACK;break;
     case 'Q':case 27:program_exit=1;break;
     case ' ':ta_pause();ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
     case 'S':ta_stop();stopped=1;ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
@@ -600,6 +614,15 @@ int main(int argc,char **argv)
         if(same(s,"/DRUM16")){ta.drum_mode=TA_DRUM_ON;continue;}
         if(same(s,"/NODRUM16")){ta.drum_mode=TA_DRUM_OFF;continue;}
         if(same(s,"/AUTODRUM16")){ta.drum_mode=TA_DRUM_AUTO;continue;}
+        if(strlen(s)>=5 && s[0]=='/' && toupper(s[1])=='V' &&
+           toupper(s[2])=='O' && toupper(s[3])=='L' && s[4]==':'){
+            char *end;
+            long volume=strtol(s+5,&end,10);
+            if(end==s+5 || *end || volume<0 || volume>15){
+                puts("Volume must be 0..15.");return 1;
+            }
+            ta_set_volume((unsigned)volume);continue;
+        }
         if(s[0]=='-'||s[0]=='/'){printf("Unknown option: %s\n",s);usage();return 1;}
         if(song_count>=MAX_SONGS){puts("Maximum 8 playlist entries.");return 1;}
         if(strlen(s)>=PATHLEN){puts("Filename too long (63 characters).");return 1;}

@@ -11,6 +11,14 @@ static void rebuild_voices(void);
 static void silence_noise(void);
 static const char *last_error="OK";
 static ta_u8 synth_dirty=0, controllers_dirty=0;
+static ta_u16 output_period[TA_VOICES];
+static ta_u16 release_clock=0;
+static ta_u8 noise_output=15, noise_trigger=0, mix_dirty=0;
+static void flush_mix(void);
+/* Approximate power at the PSG's 2 dB attenuation steps, no float on DOS. */
+static const ta_u16 power_level[16]={
+    4096,2584,1631,1029,649,410,258,163,103,65,41,26,16,10,6,0
+};
 
 static ta_u16 rd16(ta_u16 p)
 {
@@ -66,6 +74,10 @@ static void clear_synth(void)
     unsigned c,v;
     ta.sequence=1;
     synth_dirty=controllers_dirty=0;
+    ta.mix_attenuation=0;
+    release_clock=0;
+    noise_output=15;noise_trigger=0;
+    mix_dirty=0;
     for(c=0;c<TA_CHANNELS;c++){
         ta.cc_volume[c]=127;
         ta.cc_expression[c]=127;
@@ -79,6 +91,7 @@ static void clear_synth(void)
         ta.voices[v].held=0;
         ta.voices[v].sustained=0;
         ta.voices[v].level=15;
+        output_period[v]=0;
     }
     ta.noise_left=0;
     ta.noise_length=0;
@@ -124,7 +137,12 @@ void ta_pause(void)
 {
     if(!ta.playing)return;
     ta.paused=!ta.paused;
-    if(ta.paused)ta_psg_silence();
+    if(ta.paused){
+        unsigned i;
+        ta_psg_silence();
+        for(i=0;i<TA_VOICES;i++)ta.voices[i].level=15;
+        noise_output=15;
+    }
     else {
         /* Restoring active notes is done by note_render_all below. */
         unsigned i;
@@ -132,7 +150,7 @@ void ta_pause(void)
             TAVoice *v=&ta.voices[i];
             if(v->note>=0)render_voice(i);
         }
-        if(ta.noise_left)ta_psg_noise(ta.noise_mode,ta.noise_last);
+        if(ta.noise_left){noise_trigger=1;flush_mix();}
     }
 }
 /* MIDI note 0..127 to SN76489 divider at 3.579545 MHz / 32.
@@ -179,11 +197,17 @@ static ta_u8 attenuation(ta_u8 chan,ta_u8 velocity)
 static void render_voice(unsigned i)
 {
     TAVoice *v=&ta.voices[i];
-    if(v->note<0 || ta.paused) {
-        ta_psg_tone(i,1,15);
-    } else {
-        ta_psg_tone(i,period_for((ta_u8)v->note,ta.pitchbend[v->channel]),
-                    attenuation(v->channel,v->velocity));
+    ta_u16 p=1;
+    unsigned a=15;
+    if(v->note>=0 && !ta.paused){
+        p=ta.notes[v->source].period;
+        a=ta.notes[v->source].attenuation+ta.mix_attenuation
+          +ta.master_attenuation;
+        if(a>15)a=15;
+    }
+    if(v->level!=a || (a<15 && output_period[i]!=p)){
+        ta_psg_tone(i,p,(ta_u8)a);
+        v->level=(ta_u8)a;output_period[i]=p;
     }
 }
 /* Keep independent note-on state even when the three hardware channels
@@ -213,7 +237,8 @@ static void rebuild_voices(void)
             if(n->note<0)continue;
             if(n->attenuation==15)continue;
             already=0;
-            for(j=0;j<k;j++)if(selected[j]==(signed short)i)already=1;
+            for(j=0;j<k;j++)if(selected[j]>=0 &&
+                ta.notes[selected[j]].period==n->period)already=1;
             if(already)continue;
             score=note_priority(n);
             /* Reserve the first voice for the tune, next for available bass.
@@ -241,7 +266,6 @@ static void rebuild_voices(void)
         if(!already && ta.voices[i].source>=0){
             ta.voices[i].source=-1;
             ta.voices[i].note=-1;
-            render_voice(i);
         }
     }
     for(k=0;k<TA_VOICES;k++){
@@ -263,18 +287,69 @@ static void rebuild_voices(void)
             v->held=n->held;
             v->sustained=n->sustained;
             v->stamp=n->stamp;
-            render_voice(i);
         }else{
             v->held=n->held;
             v->sustained=n->sustained;
         }
     }
 }
+/* Apply one common reduction to tones AND percussion before any new sound
+   reaches the PSG. Fast attack, one 2 dB release step per ~220 ms. Never boost
+   quiet passages; preserve relative voice levels and avoid rapid pumping. */
+static void flush_mix(void)
+{
+    unsigned i,g,sum,a;
+    ta_u8 raw[4];
+    if(!synth_dirty && !controllers_dirty && !mix_dirty &&
+       !noise_trigger && release_clock<1024U)return;
+    if(synth_dirty)rebuild_voices();
+    synth_dirty=controllers_dirty=0;
+    mix_dirty=0;
+    for(i=0;i<TA_VOICES;i++)
+        raw[i]=ta.voices[i].note<0?15:
+            ta.notes[ta.voices[i].source].attenuation;
+    raw[3]=ta.noise_left?ta.noise_last:15;
+    for(g=0;g<15;g++){
+        sum=0;
+        for(i=0;i<4;i++){
+            a=raw[i]+g;
+            sum+=power_level[a>15?15:a];
+        }
+        if(sum<=1024U)break;
+    }
+    if(g>=ta.mix_attenuation){
+        ta.mix_attenuation=(ta_u8)g;release_clock=0;
+    }else if(release_clock>=1024U){
+        ta.mix_attenuation--;release_clock=0;
+    }
+    for(i=0;i<TA_VOICES;i++)render_voice(i);
+    a=raw[3]+ta.mix_attenuation+ta.master_attenuation;
+    if(a>15 || ta.paused)a=15;
+    if(noise_trigger && ta.noise_left && !ta.paused)
+        ta_psg_noise(ta.noise_mode,(ta_u8)a);
+    else if(noise_output!=a)ta_psg_noise_level((ta_u8)a);
+    noise_output=(ta_u8)a;noise_trigger=0;
+}
+void ta_set_volume(unsigned volume)
+{
+    unsigned i,a;
+    if(volume>15)volume=15;
+    ta.master_attenuation=(ta_u8)(15-volume);
+    if(!ta.playing || ta.paused)return;
+    for(i=0;i<TA_VOICES;i++)render_voice(i);
+    a=ta.noise_last+ta.mix_attenuation+ta.master_attenuation;
+    if(a>15 || !ta.noise_left)a=15;
+    if(noise_output!=a)ta_psg_noise_level((ta_u8)a);
+    noise_output=(ta_u8)a;
+}
 static void silence_noise(void)
 {
     ta.noise_left=0;
     ta.noise_last=15;
-    ta_psg_noise_level(15);
+    mix_dirty=1;
+    noise_trigger=0;
+    if(noise_output!=15)ta_psg_noise_level(15);
+    noise_output=15;
 }
 /* SN76489 independent fourth (noise) channel: drums do not consume tones. */
 static void drum_on(ta_u8 channel,ta_u8 note,ta_u8 velocity)
@@ -296,7 +371,7 @@ static void drum_on(ta_u8 channel,ta_u8 note,ta_u8 velocity)
     ta.noise_left=life;
     ta.noise_base=attenuation(channel,velocity);
     ta.noise_last=ta.noise_base;
-    ta_psg_noise(mode,ta.noise_base);
+    noise_trigger=1;
 }
 static void update_noise(ta_u16 elapsed_q8)
 {
@@ -313,7 +388,7 @@ static void update_noise(ta_u16 elapsed_q8)
     if(volume>15)volume=15;
     if(volume!=ta.noise_last){
         ta.noise_last=volume;
-        ta_psg_noise_level(volume);
+        mix_dirty=1;
     }
 }
 static void render_channel(ta_u8 channel)
@@ -325,6 +400,7 @@ static void render_channel(ta_u8 channel)
         n->gain=(ta_u8)((ta_u32)n->velocity*ta.cc_volume[channel]
                        *ta.cc_expression[channel]/16129UL);
         n->attenuation=attenuation(channel,n->velocity);
+        n->period=period_for((ta_u8)n->note,ta.pitchbend[channel]);
     }
     synth_dirty=controllers_dirty=1;
 }
@@ -372,6 +448,7 @@ static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
     ta.notes[i].gain=(ta_u8)((ta_u32)vel*ta.cc_volume[channel]
                            *ta.cc_expression[channel]/16129UL);
     ta.notes[i].attenuation=attenuation(channel,vel);
+    ta.notes[i].period=period_for(note,ta.pitchbend[channel]);
     ta.notes[i].held=1;
     ta.notes[i].sustained=0;
     ta.notes[i].stamp=ta.sequence++;
@@ -592,6 +669,10 @@ void ta_advance(ta_u16 elapsed_q8)
     int active,found;
     ta_u32 motion,next,group=0;
     if(!ta.playing || ta.paused || !elapsed_q8)return;
+    if(release_clock<1024U){
+        if(elapsed_q8>=1024U-release_clock)release_clock=1024U;
+        else release_clock=(ta_u16)(release_clock+elapsed_q8);
+    }
     update_noise(elapsed_q8);
     /* Q8 MIDI time, with another Q8 carry for sub-BIOS-tick scheduling. */
     motion=ta.step_q8*(ta_u32)elapsed_q8+ta.clock_carry;
@@ -613,18 +694,12 @@ void ta_advance(ta_u16 elapsed_q8)
         }
         if(found<0 || next>(ta.clock_q8>>8))break;
         if(next!=group){
-            if(synth_dirty)rebuild_voices();
-            if(controllers_dirty)
-                for(i=0;i<TA_VOICES;i++)render_voice(i);
-            synth_dirty=controllers_dirty=0;
+            flush_mix();
             group=next;
         }
         consume_event(&ta.tracks[found]);
     }
-    if(synth_dirty)rebuild_voices();
-    if(controllers_dirty)
-        for(i=0;i<TA_VOICES;i++)render_voice(i);
-    synth_dirty=controllers_dirty=0;
+    flush_mix();
     active=0;
     for(i=0;i<ta.track_count;i++)if(ta.tracks[i].active)active=1;
     if(!active)ta_stop();

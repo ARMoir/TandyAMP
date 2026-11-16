@@ -41,6 +41,8 @@ jobs:
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/playback_test tests/playback_test.c src/midi.c
           ./tests/playback_test
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/mixer_test tests/mixer_test.c
+          ./tests/mixer_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:

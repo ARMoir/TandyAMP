@@ -111,7 +111,19 @@ int main(void)
     delta=ui_pixels_written-prior;
     assert(delta>0 && delta<20000UL);
 
+    /* Volume changes while paused stay silent and repaint only track text. */
+    ta.master_attenuation=0;
+    input_key('-');assert(ta.master_attenuation==1);
+    prior=ui_pixels_written;draw_dirty();
+    assert(ui_pixels_written-prior<10000UL);
+    assert(colored_pixels(250,51,42,7,7)>5);
+    for(i=0;i<30;i++)input_key('-');
+    assert(ta.master_attenuation==15);
+    for(i=0;i<30;i++)input_key('+');
+    assert(ta.master_attenuation==0);
+
     printf("PASS: 8 clickable labels, DRUM mode, song title, zero-write idle, "
            "clock-only refresh, per-voice meters, state-only repaint.\n");
     return 0;
 }
+
