@@ -5,7 +5,12 @@
 #include "../src/main.c"
 #undef main
 #include <assert.h>
+#ifdef _WIN32
+#include <direct.h>
+#define chdir _chdir
+#else
 #include <unistd.h>
+#endif
 
 static unsigned color_at(unsigned x,unsigned y)
 {
@@ -397,6 +402,19 @@ int main(void)
             playlist_add_sorted(song);
         }
         assert(song_count==64 && playlist_truncated==1);
+        playlist_add_sorted("000.MID");
+        assert(song_count==64 && !strcmp(songs[0],"000.MID"));
+        for(j=1;j<song_count;j++)
+            assert(song_compare(songs[j-1],songs[j])<=0);
+        /* Reverse discovery order must retain the same lowest 64 names. */
+        song_count=0;playlist_truncated=0;
+        for(j=70;j>0;j--){
+            sprintf(song,"T%02u.MID",j-1);
+            playlist_add_sorted(song);
+        }
+        assert(song_count==64 && playlist_truncated);
+        assert(!strcmp(songs[0],"T00.MID"));
+        assert(!strcmp(songs[63],"T63.MID"));
         /* Tests/make_test_mid.py created real .MID test files. */
         assert(chdir("tests")==0);
         assert(playlist_find_current_directory()>=3);
@@ -414,4 +432,5 @@ int main(void)
            "captured clicks, coordinate scaling and state-only repaint.\n");
     return 0;
 }
+
 

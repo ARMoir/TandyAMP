@@ -7,7 +7,7 @@
 
 TAEngine ta;
 static void render_voice(unsigned i);
-static void rebuild_voices(void);
+static void rebuild_voices(int allow_speaker);
 static void silence_noise(void);
 static const char *last_error="OK";
 static ta_u8 synth_dirty=0, controllers_dirty=0;
@@ -207,14 +207,11 @@ void ta_pause(void)
         noise_output=15;
     }
     else {
-        /* Restoring active notes is done by note_render_all below. */
-        unsigned i;
-        for(i=0;i<TA_VOICES;i++){
-            TAVoice *v=&ta.voices[i];
-            if(v->note>=0)render_voice(i);
-        }
-        if(ta.noise_left){noise_trigger=1;flush_mix();}
-        if(ta.speaker_enabled){controllers_dirty=1;flush_mix();}
+        /* Recompute allocation and limiter BEFORE restoring any output.
+           Volume, treble or speaker settings may have changed while paused. */
+        synth_dirty=controllers_dirty=1;
+        if(ta.noise_left)noise_trigger=1;
+        flush_mix();
     }
 }
 /* MIDI note 0..127 to SN76489 divider at 3.579545 MHz / 32.
@@ -393,6 +390,7 @@ static ta_u8 choose_adaptive_octave(ta_u8 note)
         unsigned other;
         if(v->note<0 || v->level>=15U)continue;
         other=(unsigned)v->note;
+        while(other<45U)other+=12U; /* Compare the PSG's sounding octave. */
         if(other+2U>=raised && other<=raised+2U)
             return 0; /* avoid octave doubling/clashing with PSG */
         if(v->level<=6U)loud++;
@@ -453,7 +451,7 @@ void ta_set_speaker(unsigned mode)
     synth_dirty=controllers_dirty=1;
     if(ta.playing && !ta.paused)flush_mix();
 }
-static void rebuild_voices(void)
+static void rebuild_voices(int allow_speaker)
 {
     signed short selected[TA_VOICES];
     unsigned k,i,j;
@@ -462,7 +460,7 @@ static void rebuild_voices(void)
     /* Decide bass before three-PSG allocation so a real bass note
        can occupy PIT2, leaving PSG voices for melody and harmony. */
     {
-        signed short bass=choose_speaker_bass();
+        signed short bass=allow_speaker?choose_speaker_bass():-1;
         ta.speaker_voice.source=bass;
         if(bass>=0){
             TAActiveNote *n=&ta.notes[bass];
@@ -554,9 +552,10 @@ static void flush_mix(void)
     ta_u8 raw[4];
     if(!synth_dirty && !controllers_dirty && !mix_dirty &&
        !noise_trigger && release_clock<1024U)return;
-    if(synth_dirty)rebuild_voices();
+    if(synth_dirty)rebuild_voices(1);
     synth_dirty=controllers_dirty=0;
     mix_dirty=0;
+recalculate_budget:
     for(i=0;i<TA_VOICES;i++)
         raw[i]=ta.voices[i].note<0?15:
             ta.notes[ta.voices[i].source].attenuation;
@@ -575,6 +574,14 @@ static void flush_mix(void)
         ta.mix_attenuation=(ta_u8)g;release_clock=0;
     }else if(release_clock>=1024U){
         ta.mix_attenuation--;release_clock=0;
+    }
+    /* The new mix can gate PIT2 after bass was reserved for it. Put that
+       bass back into PSG contention before output, rather than dropping it.
+       One bounded retry: rebuilding without PIT2 clears its source. */
+    if(ta.speaker_voice.source>=0 &&
+       !speaker_note_audible(&ta.notes[ta.speaker_voice.source])){
+        rebuild_voices(0);
+        goto recalculate_budget;
     }
     for(i=0;i<TA_VOICES;i++)render_voice(i);
     render_speaker();
@@ -608,10 +615,10 @@ void ta_set_volume(unsigned volume)
         ta.master_attenuation=0;
         ta.master_boost=(ta_u8)(volume-TA_UNBOOSTED_VOLUME);
     }
-    if(!ta.playing || ta.paused)return;
     /* Re-evaluate limiter and fourth-bass eligibility. A boosted voice
        still cannot exceed the PSG's actual maximum register level. */
     synth_dirty=controllers_dirty=1;
+    if(!ta.playing || ta.paused)return;
     flush_mix();
 }
 static void silence_noise(void)
@@ -955,8 +962,9 @@ int ta_load(const char *filename)
     ta_u32 p,len,end,header_len;
     unsigned i;
     size_t n;
-    ta.loaded=0;ta.playing=0;
-    ta_psg_silence();
+    /* A failed next/replay load must not leave the prior PIT2 bass running. */
+    ta_stop();
+    ta.loaded=0;
     f=fopen(filename,"rb");
     if(!f){last_error="Cannot open MIDI file";return 0;}
     n=fread(ta.data,1,TA_MAX_FILE,f);
@@ -989,6 +997,9 @@ int ta_load(const char *filename)
             last_error="Missing MIDI track header";return 0;
         }
         len=rd32((ta_u16)(p+4));
+        if(!within(p+8,len)){
+            last_error="Truncated MIDI track";return 0;
+        }
         end=p+8+len;
         if(end>ta.bytes){last_error="Truncated MIDI track";return 0;}
         ta.tracks[i].beginning=(ta_u16)(p+8);
@@ -1056,4 +1067,5 @@ ta_u32 ta_elapsed_seconds(void)
     return (quarters*(ta.tempo_us/1000UL))/1000UL;
 }
 const char *ta_error(void){return last_error;}
+
 

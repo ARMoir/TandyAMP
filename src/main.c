@@ -8,6 +8,8 @@
 #ifdef __WATCOMC__
 #include <dos.h>
 #include <conio.h>
+#elif defined(_WIN32)
+#include <io.h>
 #else
 #include <dirent.h>
 #include <sys/stat.h>
@@ -753,7 +755,12 @@ static void playlist_add_sorted(const char *name)
 {
     unsigned i,j;
     if(!ends_with_mid(name) || strlen(name)>=PATHLEN)return;
-    if(song_count>=MAX_SONGS){playlist_truncated=1;return;}
+    if(song_count>=MAX_SONGS){
+        playlist_truncated=1;
+        /* Keep the alphabetical first 64 regardless of directory order. */
+        if(song_compare(name,songs[MAX_SONGS-1])>=0)return;
+        song_count--;
+    }
     for(i=0;i<song_count;i++){
         if(song_compare(name,songs[i])<0)break;
     }
@@ -775,6 +782,17 @@ static unsigned playlist_find_current_directory(void)
             if(!(found.attrib&_A_SUBDIR))
                 playlist_add_sorted(found.name);
             status=_dos_findnext(&found);
+        }
+    }
+#elif defined(_WIN32)
+    {
+        struct _finddata_t found;
+        intptr_t handle=_findfirst("*.MID",&found);
+        if(handle!=-1){
+            do{
+                if(!(found.attrib&_A_SUBDIR))playlist_add_sorted(found.name);
+            }while(_findnext(handle,&found)==0);
+            _findclose(handle);
         }
     }
 #else
@@ -833,6 +851,7 @@ static int start_song(unsigned n)
     if(!ta_load(songs[song_current])){
         if(text_mode)printf("Cannot play %s: %s\n",songs[song_current],ta_error());
         stopped=1;
+        ui_dirty|=UI_ALL;
         return 0;
     }
     ta_begin();
@@ -1150,4 +1169,5 @@ int main(int argc,char **argv)
     if(text_mode)puts("\nTandyAMP stopped.");
     return 0;
 }
+
 

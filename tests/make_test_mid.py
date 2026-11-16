@@ -53,6 +53,7 @@ mel16=(tempo+note(0,0x9f,60,105)+note(12,0x9f,62,105)+
 Path("tests/melody16.mid").write_bytes(header(0,1)+chunk(b"MTrk",mel16))
 Path("tests/bad.mid").write_bytes(b"MThd"+b"\x00"*12)
 print("PASS: generated deterministic MIDI inputs")
+Path("tests/overflow.mid").write_bytes(header(0,1)+b"MTrk"+b"\xff"*4)
 
 # Track order is not event order: off at tick 2 must follow on at tick 1.
 a=note(2,0x80,72,0)+vlq(94)+b"\xff\x2f\x00"
@@ -65,4 +66,5 @@ muted=(note(0,0xb0,11,0)+note(0,0x90,76,127)+note(0,0x91,72,90)
        +note(0,0x92,48,90)+note(0,0x93,64,90)+note(1,0xb0,11,127)
        +note(96,0xb0,120,0)+ending)
 Path("tests/muted.mid").write_bytes(header(0,1)+chunk(b"MTrk",muted))
+
 

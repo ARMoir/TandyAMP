@@ -57,6 +57,10 @@ jobs:
         run: |
           gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/treble_test tests/treble_test.c
           ./tests/treble_test
+      - name: Verify post-build-29 review regressions
+        run: |
+          gcc -std=c89 -O2 -Wall -Wextra -pedantic -o tests/review_test tests/review_test.c
+          ./tests/review_test
       - name: Set up Open Watcom for 16-bit DOS
         uses: open-watcom/setup-watcom@v1
         with:
@@ -143,4 +147,5 @@ jobs:
           done < "${RUNNER_TEMP}/tandyamp-old-artifact-ids.txt"
 
           echo "Published $tag; kept current build, removed older TandyAMP builds."
+
 
