@@ -20,8 +20,25 @@
 static char songs[MAX_SONGS][PATHLEN];
 static unsigned song_count=0, song_current=0;
 static int text_mode=0, loop_mode=0, show_equalizer=0;
-static int stopped=0, program_exit=0, fast_redraw=1;
+static int stopped=0, program_exit=0;
 static ta_u32 song_ticks=0, last_refresh=0;
+/* Deliberately tiny dirty-region set: no periodic full-screen repaints. */
+#define UI_TRACK    0x01U
+#define UI_PANEL    0x02U
+#define UI_STATE    0x04U
+#define UI_BUTTONS  0x08U
+#define UI_CLOCK    0x10U
+#define UI_PROGRESS 0x20U
+#define UI_METERS   0x40U
+#define UI_ALL      0x7fU
+#define UI_BUTTON_X 8U
+#define UI_BUTTON_STEP 44U
+#define UI_BUTTON_WIDTH 42U
+static unsigned ui_dirty=UI_ALL, old_marker=0xffffU;
+static ta_u32 ui_last_seconds=0xffffffffUL;
+static signed short meter_last_note[3]={-2,-2,-2};
+static ta_u8 meter_last_velocity[3]={255,255,255};
+static ta_u8 meter_last_active[3]={255,255,255};
 static unsigned song_tick_part=0;
 
 #ifdef __WATCOMC__
@@ -218,29 +235,45 @@ static const char *leaf(const char *name)
     while(*p){if(*p=='/'||*p=='\\'||*p==':')a=p+1;p++;}
     return a;
 }
+/* All seven labels are centered inside 42-pixel buttons.
+   At 5x7 pixels with 6-pixel character advance, PAUSE is 29 pixels wide.
+   The old 33-pixel layout placed labels over neighboring button borders. */
+static const char *button_labels[7]={
+    "PREV","PLAY","PAUSE","STOP","NEXT","VIS","LOOP"
+};
+static void draw_buttons(void)
+{
+    unsigned i,x,w,tx;
+    ta_u8 face,ink;
+    int pressed;
+    for(i=0;i<7;i++){
+        x=UI_BUTTON_X+i*UI_BUTTON_STEP;
+        pressed=(i==1 && ta.playing && !ta.paused)
+            ||(i==2 && ta.playing && ta.paused)
+            ||(i==5 && show_equalizer)
+            ||(i==6 && loop_mode);
+        face=(ta_u8)(pressed?1:7);
+        ink=(ta_u8)(pressed?15:0);
+        frame(x,74,UI_BUTTON_WIDTH,20,face);
+        /* One-pixel bevel, no long Winamp bitmaps or sprite copying. */
+        box(x+2,76,UI_BUTTON_WIDTH-4,1,(ta_u8)(pressed?9:15));
+        w=(unsigned)strlen(button_labels[i])*6U-1U;
+        tx=x+(UI_BUTTON_WIDTH-w)/2U;
+        label(tx,80,button_labels[i],ink,5);
+    }
+}
 static void draw_base(void)
 {
-    unsigned i;
     box(0,0,320,200,8);
     frame(1,1,318,98,8);
     header(3,"TANDYAMP 3-VOICE MIDI");
     frame(7,19,109,44,0);
     frame(123,19,189,44,0);
+    /* Inset song activity line, not a fake seek bar. */
     box(8,67,302,3,0);
-    box(8,67,1,3,14);
-    for(i=0;i<7;i++){
-        frame(7+i*37,74,33,20,7);
-    }
-    label(17,80,"PREV",0,4);
-    label(54,80,"PLAY",0,4);
-    label(90,80,"PAUSE",0,5);
-    label(132,80,"STOP",0,4);
-    label(170,80,"NEXT",0,4);
-    label(207,80,"EQ",0,2);
-    label(244,80,"LOOP",0,4);
+    box(10,68,298,1,8);
     frame(1,101,318,97,8);
-    header(102,show_equalizer?"TANDYAMP VISUALIZER":"TANDYAMP PLAYLIST");
-    label(8,188,"SPACE PAUSE  N NEXT  P PREV  E EQ  Q QUIT",7,49);
+    label(8,188,"SPACE PAUSE N NEXT P PREV E VIS Q QUIT",7,47);
 }
 static void draw_playlist(void)
 {
@@ -261,57 +294,121 @@ static void draw_playlist(void)
         label(29,y,leaf(songs[i]),col,43);
     }
 }
-static void draw_visualizer(void)
+/* Panel contents and hardware-driven meters are independent.
+   The pane is only cleared on track change or VIS/playlist toggle. */
+static void draw_panel(void)
 {
-    unsigned x,i,row;
-    box(3,116,314,70,0);
-    for(i=0;i<3;i++){
-        unsigned barx=26+i*95, height=6;
-        TAVoice *v=&ta.voices[i];
-        char buf[15];
-        if(ta.playing && !ta.paused && v->note>=0)
-            height=10+((unsigned)v->note%6U)*7U;
-        box(barx,125,38,51,8);
-        box(barx,176-height,38,height,10);
-        for(row=131;row<177;row+=9)box(barx,row,38,1,0);
-        sprintf(buf,"CH%u",i+1);
-        label(barx,177,buf,14,3);
-    }
-    label(9,118,"THREE-VOICE LEVELS - NOT AUDIO EQ",7,49);
-}
-static void draw_status(void)
-{
-    char tm[25],filename[64];
     unsigned i;
+    header(102,show_equalizer?"TANDYAMP VOICE MONITOR":"TANDYAMP PLAYLIST");
+    if(!show_equalizer){
+        draw_playlist();
+        return;
+    }
+    box(3,116,314,70,0);
+    label(8,118,"3 PSG TONE CHANNELS",7,35);
+    for(i=0;i<3;i++){
+        unsigned x=26+i*95;
+        char n[4];
+        box(x,132,40,42,8);
+        sprintf(n,"CH%u",i+1);
+        label(x+8,177,n,14,3);
+        meter_last_note[i]=-2;
+        meter_last_velocity[i]=255;
+        meter_last_active[i]=255;
+    }
+}
+static void draw_meters(void)
+{
+    unsigned i;
+    if(!show_equalizer)return;
+    for(i=0;i<3;i++){
+        unsigned x=26+i*95,h;
+        TAVoice *v=&ta.voices[i];
+        ta_u8 playing=(ta_u8)(ta.playing && !ta.paused && v->note>=0);
+        if(meter_last_note[i]==v->note &&
+           meter_last_velocity[i]==v->velocity &&
+           meter_last_active[i]==playing)continue;
+        /* Only this voice's 40x42 bar is touched, not the whole pane. */
+        box(x,132,40,42,8);
+        if(playing){
+            h=8U+(unsigned)v->velocity*24U/127U
+              +((unsigned)v->note%4U)*2U;
+            if(h>40U)h=40U;
+            box(x+2,173-h,36,h,10);
+            box(x+2,173-h,36,1,14);
+        }
+        meter_last_note[i]=v->note;
+        meter_last_velocity[i]=v->velocity;
+        meter_last_active[i]=playing;
+    }
+}
+static void draw_track_info(void)
+{
+    char filename[64];
+    box(129,24,179,35,0);
+    label(135,25,"NOW PLAYING",7,24);
+    if(song_count){
+        strncpy(filename,leaf(songs[song_current]),27);
+        filename[27]=0;
+    }else strcpy(filename,"NO MIDI FILE");
+    label(135,38,filename,10,27);
+    label(135,51,"TANDY PSG  3 VOICES",7,27);
+}
+static void draw_clock(void)
+{
+    char tm[20];
     ta_u32 secs=song_ticks/18UL;
-    if(text_mode)return;
-    box(12,24,100,34,0);
+    if(ui_last_seconds==secs)return;
+    box(17,27,95,10,0);
     sprintf(tm,"%02lu:%02lu",secs/60UL,secs%60UL);
     label(20,28,tm,10,8);
+    ui_last_seconds=secs;
+}
+static void draw_state(void)
+{
+    box(17,45,95,13,0);
     label(19,47,ta.playing?(ta.paused?"PAUSED":"PLAYING"):"STOPPED",14,12);
-    box(129,24,179,35,0);
-    if(song_count){
-        strncpy(filename,leaf(songs[song_current]),30);
-        filename[30]=0;
-    } else strcpy(filename,"NO MIDI FILE");
-    label(135,25,filename,10,29);
-    label(135,39,ta.playing?"TANDY 3CH  MIDI  16 COLORS":"READY",7,29);
-    box(10,68,298,1,8);
-    if(ta.loaded && ta.playing){
-        /* No duration scan yet. Pulsing activity segment; not a seek bar. */
-        i=(unsigned)((song_ticks>>1)%286UL);
-        box(10+i,68,12,1,14);
+}
+static void draw_progress(void)
+{
+    unsigned marker;
+    if(old_marker!=0xffffU){
+        box(10+old_marker,68,12,1,8);
+        old_marker=0xffffU;
     }
-    if(show_equalizer)draw_visualizer();
+    if(ta.loaded && ta.playing && !ta.paused){
+        /* A small activity marker only; no costly full-width repaint. */
+        marker=(unsigned)((song_ticks/6UL)%286UL);
+        box(10+marker,68,12,1,14);
+        old_marker=marker;
+    }
+}
+static void draw_dirty(void)
+{
+    unsigned flags=ui_dirty;
+    if(text_mode)return;
+    if(flags&UI_PANEL)draw_panel();
+    if(flags&UI_BUTTONS)draw_buttons();
+    if(flags&UI_TRACK)draw_track_info();
+    if((flags&UI_CLOCK) || ui_last_seconds!=song_ticks/18UL)
+        draw_clock();
+    if(flags&UI_STATE)draw_state();
+    if(flags&UI_PROGRESS || (ta.playing && !ta.paused &&
+       (unsigned)((song_ticks/6UL)%286UL)!=old_marker))
+        draw_progress();
+    if(show_equalizer)draw_meters();
+    ui_dirty=0;
 }
 static void draw_all(void)
 {
     if(text_mode)return;
-    draw_base();
-    if(show_equalizer)draw_visualizer();
-    else draw_playlist();
-    draw_status();
+    draw_base();             /* called ONCE on entering graphics mode */
+    ui_dirty=UI_ALL;
+    ui_last_seconds=0xffffffffUL;
+    old_marker=0xffffU;
+    draw_dirty();
 }
+
 static int same(const char *a,const char *b)
 {
     while(*a&&*b){
@@ -348,7 +445,8 @@ static int start_song(unsigned n)
     song_tick_part=0;
     stopped=0;
     if(text_mode)printf("Playing %u/%u: %s\n",song_current+1,song_count,songs[song_current]);
-    fast_redraw=1;
+    ui_dirty|=UI_ALL;
+    ui_last_seconds=0xffffffffUL;
     return 1;
 }
 static void next_song(int backwards)
@@ -364,13 +462,13 @@ static void input_key(int key)
     if(key==0 || key==0xe0)return;
     switch(toupper(key&255)){
     case 'Q':case 27:program_exit=1;break;
-    case ' ':ta_pause();fast_redraw=1;break;
-    case 'S':ta_stop();stopped=1;fast_redraw=1;break;
+    case ' ':ta_pause();ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
+    case 'S':ta_stop();stopped=1;ui_dirty|=UI_STATE|UI_BUTTONS|UI_METERS|UI_PROGRESS;break;
     case 'R':if(song_count)start_song(song_current);break;
     case 'N':next_song(0);break;
     case 'P':next_song(1);break;
-    case 'L':loop_mode=!loop_mode;fast_redraw=1;break;
-    case 'E':show_equalizer=!show_equalizer;fast_redraw=1;break;
+    case 'L':loop_mode=!loop_mode;ui_dirty|=UI_BUTTONS;break;
+    case 'E':show_equalizer=!show_equalizer;ui_dirty|=UI_PANEL|UI_BUTTONS|UI_METERS;break;
     }
 }
 int main(int argc,char **argv)
@@ -422,7 +520,7 @@ int main(int argc,char **argv)
                         next_index=(song_current+1)%song_count;
                         start_song(next_index);
                     }else{
-                        stopped=1;fast_redraw=1;
+                        stopped=1;ui_dirty|=UI_STATE|UI_BUTTONS|UI_PROGRESS|UI_METERS;
                     }
                 }
             }
@@ -433,9 +531,9 @@ int main(int argc,char **argv)
                     fflush(stdout);
                     last_refresh=song_ticks;
                 }
-            }else if(fast_redraw || song_ticks-last_refresh>=5UL){
-                if(fast_redraw){draw_all();fast_redraw=0;}
-                else draw_status();
+            }else if(ui_dirty || song_ticks<last_refresh
+                         || song_ticks-last_refresh>=5UL){
+                draw_dirty();  /* max ~3.6Hz; only changed rectangles */
                 last_refresh=song_ticks;
             }
         }
@@ -443,6 +541,10 @@ int main(int argc,char **argv)
             key=next_key();
             if(key==0 || key==0xe0){(void)next_key();continue;}
             input_key(key);
+            if(!text_mode && ui_dirty) {
+                draw_dirty();  /* responsive even when paused */
+                last_refresh=song_ticks;
+            }
         }
 #ifndef __WATCOMC__
         /* Host compile/run is only for testability; no real BIOS timer. */
