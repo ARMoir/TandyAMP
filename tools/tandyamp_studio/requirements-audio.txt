@@ -1,6 +1,9 @@
 -r requirements.txt
 # Optional, heavy AI transcription. Python 3.10/3.11 recommended.
 # See README.md for machine-specific compatibility of TensorFlow / ONNX / Torch.
+# resampy (imported by Basic Pitch) still requires pkg_resources,
+# removed from setuptools 82. Pin only for this legacy dependency.
+setuptools>=70,<82
 basic-pitch[onnx]
 librosa
 # Demucs is only necessary when --stems is selected.

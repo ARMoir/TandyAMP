@@ -11,6 +11,17 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
 
+## Audio transcription troubleshooting
+
+**Basic Pitch loads, then fails with `No module named 'pkg_resources'`:** This is not a missing Basic Pitch installation. An older `resampy` dependency still imports `pkg_resources`, which setuptools **82+** removed. In the same Python 3.11 environment used by the launcher, run:
+
+```bat
+py -3.11 -m pip install "setuptools>=70,<82"
+py -3.11 -c "import pkg_resources; from basic_pitch.inference import predict; print('Basic Pitch OK')"
+```
+
+Future `requirements-audio.txt` installs include the temporary setuptools compatibility pin. The newer Studio error message identifies the actual missing dependency rather than incorrectly telling you to reinstall Basic Pitch. If you still see a failure, run the conversion from Command Prompt to keep the full Python traceback visible. CoreML and TFLite backend warnings on Windows are usually informational when the TensorFlow backend is available.
+
 ## YouTube links and fully command-line use
 
 TandyAMP Studio now accepts a **single YouTube video URL** in both the GUI input box and the CLI. This uses [yt-dlp](https://github.com/yt-dlp/yt-dlp)'s embedded Python API and FFmpeg to extract an MP3 first, then feeds it to the optional Basic Pitch / Demucs transcription pipeline. The downloader does **not** use a YouTube API key, save login cookies, scrape playlists, or bypass DRM/paywalls. Download only audio you own or are permitted to download, and follow the site's terms.

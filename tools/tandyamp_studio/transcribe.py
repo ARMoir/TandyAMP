@@ -11,10 +11,37 @@ from arranger import Note
 
 def _predict(path: Path, part: str | None) -> list[Note]:
     try:
+        from basic_pitch import ICASSP_2022_MODEL_PATH
         from basic_pitch.inference import predict
+    except ModuleNotFoundError as exc:
+        # An ImportError *inside* installed Basic Pitch is not proof that Basic
+        # Pitch is missing. Preserve the real missing module for diagnostics.
+        if exc.name == 'basic_pitch':
+            raise RuntimeError(
+                'Basic Pitch is not installed. Run: '
+                'py -3.11 -m pip install -r requirements-audio.txt'
+            ) from exc
+        if exc.name == 'pkg_resources':
+            raise RuntimeError(
+                'Basic Pitch dependency resampy cannot import pkg_resources. '
+                'setuptools 82+ removed it. Run: '
+                'py -3.11 -m pip install "setuptools>=70,<82"'
+            ) from exc
+        raise RuntimeError(
+            'Basic Pitch could not load dependency {!r}: {}. '
+            'See the Python traceback in the console.'.format(
+                exc.name, exc
+            )
+        ) from exc
     except ImportError as exc:
-        raise RuntimeError('Audio transcription needs Basic Pitch. See requirements-audio.txt') from exc
-    _, midi, _ = predict(str(path))
+        raise RuntimeError(
+            'Basic Pitch initialization failed ({}): {}. '
+            'See the Python traceback in the console.'.format(
+                type(exc).__name__, exc
+            )
+        ) from exc
+    # The public Basic Pitch predict() API requires the installed model path.
+    _, midi, _ = predict(str(path), ICASSP_2022_MODEL_PATH)
     notes = []
     for instrument in midi.instruments:
         for n in instrument.notes:
