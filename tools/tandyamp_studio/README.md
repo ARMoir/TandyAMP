@@ -1,5 +1,31 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Stable SPK4 bass during backing changes
+
+Smart-marked MIDI now keeps an established SPK4 bass through a one-tone
+reduction in the backing and two attenuation steps of normal decay/limiter
+movement. New notes still need the original entry level and backing count.
+When the texture becomes too sparse or the bass is muted/released, it returns
+to PSG contention or stops normally. This reduces abrupt mid-note moves
+between the real PIT2 bass octave and the PSG's folded octave. Explicit
+OFF/BASS/ADAPT switches recheck eligibility immediately.
+
+Smart PSG continuity now checks the note's identity as well as its storage
+slot. A new weak note cannot inherit the hold priority of a different note
+that just ended. Preview/diagnostic allocation also tracks the previous bass;
+its sound and levels remain approximate.
+
+A matched full-song host trace of the Build 55 Paranoid MIDI, through the
+actual C player in ADAPT mode at normal volume, counted **371 -> 102** routing
+changes during held bass notes. Vocal track coverage was **98.8% -> 99.6%**,
+and guitar **99.8% -> 99.9%** of their available track time. These measure at
+least one audible note from each track, not transcription correctness or
+acoustic quality. Hardware listening is still required.
+
+**Update TANDYAMP.EXE** for this change. Existing smart-marked Studio MIDI,
+including the Build 55 song, works without another transcription pass.
+
+
 ## Lead preservation and SPK4 bass routing
 
 For audio conversion use **Full**, **Voices: smart**, and the desired SPK4

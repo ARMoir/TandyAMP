@@ -165,6 +165,35 @@ class SmartSelectionTests(unittest.TestCase):
         self.assertEqual(speaker.pitch, 36)
         self.assertEqual({n.pitch for n in voices}, {64, 72, 67})
 
+    def test_established_speaker_bass_survives_one_backing_note_ending(self):
+        bass = Note(0, 2, 40, 70, 'bass')
+        vocal = Note(0, 2, 72, 90, 'melody')
+        guitar = Note(0, .4, 64, 90, 'guitar')
+        _, speaker, _ = assign_preview_voices(
+            [bass, vocal, guitar], 'adapt', voice_selection='smart')
+        self.assertIs(speaker, bass)
+        _, speaker, _ = assign_preview_voices(
+            [bass, vocal], 'adapt', voice_selection='smart', now=.8,
+            previous_bass=speaker)
+        self.assertIs(speaker, bass)
+        _, solo, _ = assign_preview_voices(
+            [bass], 'adapt', voice_selection='smart', now=.9,
+            previous_bass=speaker)
+        self.assertIsNone(solo)
+        # Legacy placement and explicit BASS mode still need full entry support.
+        _, legacy, _ = assign_preview_voices(
+            [bass, vocal], 'adapt', now=.8, previous_bass=speaker)
+        self.assertIsNone(legacy)
+
+    def test_quiet_new_speaker_note_cannot_inherit_previous_hold(self):
+        old = Note(0, .4, 40, 90, 'bass')
+        new = Note(.4, 1, 38, 48, 'bass')
+        others = [Note(0, 1, 72, 90, 'melody'), Note(0, 1, 64, 90, 'guitar')]
+        _, speaker, _ = assign_preview_voices(
+            [new] + others, 'adapt', voice_selection='smart', now=.4,
+            previous_bass=old)
+        self.assertIsNone(speaker)
+
     def test_smart_midi_marker_is_explicit_and_does_not_change_timing(self):
         notes = [Note(.2, 1.50, 64, 100, 'guitar'),
                  Note(.2, 1.25, 36, 115, 'bass')]

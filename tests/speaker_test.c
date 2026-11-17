@@ -309,6 +309,62 @@ int main(void)
     for(i=0;i<TA_ACTIVE_NOTES;i++)if(ta.notes[i].note==64)
         assert(ta.notes[i].env_step==6); /* Unmarked MIDI unchanged. */
 
+    /* A Studio bass already on PIT2 stays there when one backing tone
+       ends, and through a normal two-step bass decay. No mid-note octave
+       handoff just because the texture changes from 3 tones to 2. */
+    clear_synth();ta.playing=1;ta_set_volume(15);
+    ta_set_speaker(TA_SPK_ADAPT);
+    ta.cc_program[0]=80;ta.cc_program[1]=33;ta.cc_program[4]=30;
+    handle_cc(0,119,77);
+    on(0,72,90);on(4,64,90);on(1,40,70);flush_mix();
+    assert(pit_divider==14479);
+    off(4,64);flush_mix();
+    assert(pit_divider==14479);
+    for(calls=0;calls<28;calls++)update_tone_effects(128);
+    flush_mix();assert(pit_divider==14479); /* Envelope now 2 steps. */
+    off(0,72);flush_mix();
+    assert(!pit_divider); /* Solo bass falls back to PSG. */
+    for(i=0;i<TA_VOICES;i++)if(ta.voices[i].note==40)break;
+    assert(i<TA_VOICES);
+
+    /* A quiet NEW bass never inherits the previous note's eligibility,
+       even if it reuses the same pool slot. Entry remains conservative. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_ADAPT);
+    ta.cc_program[0]=80;ta.cc_program[1]=33;ta.cc_program[4]=30;
+    handle_cc(0,119,77);
+    on(0,72,90);on(4,64,90);on(1,40,90);flush_mix();
+    assert(pit_divider);
+    off(1,40);on(1,38,48);flush_mix();
+    assert(!pit_divider);
+    off(1,38);on(1,40,90);flush_mix();assert(pit_divider);
+    ta_set_volume(0);assert(!pit_divider);
+    ta_set_volume(15);assert(pit_divider);
+    ta_pause();assert(!pit_divider);ta_pause();assert(pit_divider);
+    ta_set_speaker(TA_SPK_BASS);assert(!pit_divider);
+    ta_set_speaker(TA_SPK_ADAPT);assert(pit_divider);
+    off(1,40);flush_mix();assert(!pit_divider);
+
+    /* The hold allowance applies only AFTER real PIT2 output, never to
+       a new note that becomes too quiet once the PSG limiter is applied. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_ADAPT);
+    ta.cc_program[0]=80;ta.cc_program[1]=33;ta.cc_program[4]=30;
+    handle_cc(0,119,77);
+    on(0,72,127);on(4,64,127);on(2,60,127);on(1,40,68);
+    flush_mix();assert(!pit_divider);
+    for(i=0;i<TA_VOICES;i++)if(ta.voices[i].note==40)break;
+    assert(i<TA_VOICES && ta.voices[i].level<15);
+
+    /* Continuity belongs to a NOTE, not the active-pool storage slot.
+       A weak new accompaniment must not inherit a released note's bonus. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_OFF);
+    ta.cc_program[0]=80;ta.cc_program[4]=30;handle_cc(0,119,77);
+    on(4,64,95);on(0,72,95);on(2,60,80);flush_mix();
+    on(2,69,80);flush_mix(); /* Waiting behind the still-held 60. */
+    off(2,60);on(3,67,50);flush_mix();
+    for(i=0;i<TA_VOICES;i++)assert(ta.voices[i].note!=67);
+    for(i=0;i<TA_VOICES;i++)if(ta.voices[i].note==69)break;
+    assert(i<TA_VOICES);
+
     puts("PASS: MIDI 24..52 bass-only PIT2 (true octave), bends, "
          "three-way adaptive octave lock, note collisions, live toggle and mute");
     return 0;

@@ -56,6 +56,7 @@ def note_metrics(notes: list[Note], duration: float | None = None,
     roles = Counter()
     audible_roles = Counter()
     previous_tones = []
+    previous_bass = None
     steals = 0
     longest_gap = gap = 0.0
     previous = 0.0
@@ -65,9 +66,11 @@ def note_metrics(notes: list[Note], duration: float | None = None,
             current = [notes[i] for i in active]
             tones, bass, _drum = assign_preview_voices(
                 current, spk4, voice_selection=voice_selection,
-                previous_tones=previous_tones, now=previous)
+                previous_tones=previous_tones, now=previous,
+                previous_bass=previous_bass)
             steals += sum(n in current and n not in tones for n in previous_tones)
             previous_tones = tones
+            previous_bass = bass
             audible[len(tones) + int(bass is not None)] += span
             for part in {n.part for n in tones + ([bass] if bass is not None else [])}:
                 audible_roles[part] += span

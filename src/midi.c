@@ -15,6 +15,7 @@ static ta_u8 synth_dirty=0, controllers_dirty=0;
 static ta_u8 smart_voice_mode=0;
 static ta_u16 output_period[TA_VOICES];
 static ta_u16 speaker_output=0;
+static ta_u32 speaker_playing_stamp=0;
 static ta_u16 release_clock=0;
 static ta_u16 envelope_clock=0, vibrato_clock=0;
 static ta_u8 vibrato_phase=0;
@@ -150,6 +151,7 @@ static void clear_synth(void)
     ta.speaker_voice.level=15;
     ta_pc_speaker(0);
     speaker_output=0;
+    speaker_playing_stamp=0;
     ta.speaker_divider=0;
     ta.speaker_octave_up=0;
     ta.speaker_adapt_stamp=0;
@@ -362,12 +364,23 @@ static ta_u16 speaker_divider_for(ta_u8 note,signed short bend)
     if(value>65535L)value=65535L;
     return (ta_u16)value;
 }
+static int speaker_holds_note(const TAActiveNote *n)
+{
+    return speaker_output!=0 && ta.speaker_voice.source>=0 &&
+           speaker_playing_stamp==n->stamp &&
+           &ta.notes[ta.speaker_voice.source]==n &&
+           ta.speaker_voice.stamp==n->stamp;
+}
 static int speaker_note_audible(const TAActiveNote *n)
 {
     unsigned attenuation=(unsigned)n->attenuation+
         ta.mix_attenuation+ta.master_attenuation;
+    /* PIT2 cannot follow a volume envelope. Once a credible Studio bass
+       starts, tolerate two decay/limiter steps before handing it back.
+       Quiet notes must still pass the original stricter entry threshold. */
+    unsigned limit=(smart_voice_mode && speaker_holds_note(n))?10U:8U;
     return n->note>=TA_SPK_BASS_MIN && n->note<=TA_SPK_BASS_MAX &&
-           attenuation<=8U;
+           attenuation<=limit;
 }
 /* Preserve conservative BASS: three other distinct PSG pitches required.
    ADAPT can take bass with TWO distinct other pitches, freeing the PSG for
@@ -399,10 +412,14 @@ static signed short choose_speaker_bass(void)
                 if(distinct[k]==other->period)duplicate=1;
             if(!duplicate)distinct[count++]=other->period;
         }
-        if(count<required)continue;
+        /* Losing one backing tone must not switch a held bass back to
+           the PSG's folded octave. Still release when the texture empties. */
+        if(count<required && !(smart_voice_mode &&
+           speaker_holds_note(n) && count+1U>=required))continue;
         score=(ta_s32)(TA_SPK_BASS_MAX-n->note)*1000L+
               note_priority(n)/4L;
-        if(ta.speaker_voice.source==(signed short)i)score+=300L;
+        if(smart_voice_mode?speaker_holds_note(n):
+           ta.speaker_voice.source==(signed short)i)score+=300L;
         if(score>best_score){
             best_score=score;
             best=(signed short)i;
@@ -442,11 +459,9 @@ static void render_speaker(void)
     if(ta.speaker_enabled && ta.playing && !ta.paused &&
        v->source>=0 && v->note>=0){
         TAActiveNote *n=&ta.notes[v->source];
-        unsigned att=(unsigned)n->attenuation+
-            ta.mix_attenuation+ta.master_attenuation;
         /* No volume register on PIT2. Don't let quiet notes sound loud:
            gate the fourth voice out when software attenuation is high. */
-        if(speaker_note_audible(n) && att<=8U){
+        if(speaker_note_audible(n)){
             if(ta.speaker_enabled==TA_SPK_ADAPT){
                 if(ta.speaker_adapt_stamp!=v->stamp){
                     ta.speaker_octave_up=choose_adaptive_octave((ta_u8)n->note);
@@ -467,6 +482,7 @@ static void render_speaker(void)
     /* This is actual programmed PIT2 output, not just SPK4 enabled.
        The UI must never show activity simply because /SPK4 was set. */
     ta.speaker_divider=divisor;
+    speaker_playing_stamp=divisor?v->stamp:0;
 }
 void ta_set_speaker(unsigned mode)
 {
@@ -474,6 +490,10 @@ void ta_set_speaker(unsigned mode)
     if(ta.speaker_enabled!=(ta_u8)mode){
         ta.speaker_adapt_stamp=0; /* fresh choice when entering ADAPT */
         ta.speaker_octave_up=0;
+        /* An explicit mode switch gets fresh eligibility, not the previous
+           mode's hold allowance. The next flush restores matching output. */
+        ta.speaker_voice.source=-1;
+        ta.speaker_voice.note=-1;
     }
     ta.speaker_enabled=(ta_u8)mode;
     if(!ta.speaker_enabled){
@@ -552,7 +572,8 @@ static void rebuild_voices(int allow_speaker)
                 ta.notes[selected[j]].channel==n->channel)
                     score-=(smart_voice_mode?400L:100L);
             for(j=0;j<TA_VOICES;j++)
-                if(ta.voices[j].source==(signed short)i)
+                if(ta.voices[j].source==(signed short)i &&
+                   (!smart_voice_mode || ta.voices[j].stamp==n->stamp))
                     score+=(smart_voice_mode?700L:110L); /* preserve phrase; strong attacks may still win */
             if(score>best || (score==best && found>=0 &&
                 n->stamp>ta.notes[found].stamp)){

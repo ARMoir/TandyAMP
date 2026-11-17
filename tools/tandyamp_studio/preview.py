@@ -32,7 +32,8 @@ def _freq(note: int, speaker: bool = False) -> float:
 def assign_preview_voices(active: list[Note], spk4: str = 'bass',
                           voice_selection: str = 'legacy',
                           previous_tones: list[Note] | None = None,
-                          now: float = 0.0) -> tuple[list[Note], Note | None, Note | None]:
+                          now: float = 0.0,
+                          previous_bass: Note | None = None) -> tuple[list[Note], Note | None, Note | None]:
     """Match the Tandy constraints without pretending preview == DOS engine."""
     if spk4 not in ('off', 'bass', 'adapt'):
         raise ValueError('Unknown SPK4 mode')
@@ -52,11 +53,17 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass',
     if spk4 != 'off':
         required = 2 if spk4 == 'adapt' else 3
         for n in pitched:
+            held_bass = voice_selection == 'smart' and n is previous_bass
+            # Approximate the DOS entry/hold gate at normal master volume.
+            # The real engine also includes its common PSG mix attenuation.
+            raw = 15 - (n.velocity*15 + 63)//127
+            decay = min(2, int(max(0.0, now-n.start)/.32955))
+            eligible = (raw+decay <= 10 if held_bass else n.velocity >= 58)
             if (n.part != 'bass' or not BASS_MIN <= n.pitch <= BASS_MAX
-                    or n.velocity < 58):
+                    or not eligible):
                 continue
             others = {_freq(k.pitch) for k in pitched if k is not n and k.pitch != n.pitch}
-            if len(others) >= required:
+            if len(others) >= required-int(held_bass):
                 bass = n
                 break
     tones = []
@@ -128,7 +135,8 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                 tones, speaker, drum = assign_preview_voices(
                     [notes[i] for i in sorted(active)], spk4,
                     voice_selection=voice_selection,
-                    previous_tones=tones, now=tick / RATE)
+                    previous_tones=tones, now=tick / RATE,
+                    previous_bass=speaker)
             t = tick / RATE
             mix = 0.0
             for n in tones:
