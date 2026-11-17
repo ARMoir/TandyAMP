@@ -1,5 +1,72 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Sound-first transcription update
+
+The aim is a recognizable, enjoyable Tandy arrangement: preserve the riff,
+melody, bass and rhythm; add fullness only when it helps the music.
+
+The new **Transcription: sensitive** option (CLI `--transcription sensitive`)
+uses a more receptive Basic Pitch decoder on **separated guitar and other
+stems only**. It accepts roughly 81 ms notes instead of the standard decoder's
+128 ms minimum, with onset/frame thresholds of 0.35/0.20 instead of 0.50/0.30.
+This addresses an upstream limit: Full mode cannot retain short notes already
+discarded by the transcription model's decoder. Bass and vocal decoding are
+unchanged. This can also admit false notes, so **standard remains the default**;
+the sensitive option is experimental, not a proven quality improvement.
+Use guitar separation or ordinary stems for this option to have an effect.
+
+Try the same song in a new output folder, with **Notes: full**, **SPK4: adapt**,
+**Isolate guitar**, **Transcription: sensitive**, and **Accompaniment: off**.
+Start without generated chords to judge the recovered riff itself. For example:
+
+```bat
+py -3.11 studio.py --cli "song.mp3" --guitar-separation --transcription sensitive --note-preservation full --spk4 adapt --drum-style rock --preview -o "TANDY_RIFF_TEST"
+```
+
+Conversions also write `INPUT.json` and `METRICS.json` with note snapshots,
+role activity, gaps, and separate candidate/approximate audible voice counts.
+These are laptop diagnostics; only copy the MIDI files and PLAY.BAT to DOS.
+More candidate notes or four-voice time do **not** establish better sound.
+
+### Repeatable developer comparisons
+
+`benchmark.py` uses the same stem transcription/cleanup code as Studio, saves
+raw and cleaned notes, retains separated WAVs, and caches Basic Pitch
+activations by source bytes, model weights and package version. Decoder and
+accompaniment comparisons can reuse the expensive inference. It compares
+standard/sensitive decoding with accompaniment off/recover/harmonize and
+exports DOS-sized MIDI, previews and `comparison.json`.
+
+```bat
+py -3.11 benchmark.py "song.mp3" --work-dir "BENCH_SONG" --preview-seconds 180
+```
+
+Optional `--reference-midi old.mid` measures an earlier output against the same
+source duration. `--stems-dir PATH` accepts an existing stem directory from
+that exact audio; matching it to the source is the caller's responsibility.
+`--profiles standard` and `--modes off` restrict the comparison. Existing MIDI
+outputs are protected from overwrite; choose unrun variants or a new work
+directory. Automatically separated benchmark stems use `--shifts 0` to remove
+Demucs' random shift augmentation. Cache manifests verify source/stem hashes.
+The metrics count source trailing silence and distinguish four candidate
+pitches from four voices actually selected by the approximate preview.
+
+Validation: 94 lightweight regression tests passed locally. The supplied V7
+Paranoid MIDI measured 35.44 seconds of bass-only activity and 12.47 seconds
+of potential four-voice combinations. Six-stem separation completed locally
+for Paranoid and Nirvana's acoustic recording, but full transcription and
+listening comparisons were **not completed before this update**. No claim of
+improved perceptual accuracy is made. Hardware listening remains necessary.
+Private source audio, stems, activations and generated song files are not
+included in GitHub or DOS releases.
+
+Alternative transcription research: [Basic Pitch](https://github.com/spotify/basic-pitch)
+supports polyphony and recommends individual instruments; [MT3](https://github.com/magenta/mt3)
+and [YourMT3+](https://github.com/mimbres/YourMT3) offer multi-instrument
+approaches. Those alternative models have not been installed or benchmarked
+here. The new checkpoints make later comparisons possible without confusing
+transcription loss with arrangement pruning.
+
 Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube video link, or an MP3/WAV/FLAC/OGG using optional AI transcription, into small type-0 `.MID` files for the 7 MHz Tandy 1000 EX. All expensive analysis runs on the modern laptop, **not on the V20**. It is an early, independently written companion tool, not part of `TANDYAMP.EXE`.
 
 ## Quick start on Windows
@@ -84,7 +151,7 @@ audio-specific settings. The DOS player does not need changes.
 
 ## Tempo verification and four-voice candidate selection
 
-The MIDI export stores a **fixed 500,000 µs/quarter-note tempo marker (120 BPM) at 480 PPQN**, but each original audio timestamp is encoded at **960 MIDI ticks per second**. That does *not* retime the music to 120 BPM. A regression test reimports a song with note edges spanning over 160 seconds and asserts millisecond-level timing agreement. If an actual DOS Tandy takes significantly longer than the exported MIDI duration, check the hardware player/clock rather than blindly accelerating the offline transcription.
+The MIDI export stores a **fixed 500,000 �s/quarter-note tempo marker (120 BPM) at 480 PPQN**, but each original audio timestamp is encoded at **960 MIDI ticks per second**. That does *not* retime the music to 120 BPM. A regression test reimports a song with note edges spanning over 160 seconds and asserts millisecond-level timing agreement. If an actual DOS Tandy takes significantly longer than the exported MIDI duration, check the hardware player/clock rather than blindly accelerating the offline transcription.
 
 **Full** mode now retains a **bounded six-note pitched candidate pool** (actual transcription notes, not invented harmony) for the live DOS selector rather than permanently pruning the MIDI to three PSG notes plus one bass before playback. This gives the DOS player alternates as a lead or chord changes and makes four-note combinations possible wherever the original transcription contains sufficient independent material. **The hardware output remains limited to three distinct PSG tone notes + one eligible low PIT2 speaker bass**; other candidates are not simultaneously audible. Up to 32 active MIDI notes are already supported by TandyAMP, but the laptop caps its candidate pool at six to limit work on 7 MHz hardware. The noise channel is separate and unchanged.
 
@@ -134,7 +201,7 @@ The cached YouTube MP3 is reused automatically, though stem separation/transcrip
 
 The Studio GUI now has a **Drums** selector: **auto** (existing style, default) or **rock**. The CLI equivalent is `--drum-style rock`, and it only affects drum transcription when you use `--stems`. Neither mode alters an existing user-supplied MIDI file or the pitched guitar melody.
 
-The new isolated-drum-stem analysis runs **two onset detectors**: full-spectrum kicks/snares and a separate high-frequency (6–10.4 kHz) spectral-novelty detector. Independent, sufficiently strong high-band attacks may become MIDI hi-hat 42. Hats are **not added merely because they're missing**; there is no generated metronome/cymbal pattern. A recovered hat is suppressed if the PSG's one noise channel is already occupied by a nearby kick/snare. The rock option is more receptive to genuine high-band attacks, dampens repetitive kick retriggers, and allows a strong snare transient to win an overlapping noise-channel collision.
+The new isolated-drum-stem analysis runs **two onset detectors**: full-spectrum kicks/snares and a separate high-frequency (6-10.4 kHz) spectral-novelty detector. Independent, sufficiently strong high-band attacks may become MIDI hi-hat 42. Hats are **not added merely because they're missing**; there is no generated metronome/cymbal pattern. A recovered hat is suppressed if the PSG's one noise channel is already occupied by a nearby kick/snare. The rock option is more receptive to genuine high-band attacks, dampens repetitive kick retriggers, and allows a strong snare transient to win an overlapping noise-channel collision.
 
 Bass notes are no longer flattened to a minimum MIDI velocity of 64: quieter notes retain their source dynamics (with a safety floor of 46). Quiet bass may deliberately fail the DOS PC-speaker gating threshold, because PIT2 has no volume register. The preview now runs a mild one-pole low-pass after mixing to soften sharp digital sample edges; this is an approximate laptop listening aid, **not a modification of the Tandy hardware or DOS sound driver**.
 
@@ -270,7 +337,7 @@ Output goes under `TANDY_OUT\<input>_TANDY` by default or under `-o YOUR_OUTPUT\
 ## Optimization rules
 
 - Selects up to **three distinct audible PSG pitches** at a time, with melody priority and note-continuity bias. ADAPT permits PIT2 bass when at least two other PSG pitches exist; BASS requires three.
-- If enabled and useful, reserves a **bass note from MIDI 24–52** for PIT2 **when the selected SPK4 mode's distinct-pitch requirement is met**. Otherwise bass competes normally for the three PSG channels. Real SPK4 still has no independent volume control; TandyAMP may gate a reserved note off.
+- If enabled and useful, reserves a **bass note from MIDI 24-52** for PIT2 **when the selected SPK4 mode's distinct-pitch requirement is met**. Otherwise bass competes normally for the three PSG channels. Real SPK4 still has no independent volume control; TandyAMP may gate a reserved note off.
 - Folds very low/high notes into more useful octaves; preserves strong bass velocity to satisfy TandyAMP's speaker gate. A `quality` preset is more permissive in the upper register; `balanced` reduces piercing highs; `performance` trims very high notes and short events.
 - Converts percussion to TandyAMP-supported **kick 36, snare 38, hat 42**, reducing simultaneous hits to fit its **single noise oscillator**. Stem-derived drum identification is only a heuristic.
 - Produces single-track **type-0 MIDI**, fixed 120 BPM encoding with original performance timing in seconds, and a compact event stream for the DOS parser. Files are capped at **42,000 bytes** (safety below TandyAMP's 45,056-byte limit), and split at at most 180 seconds or earlier if the file is too large. Handles notes spanning a split by continuing them in the next segment. Rejects an output folder containing the same filenames rather than silently overwriting. Limits the output set to **64** items to match the DOS automatic playlist.

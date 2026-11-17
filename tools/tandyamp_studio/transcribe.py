@@ -9,7 +9,10 @@ import tempfile
 from arranger import Note
 
 
-def _predict(path: Path, part: str | None) -> list[Note]:
+def _predict(path: Path, part: str | None, profile: str = 'standard',
+             cache_dir: Path | None = None) -> list[Note]:
+    from prediction_cache import decoder_settings
+    settings = decoder_settings(part, profile)
     try:
         from basic_pitch import ICASSP_2022_MODEL_PATH
         from basic_pitch.inference import predict
@@ -41,7 +44,18 @@ def _predict(path: Path, part: str | None) -> list[Note]:
             )
         ) from exc
     # The public Basic Pitch predict() API requires the installed model path.
-    _, midi, _ = predict(str(path), ICASSP_2022_MODEL_PATH)
+    if cache_dir is not None:
+        from prediction_cache import predict_cached
+        midi = predict_cached(path, ICASSP_2022_MODEL_PATH, predict,
+                              cache_dir, part, profile)
+    elif profile == 'standard':
+        _, midi, _ = predict(str(path), ICASSP_2022_MODEL_PATH)
+    else:
+        _, midi, _ = predict(
+            str(path), ICASSP_2022_MODEL_PATH,
+            onset_threshold=settings['onset_thresh'],
+            frame_threshold=settings['frame_thresh'],
+            minimum_note_length=settings['min_note_len'] * 256 / 22050 * 1000)
     notes = []
     for instrument in midi.instruments:
         for n in instrument.notes:
@@ -229,13 +243,16 @@ def transcribe_audio(path: Path, stems: bool = False,
                      drum_style: str = 'auto',
                      preservation: str = 'full',
                      guitar_separation: bool = False,
-                     accompaniment: str = 'off') -> list[Note]:
+                     accompaniment: str = 'off',
+                     profile: str = 'standard') -> list[Note]:
     """Transcribe guitar/vocals/bass and optionally infer sustained harmony.
 
     The 6-stem guitar model is opt-in: its first use downloads more weights
     and its piano source can have bleed, so piano is not transcribed blindly.
     """
     from postprocess import clean_stem_notes
+    from prediction_cache import decoder_settings
+    decoder_settings(None, profile)
     if preservation not in ('full', 'clean'):
         raise ValueError('Note preservation must be full or clean')
     if accompaniment not in ('off', 'recover', 'harmonize'):
@@ -270,50 +287,71 @@ def transcribe_audio(path: Path, stems: bool = False,
                str(path)]
         subprocess.run(cmd, check=True)
         root = output / model / path.stem
-        if guitar_separation:
-            stems_to_transcribe = [
-                ('bass', 'bass'), ('vocals', 'melody'), ('guitar', 'guitar'),
-                ('other', 'harmony')
-            ]
-        else:
-            stems_to_transcribe = [
-                ('bass', 'bass'), ('vocals', 'melody'), ('other', 'harmony')
-            ]
+        return transcribe_stems(root, guitar_separation=guitar_separation,
+                                drum_style=drum_style, preservation=preservation,
+                                accompaniment=accompaniment, profile=profile)
 
-        groups: dict[str, list[Note]] = {}
-        for name, part in stems_to_transcribe:
-            wav = root / (name + '.wav')
-            if not wav.exists():
-                raise RuntimeError(f'Demucs did not produce {wav}')
-            print(f'Transcribing {name}...', flush=True)
-            raw = _predict(wav, part)
-            kept = clean_stem_notes(raw, part, preservation=preservation)
-            print(f'  {name}: {len(raw)} -> {len(kept)} notes after cleanup',
-                  flush=True)
-            groups[name] = kept
 
-        if guitar_separation:
-            before = len(groups['other'])
-            groups['other'] = remove_guitar_bleed(groups['guitar'],
-                                                 groups['other'])
-            print(f'  other: removed {before-len(groups["other"])} '
-                  'overlapping guitar-bleed notes', flush=True)
+def transcribe_stems(root: Path, *, guitar_separation: bool = True,
+                     drum_style: str = 'rock', preservation: str = 'full',
+                     accompaniment: str = 'off', profile: str = 'standard',
+                     cache_dir: Path | None = None,
+                     diagnostics_dir: Path | None = None) -> list[Note]:
+    """Shared Studio/benchmark pipeline, with optional inspectable checkpoints."""
+    from postprocess import clean_stem_notes
+    from diagnostics import save_stage
+    if guitar_separation:
+        stems_to_transcribe = [
+            ('bass', 'bass'), ('vocals', 'melody'), ('guitar', 'guitar'),
+            ('other', 'harmony')
+        ]
+    else:
+        stems_to_transcribe = [
+            ('bass', 'bass'), ('vocals', 'melody'), ('other', 'harmony')
+        ]
 
-        notes: list[Note] = []
-        for name, _part in stems_to_transcribe:
-            notes.extend(groups[name])
+    groups: dict[str, list[Note]] = {}
+    for name, part in stems_to_transcribe:
+        wav = root / (name + '.wav')
+        if not wav.exists():
+            raise RuntimeError(f'Demucs did not produce {wav}')
+        print(f'Transcribing {name}...', flush=True)
+        raw = (_predict(wav, part) if profile == 'standard' and cache_dir is None
+               else _predict(wav, part, profile=profile, cache_dir=cache_dir))
+        if diagnostics_dir is not None:
+            save_stage(diagnostics_dir, name + '-raw', raw)
+        kept = clean_stem_notes(raw, part, preservation=preservation)
+        print(f'  {name}: {len(raw)} -> {len(kept)} notes after cleanup',
+              flush=True)
+        groups[name] = kept
+        if diagnostics_dir is not None:
+            save_stage(diagnostics_dir, name + '-clean', kept)
 
-        if accompaniment != 'off':
-            from accompaniment import analyze_accompaniment_audio
-            harmonic_stem = root / ('guitar.wav' if guitar_separation
-                                    else 'other.wav')
-            print('Analyzing stable chords in {} for {} accompaniment...'.format(
-                harmonic_stem.name, accompaniment), flush=True)
-            notes.extend(analyze_accompaniment_audio(
-                harmonic_stem, notes, mode=accompaniment))
+    if guitar_separation:
+        before = len(groups['other'])
+        groups['other'] = remove_guitar_bleed(groups['guitar'],
+                                             groups['other'])
+        print(f'  other: removed {before-len(groups["other"])} '
+              'overlapping guitar-bleed notes', flush=True)
 
-        drums = root / 'drums.wav'
-        if drums.exists():
-            print('Estimating beat-aware kick/snare/hat onsets...', flush=True)
-            notes.extend(_drum_onsets(drums, style=drum_style))
-        return notes
+    notes: list[Note] = []
+    for name, _part in stems_to_transcribe:
+        notes.extend(groups[name])
+
+    if diagnostics_dir is not None:
+        save_stage(diagnostics_dir, 'before-accompaniment', notes)
+
+    if accompaniment != 'off':
+        from accompaniment import analyze_accompaniment_audio
+        harmonic_stem = root / ('guitar.wav' if guitar_separation
+                                else 'other.wav')
+        print('Analyzing stable chords in {} for {} accompaniment...'.format(
+            harmonic_stem.name, accompaniment), flush=True)
+        notes.extend(analyze_accompaniment_audio(
+            harmonic_stem, notes, mode=accompaniment))
+
+    drums = root / 'drums.wav'
+    if drums.exists():
+        print('Estimating beat-aware kick/snare/hat onsets...', flush=True)
+        notes.extend(_drum_onsets(drums, style=drum_style))
+    return notes

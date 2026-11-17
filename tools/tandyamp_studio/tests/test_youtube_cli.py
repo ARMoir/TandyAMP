@@ -110,7 +110,7 @@ class CommandLineTests(unittest.TestCase):
 
     def test_url_conversion_uses_temporary_mp3(self):
         captured = {}
-        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, drum_style='auto', note_preservation='full', guitar_separation=False, accompaniment='off'):
+        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, drum_style='auto', note_preservation='full', guitar_separation=False, accompaniment='off', transcription='standard'):
             self.assertEqual(audio.read_bytes(), b'ID3example')
             self.assertTrue(name.startswith('My_Song'))
             self.assertEqual(spk4, 'adapt')
