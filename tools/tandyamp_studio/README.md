@@ -15,6 +15,28 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. Rock drum analysis requires `--stems`. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
 
+## V6: Restore note fullness without exceeding Tandy hardware
+
+The earlier TandyAMP Studio stages reduced vocals to one simultaneous note and guitar/other to two **before** scoring notes across the three PSG tones plus optional SPK4. This could produce technically clean but thin, disconnected renditions. The observed V5 Paranoid output contained roughly **54 seconds of bass-only sound**, **10 seconds with no pitched notes**, and about **65 seconds with only one pitched voice** in a ~160-second file. The latest work changes the strategy.
+
+**Notes: Full** is now the default for **audio transcription** (GUI dropdown or `--note-preservation full`). It lowers the per-stem velocity and short-note gates, keeps credible overlapping guitar and vocal candidates from Basic Pitch, and only limits polyphony when the final, hardware-aware PSG/PIT2 voice allocator makes its selection. The latter **still emits at most three PSG tones and an eligible separate bass**, never fictional extra hardware channels. The bass stem remains monophonic. The alternative **Notes: Clean** (or `--note-preservation clean`) reproduces the earlier V5 per-stem filtering, giving a useful A/B control.
+
+Audio conversions now report **input-after-transcription** versus **final-hardware-output** coverage: seconds with no pitched notes, one voice, two voices, three-plus voices, and bass-only sound. This reveals whether a sparse passage came from Basic Pitch failing to detect it, pre-arrangement cleanup, or the physical Tandy channel budget. A fuller arrangement is not guaranteed to be more accurate; some false pitches may return, so the two modes are intentionally selectable.
+
+Use the latest Studio code, the original audio source and a fresh output folder:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --stems --drum-style rock --preset balanced --note-preservation full --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_FULL"
+```
+
+For an apples-to-apples comparison with the older cleanup (separate output directory):
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --stems --drum-style rock --preset balanced --note-preservation clean --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_CLEAN"
+```
+
+The YouTube MP3 cache remains active. Both commands repeat the Demucs/Basic Pitch pipeline because **the original audio must be transcribed again**; importing an already-optimized `BLACKS01.MID` cannot recreate notes missing from its source conversion. Existing MIDI imports keep their normal behavior regardless of the Notes dropdown.
+
 ## V5 rock beat awareness and preview balance
 
 The **rock** drum option now looks for a plausible alternating snare backbeat in the **detected** tempo grid, and suppresses only **weaker kick candidates** when stronger nearby kick evidence exists. If no reliable snare phase or meaningful dynamic contrast is found, it behaves conservatively rather than assuming a metronomic beat. It never synthesizes new kick, snare or hi-hat events, and does not touch the vocal/guitar transcription. This reduces weak repeated kick attacks without blindly deleting real accents.
@@ -147,6 +169,7 @@ convert_cli.bat "https://youtu.be/dQw4w9WgXcQ" --mp3-only
 | `--spk4 off|bass|adapt` | Speaker-mode selection in generated DOS `PLAY.BAT` |
 | `--stems` | Optional Demucs separation before transcription |
 | `--drum-style auto|rock` | Drum onset cleanup strategy when using `--stems`; default auto |
+| `--note-preservation full|clean` | Audio transcription note retention; full is the new default, clean matches V5 |
 | `--preview` | Export an approximate 30-second WAV |
 | `--mp3-only` | Download MP3 to `-o` and exit; **no AI or MIDI conversion** |
 | `--keep-mp3` | Keep `SOURCE.MP3` in the resulting DOS-MIDI folder |

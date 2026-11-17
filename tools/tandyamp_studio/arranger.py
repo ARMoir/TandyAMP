@@ -98,13 +98,16 @@ def load_midi(path: Path) -> list[Note]:
     return result
 
 
-def normalize(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
+def normalize(notes: Iterable[Note], preset: str = 'balanced',
+              preserve: bool = False) -> list[Note]:
     config = PRESETS[preset]
     result = []
     for n in notes:
         # Noise hits are intentionally shorter than pitched notes. Preserve
         # hats across all presets instead of discarding them as tiny pitches.
-        min_duration = .025 if n.part == 'drums' else config['min_duration']
+        min_duration = (.025 if n.part == 'drums' else
+                        min(config['min_duration'], .045)
+                        if preserve else config['min_duration'])
         if n.end - n.start < min_duration or n.velocity < 12:
             continue
         p = n.pitch
@@ -234,10 +237,53 @@ def reduce_drums(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
     return result
 
 
-def prepare(notes: Iterable[Note], preset: str = 'balanced', spk4: bool | str = True) -> list[Note]:
-    normalized = normalize(notes, preset)
+def prepare(notes: Iterable[Note], preset: str = 'balanced',
+            spk4: bool | str = True, preserve: bool = False) -> list[Note]:
+    normalized = normalize(notes, preset, preserve=preserve)
     arranged = select_voices(normalized, spk4)
     return sorted([n for n in arranged if n.part != 'drums'] + reduce_drums(arranged, preset), key=lambda n: (n.start, n.end, n.pitch))
+
+
+
+def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
+    """Measure true pitched-note activity; no invented filler or interpolation.
+
+    Reports seconds of silence, one/two/three-or-more distinct pitches, and
+    bass-only audio. Used to explain why a technically valid MIDI sounds thin.
+    """
+    pitched = [n for n in notes if n.part != 'drums' and n.end > n.start]
+    if not pitched:
+        return {'duration': 0.0, 'silent': 0.0, 'one': 0.0,
+                'two': 0.0, 'three_plus': 0.0, 'bass_only': 0.0}
+    events = []
+    for idx, n in enumerate(pitched):
+        events.extend(((n.start, 1, idx), (n.end, 0, idx)))
+    events.sort(key=lambda e: (e[0], e[1]))
+    active: set[int] = set()
+    buckets = [0.0, 0.0, 0.0, 0.0]
+    bass_only = 0.0
+    prev = 0.0
+    pos = 0
+    while pos < len(events):
+        now = events[pos][0]
+        span = max(0.0, now-prev)
+        pitches = {pitched[i].pitch for i in active}
+        buckets[min(3,len(pitches))] += span
+        if active and all(pitched[i].part == 'bass' for i in active):
+            bass_only += span
+        while pos < len(events) and events[pos][0] == now:
+            _, on, idx = events[pos]
+            if on:
+                active.add(idx)
+            else:
+                active.discard(idx)
+            pos += 1
+        prev = now
+    return {
+        'duration': prev, 'silent': buckets[0], 'one': buckets[1],
+        'two': buckets[2], 'three_plus': buckets[3],
+        'bass_only': bass_only
+    }
 
 
 def make_midi(notes: Iterable[Note], offset: float, until: float) -> bytes:

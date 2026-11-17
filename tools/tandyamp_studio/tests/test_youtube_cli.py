@@ -110,7 +110,7 @@ class CommandLineTests(unittest.TestCase):
 
     def test_url_conversion_uses_temporary_mp3(self):
         captured = {}
-        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, drum_style='auto'):
+        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, drum_style='auto', note_preservation='full'):
             self.assertEqual(audio.read_bytes(), b'ID3example')
             self.assertTrue(name.startswith('My_Song'))
             self.assertEqual(spk4, 'adapt')
@@ -127,11 +127,12 @@ class CommandLineTests(unittest.TestCase):
             rc = studio.main([
                 '--cli', 'https://youtu.be/dQw4w9WgXcQ',
                 '-o', 'output', '--preset', 'performance', '--spk4', 'adapt',
-                '--stems', '--drum-style', 'rock', '--preview', '--mp3-quality', '320', '--keep-mp3'
+                '--stems', '--drum-style', 'rock', '--note-preservation', 'full', '--preview', '--mp3-quality', '320', '--keep-mp3'
             ])
             self.assertEqual(rc, 0)
             self.assertEqual(conv.call_args.kwargs['mp3_quality'], '320')
             self.assertEqual(conv.call_args.kwargs['drum_style'], 'rock')
+            self.assertEqual(conv.call_args.kwargs['note_preservation'], 'full')
             self.assertTrue(conv.call_args.kwargs['keep_mp3'])
             self.assertEqual(conv.call_args.args[3], 'adapt')
 

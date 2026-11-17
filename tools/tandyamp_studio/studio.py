@@ -7,7 +7,7 @@ import shutil
 import sys
 import tempfile
 
-from arranger import PRESETS, export, load_midi, prepare
+from arranger import PRESETS, export, load_midi, prepare, voice_coverage
 from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
 from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, safe_name
 
@@ -15,7 +15,9 @@ from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, sa
 def _convert_local(input_file: Path, output_dir: Path, target_name: str,
                    preset: str, spk4: str, stems: bool, preview: bool,
                    saved_mp3: Path | None = None,
-                   drum_style: str = 'auto') -> list[Path]:
+                   drum_style: str = 'auto',
+                   note_preservation: str = 'full') -> list[Path]:
+    audio_input = input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg')
     if input_file.suffix.lower() in ('.mid', '.midi'):
         print(f'Loading MIDI: {input_file}', flush=True)
         notes = load_midi(input_file)
@@ -23,12 +25,21 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         from transcribe import transcribe_audio
         print(f'Transcribing audio: {input_file}', flush=True)
         notes = transcribe_audio(input_file, stems=stems,
-                                 drum_style=drum_style)
+                                 drum_style=drum_style,
+                                 preservation=note_preservation)
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
-    arranged = prepare(notes, preset, spk4)
+    arranged = prepare(notes, preset, spk4,
+                       preserve=(audio_input and note_preservation == 'full'))
     print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
+    for title, sample in (('Input after transcription', notes),
+                          ('Hardware-limited output', arranged)):
+        cov = voice_coverage(sample)
+        print('  {}: silent {:.1f}s, one tone {:.1f}s, two {:.1f}s, '
+              'three+ {:.1f}s, bass only {:.1f}s'.format(
+                  title, cov['silent'], cov['one'], cov['two'],
+                  cov['three_plus'], cov['bass_only']), flush=True)
     # Diagnostic counts help identify the "all kicks" / "all bass velocity
     # 107" regressions without requiring music uploads for every conversion.
     from collections import Counter
@@ -66,7 +77,8 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
 def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
             spk4: str = 'bass', stems: bool = False, preview: bool = False,
             *, keep_mp3: bool = False, mp3_only: bool = False,
-            mp3_quality: str = '192', drum_style: str = 'auto') -> list[Path]:
+            mp3_quality: str = '192', drum_style: str = 'auto',
+            note_preservation: str = 'full') -> list[Path]:
     """Noninteractive pipeline; a validated YouTube MP3 is reused from
     the persistent OS temp cache whenever possible. Outputs are unchanged.
     """
@@ -76,6 +88,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
         raise ValueError(f'Unknown SPK4 mode: {spk4}')
     if drum_style not in ('auto', 'rock'):
         raise ValueError(f'Unknown drum style: {drum_style}')
+    if note_preservation not in ('full', 'clean'):
+        raise ValueError(f'Unknown note preservation: {note_preservation}')
     source = str(input_file).strip()
     if not source:
         raise ValueError('Provide a music file or YouTube video URL')
@@ -95,7 +109,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
             return _convert_local(downloaded.audio_path, output_dir, name,
                                   preset, spk4, stems, preview,
                                   saved_mp3=downloaded.audio_path if keep_mp3 else None,
-                                  drum_style=drum_style)
+                                  drum_style=drum_style,
+                                  note_preservation=note_preservation)
     if source.lower().startswith(('http://', 'https://')):
         raise ValueError('Only single-video YouTube links are supported (https://youtu.be/... or youtube.com/watch?v=...)')
     if keep_mp3 or mp3_only:
@@ -104,7 +119,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
     if not path.is_file():
         raise FileNotFoundError(path)
     return _convert_local(path, output_dir, path.stem, preset, spk4, stems,
-                          preview, drum_style=drum_style)
+                          preview, drum_style=drum_style,
+                          note_preservation=note_preservation)
 
 
 def gui(initial_input: str = '') -> None:
@@ -120,13 +136,14 @@ def gui(initial_input: str = '') -> None:
         DND_FILES = None
 
     root.title('TandyAMP Studio - YouTube / MP3 / MIDI to Tandy DOS')
-    root.geometry('710x455')
-    root.minsize(625, 425)
+    root.geometry('710x490')
+    root.minsize(625, 455)
     path = tk.StringVar(value=initial_input)
     output = tk.StringVar(value=str(Path.home() / 'Music'))
     preset = tk.StringVar(value='balanced')
     spk4 = tk.StringVar(value='bass')
     drum_style = tk.StringVar(value='auto')
+    note_preservation = tk.StringVar(value='full')
     stems = tk.BooleanVar(value=False)
     preview = tk.BooleanVar(value=True)
     keep_mp3 = tk.BooleanVar(value=False)
@@ -147,12 +164,14 @@ def gui(initial_input: str = '') -> None:
     ttk.Combobox(outer, textvariable=spk4, values=['off', 'bass', 'adapt'], state='readonly', width=19).grid(row=3, column=1, sticky='w', padx=8)
     ttk.Label(outer, text='Drums').grid(row=4, column=0, sticky='w', pady=6)
     ttk.Combobox(outer, textvariable=drum_style, values=['auto', 'rock'], state='readonly', width=19).grid(row=4, column=1, sticky='w', padx=8)
-    ttk.Checkbutton(outer, text='Separate MP3/WAV stems (Demucs, slower)', variable=stems).grid(row=5, column=0, columnspan=3, sticky='w', pady=2)
-    ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=6, column=0, columnspan=3, sticky='w', pady=2)
-    ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=7, column=0, columnspan=3, sticky='w', pady=2)
-    ttk.Checkbutton(outer, text='MP3 only: download audio, skip MIDI transcription', variable=mp3_only).grid(row=8, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Label(outer, text='Notes').grid(row=5, column=0, sticky='w', pady=6)
+    ttk.Combobox(outer, textvariable=note_preservation, values=['full', 'clean'], state='readonly', width=19).grid(row=5, column=1, sticky='w', padx=8)
+    ttk.Checkbutton(outer, text='Separate MP3/WAV stems (Demucs, slower)', variable=stems).grid(row=6, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=7, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=8, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='MP3 only: download audio, skip MIDI transcription', variable=mp3_only).grid(row=9, column=0, columnspan=3, sticky='w', pady=2)
     status = ttk.Label(outer, textvariable=message, wraplength=660)
-    status.grid(row=10, column=0, columnspan=3, sticky='w', pady=8)
+    status.grid(row=11, column=0, columnspan=3, sticky='w', pady=8)
     if DND_FILES:
         root.drop_target_register(DND_FILES)
         root.dnd_bind('<<Drop>>', lambda event: path.set(root.tk.splitlist(event.data)[0]))
@@ -212,7 +231,8 @@ def gui(initial_input: str = '') -> None:
         future = pool.submit(
             convert, path.get(), Path(output.get()), preset.get(), spk4.get(),
             stems.get(), preview.get(), keep_mp3=keep_mp3.get(),
-            mp3_only=mp3_only.get(), drum_style=drum_style.get())
+            mp3_only=mp3_only.get(), drum_style=drum_style.get(),
+            note_preservation=note_preservation.get())
         def poll() -> None:
             if not future.done():
                 root.after(200, poll)
@@ -227,9 +247,9 @@ def gui(initial_input: str = '') -> None:
         root.after(200, poll)
 
     run_button = ttk.Button(outer, text='Convert / Download', command=launch)
-    run_button.grid(row=9, column=0, columnspan=2, sticky='ew', pady=8, padx=(0, 8))
+    run_button.grid(row=10, column=0, columnspan=2, sticky='ew', pady=8, padx=(0, 8))
     check_button = ttk.Button(outer, text='Check / Install FFmpeg', command=offer_ffmpeg_install)
-    check_button.grid(row=9, column=2, sticky='ew', pady=8)
+    check_button.grid(row=10, column=2, sticky='ew', pady=8)
     root.protocol('WM_DELETE_WINDOW', lambda: (pool.shutdown(wait=False, cancel_futures=True), root.destroy()))
     root.mainloop()
 
@@ -245,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--stems', action='store_true', help='Demucs stem separation (audio input)')
     parser.add_argument('--drum-style', choices=['auto', 'rock'], default='auto',
                         help='Drum cleanup: auto or rock (requires --stems for audio)')
+    parser.add_argument('--note-preservation', choices=['full', 'clean'],
+                        default='full', help='Fuller transcription or legacy cleanup; audio input only')
     parser.add_argument('--preview', action='store_true', help='Approximate 30-second WAV preview')
     parser.add_argument('--keep-mp3', action='store_true',
                         help='Keep downloaded YouTube source MP3 in generated MIDI folder')
@@ -265,7 +287,8 @@ def main(argv: list[str] | None = None) -> int:
         convert(args.input, args.output, args.preset, args.spk4,
                 args.stems, args.preview, keep_mp3=args.keep_mp3,
                 mp3_only=args.mp3_only, mp3_quality=args.mp3_quality,
-                drum_style=args.drum_style)
+                drum_style=args.drum_style,
+                note_preservation=args.note_preservation)
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError, OSError, ImportError) as exc:
         print(f'TandyAMP Studio error: {exc}', file=sys.stderr)
         return 1

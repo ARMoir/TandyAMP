@@ -57,18 +57,31 @@ def _limit_polyphony(notes: list[Note], voices: int) -> list[Note]:
     return sorted(result, key=lambda n: (n.start, n.pitch, n.end))
 
 
-def clean_stem_notes(notes: list[Note], part: str) -> list[Note]:
-    """Remove low-strength/short pitched artifacts; bass and voice stay monophonic.
+def clean_stem_notes(notes: list[Note], part: str,
+                     preservation: str = 'clean') -> list[Note]:
+    """Remove weak artifacts while optionally preserving original polyphony.
 
-    Do not gate all quiet vocals: the cut scales with this stem's median
-    velocity, and 'other' is cleaned more strictly than melodic material.
+    Full mode retains every credible lead/guitar pitch until the *final*
+    hardware-aware allocator chooses the available PSG/SPK4 voices. Clean
+    mode reproduces V5's per-stem monophonic melody / two-note guitar cap.
     """
+    if preservation not in ('clean', 'full'):
+        raise ValueError('Note preservation must be clean or full')
     if not notes:
         return []
-    floor = {'bass': 30, 'melody': 31, 'harmony': 42}.get(part, 35)
-    shortest = {'bass': .090, 'melody': .085, 'harmony': .115}.get(part, .100)
+    if preservation == 'full':
+        # Lightly de-noise but keep the candidate counter-melodies and short
+        # guitar attacks. Final PSG/PIT2 hardware limits are applied later.
+        floor = {'bass': 22, 'melody': 24, 'harmony': 28}.get(part, 24)
+        shortest = {'bass': .055, 'melody': .050, 'harmony': .060}.get(part, .055)
+        fraction, ceiling = .46, 55
+    else:
+        # Legacy V5 cleanup for a reproducible A/B control.
+        floor = {'bass': 30, 'melody': 31, 'harmony': 42}.get(part, 35)
+        shortest = {'bass': .090, 'melody': .085, 'harmony': .115}.get(part, .100)
+        fraction, ceiling = .62, 67
     typical = median(n.velocity for n in notes)
-    threshold = max(floor, min(67, int(typical * .62)))
+    threshold = max(floor, min(ceiling, int(typical*fraction)))
     valid = [
         replace(n, part=part)
         for n in notes
@@ -91,7 +104,14 @@ def clean_stem_notes(notes: list[Note], part: str) -> list[Note]:
                     n.velocity < min(before.velocity, after.velocity)):
                 continue
         filtered.append(n)
-    selected = _limit_polyphony(filtered, 2 if part == 'harmony' else 1)
+    if preservation == 'full' and part != 'bass':
+        # Avoid destructively capping either vocals or guitar here. We will
+        # only retain a maximum of three PSG tones (+ optional PIT2 bass)
+        # when the offline arranger scores all pitches together.
+        selected = filtered
+    else:
+        cap = 2 if part == 'harmony' else 1
+        selected = _limit_polyphony(filtered, cap)
     if part == 'bass':
         selected = join_bass_fragments(selected)
     return selected

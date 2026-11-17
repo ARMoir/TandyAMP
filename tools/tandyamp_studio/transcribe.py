@@ -203,16 +203,20 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
 
 
 def transcribe_audio(path: Path, stems: bool = False,
-                     drum_style: str = 'auto') -> list[Note]:
+                     drum_style: str = 'auto',
+                     preservation: str = 'full') -> list[Note]:
     """Transcribe and clean notes on the laptop; MIDI imports are unaffected."""
     from postprocess import clean_stem_notes
+    if preservation not in ('full', 'clean'):
+        raise ValueError('Note preservation must be full or clean')
 
     if not stems:
         notes = _predict(path, None)
         cleaned = []
         for part in ('bass', 'melody', 'harmony'):
             group = [n for n in notes if n.part == part]
-            cleaned.extend(clean_stem_notes(group, part))
+            cleaned.extend(clean_stem_notes(group, part,
+                                                   preservation=preservation))
         print(f'Cleaned direct transcription: {len(notes)} -> '
               f'{len(cleaned)} pitched events', flush=True)
         return cleaned
@@ -233,7 +237,7 @@ def transcribe_audio(path: Path, stems: bool = False,
                 raise RuntimeError(f'Demucs did not produce {wav}')
             print(f'Transcribing {name}...', flush=True)
             raw = _predict(wav, part)
-            kept = clean_stem_notes(raw, part)
+            kept = clean_stem_notes(raw, part, preservation=preservation)
             print(f'  {name}: {len(raw)} -> {len(kept)} notes after cleanup', flush=True)
             notes.extend(kept)
         drums = root / 'drums.wav'
