@@ -46,6 +46,35 @@ class ArrangerTests(unittest.TestCase):
             self.assertTrue(parsed)
             self.assertGreaterEqual(max(n.end for n in parsed), 1.98)
 
+    def test_tempo_marker_is_encoding_not_slower_playback(self):
+        """120 BPM SMF metadata must preserve seconds from transcription."""
+        from io import BytesIO
+        notes = [
+            Note(.305, 1.735, 60, 84, 'melody'),
+            Note(25.125, 26.25, 40, 97, 'bass'),
+            Note(158.9, 160.4, 64, 80, 'harmony')
+        ]
+        song = mido.MidiFile(file=BytesIO(make_midi(notes, 0, 160.4)))
+        self.assertEqual(song.ticks_per_beat, 480)
+        self.assertEqual(song.tracks[0][0].tempo, 500000)
+        elapsed = 0.0
+        tempo = 500000
+        note_edges = {}
+        for msg in mido.merge_tracks(song.tracks):
+            elapsed += mido.tick2second(msg.time, song.ticks_per_beat, tempo)
+            if msg.type == 'set_tempo':
+                tempo = msg.tempo
+            elif msg.type in ('note_on', 'note_off'):
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    note_edges.setdefault(msg.note, [None, None])[0] = elapsed
+                else:
+                    note_edges.setdefault(msg.note, [None, None])[1] = elapsed
+        for note in notes:
+            start, end = note_edges[note.pitch]
+            self.assertAlmostEqual(start, note.start, delta=.001)
+            self.assertAlmostEqual(end, note.end, delta=.001)
+        self.assertAlmostEqual(elapsed, 160.4, delta=.001)
+
     def test_chop_at_time_limit_keeps_sustained_notes(self):
         notes = [Note(0.0, 5.0, 36, 110, 'bass'), Note(0.0, 5.0, 60, 90, 'melody')]
         with tempfile.TemporaryDirectory() as td:

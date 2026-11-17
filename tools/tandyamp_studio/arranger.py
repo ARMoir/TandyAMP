@@ -149,6 +149,90 @@ def _psg_pitch(n: Note) -> int:
     return p
 
 
+
+def select_candidates(notes: Iterable[Note], spk4: bool | str = True,
+                      limit: int = 6) -> list[Note]:
+    """Retain a small *candidate* pool for the real-time Tandy voice allocator.
+
+    The physical limit is three PSG tones plus one *eligible* PIT2 bass.
+    Keeping up to six distinct transcribed note candidates in Full mode
+    lets the 16-bit engine select alternatives as pitches begin/end, rather
+    than irreversibly discarding counter-melody notes on the laptop.
+
+    It never fabricates notes, never increases DOS hardware polyphony, and
+    bounds active MIDI notes far below the player's 32-note state limit.
+    """
+    mode = ('bass' if spk4 is True else 'off' if spk4 is False else spk4)
+    if mode not in ('off', 'bass', 'adapt'):
+        raise ValueError('SPK4 mode must be off, bass, or adapt')
+    if not 4 <= limit <= 8:
+        raise ValueError('Candidate pool must contain 4 to 8 slots')
+
+    source = [n for n in notes if n.part != 'drums' and n.end > n.start]
+    drums = [n for n in notes if n.part == 'drums']
+    events = []
+    for i, n in enumerate(source):
+        events.extend(((n.start, 1, i), (n.end, 0, i)))
+    events.sort(key=lambda e: (e[0], e[1]))  # offs before ons
+    active: set[int] = set()
+    chosen: set[int] = set()
+    opened: dict[int, float] = {}
+    result: list[Note] = []
+    pos = 0
+
+    while pos < len(events):
+        at = events[pos][0]
+        while pos < len(events) and events[pos][0] == at:
+            _, on, ident = events[pos]
+            if on:
+                active.add(ident)
+            else:
+                active.discard(ident)
+            pos += 1
+
+        ranked = sorted(active, key=lambda i: (-_priority(source[i], i in chosen), i))
+        selected: set[int] = set()
+        reserve = None
+        if mode != 'off':
+            # Retain a plausible SPK4 bass independently of the treble
+            # ranking; the real DOS allocator decides whether PIT2 can play.
+            reserve = next((
+                i for i in ranked
+                if source[i].part == 'bass' and
+                BASS_MIN <= source[i].pitch <= BASS_MAX
+            ), None)
+            if reserve is not None:
+                selected.add(reserve)
+
+        pitches = set()
+        for i in ranked:
+            if len(selected) >= limit:
+                break
+            if i == reserve:
+                continue
+            # Avoid wasting candidate slots on duplicate PSG pitches.
+            pitch = _psg_pitch(source[i])
+            if pitch in pitches:
+                continue
+            if reserve is not None and source[i].pitch == source[reserve].pitch:
+                continue
+            selected.add(i)
+            pitches.add(pitch)
+
+        for i in chosen - selected:
+            if at - opened[i] >= .012:
+                result.append(replace(source[i], start=opened[i], end=at))
+            opened.pop(i, None)
+        for i in selected - chosen:
+            opened[i] = at
+        chosen = selected
+
+    for i in chosen:
+        if events and events[-1][0] - opened[i] >= .012:
+            result.append(replace(source[i], start=opened[i], end=events[-1][0]))
+    return sorted(result + drums, key=lambda n: (n.start, n.part, n.pitch))
+
+
 def select_voices(notes: Iterable[Note], spk4: bool | str = True) -> list[Note]:
     """Emit a bounded event arrangement: three distinct PSG pitches plus eligible PIT2 bass.
 
@@ -240,7 +324,10 @@ def reduce_drums(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
 def prepare(notes: Iterable[Note], preset: str = 'balanced',
             spk4: bool | str = True, preserve: bool = False) -> list[Note]:
     normalized = normalize(notes, preset, preserve=preserve)
-    arranged = select_voices(normalized, spk4)
+    # Full audio mode keeps candidate notes for the DOS voice allocator to
+    # choose from; Clean mode retains the original offline 3+1 pruning.
+    arranged = (select_candidates(normalized, spk4, limit=6)
+                if preserve else select_voices(normalized, spk4))
     return sorted([n for n in arranged if n.part != 'drums'] + reduce_drums(arranged, preset), key=lambda n: (n.start, n.end, n.pitch))
 
 
@@ -254,7 +341,8 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
     pitched = [n for n in notes if n.part != 'drums' and n.end > n.start]
     if not pitched:
         return {'duration': 0.0, 'silent': 0.0, 'one': 0.0,
-                'two': 0.0, 'three_plus': 0.0, 'bass_only': 0.0}
+                'two': 0.0, 'three_plus': 0.0, 'four_plus': 0.0,
+                'four_candidate': 0.0, 'bass_only': 0.0}
     events = []
     for idx, n in enumerate(pitched):
         events.extend(((n.start, 1, idx), (n.end, 0, idx)))
@@ -262,6 +350,8 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
     active: set[int] = set()
     buckets = [0.0, 0.0, 0.0, 0.0]
     bass_only = 0.0
+    four_plus = 0.0
+    four_candidate = 0.0
     prev = 0.0
     pos = 0
     while pos < len(events):
@@ -269,8 +359,23 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
         span = max(0.0, now-prev)
         pitches = {pitched[i].pitch for i in active}
         buckets[min(3,len(pitches))] += span
+        if len(pitches) >= 4:
+            four_plus += span
         if active and all(pitched[i].part == 'bass' for i in active):
             bass_only += span
+        for i in active:
+            bass = pitched[i]
+            if bass.part != 'bass' or not BASS_MIN <= bass.pitch <= BASS_MAX:
+                continue
+            other = {
+                _psg_pitch(pitched[j]) for j in active if j != i
+                and pitched[j].pitch != bass.pitch
+            }
+            if len(other) >= 3:
+                # Eligibility here refers only to available pitches:
+                # real PIT2 additionally gates quiet notes by attenuation.
+                four_candidate += span
+                break
         while pos < len(events) and events[pos][0] == now:
             _, on, idx = events[pos]
             if on:
@@ -282,6 +387,7 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
     return {
         'duration': prev, 'silent': buckets[0], 'one': buckets[1],
         'two': buckets[2], 'three_plus': buckets[3],
+        'four_plus': four_plus, 'four_candidate': four_candidate,
         'bass_only': bass_only
     }
 

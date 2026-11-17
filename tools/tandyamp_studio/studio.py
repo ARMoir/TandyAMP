@@ -32,14 +32,20 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     print(f'Extracted {len(notes)} note events', flush=True)
     arranged = prepare(notes, preset, spk4,
                        preserve=(audio_input and note_preservation == 'full'))
+    if audio_input and note_preservation == 'full':
+        print('Full mode preserves up to six MIDI candidates at once; '
+              'TandyAMP still plays at most three PSG tones plus '
+              'an eligible SPK4 bass.', flush=True)
     print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
     for title, sample in (('Input after transcription', notes),
                           ('Hardware-limited output', arranged)):
         cov = voice_coverage(sample)
         print('  {}: silent {:.1f}s, one tone {:.1f}s, two {:.1f}s, '
-              'three+ {:.1f}s, bass only {:.1f}s'.format(
+              'three+ {:.1f}s, four+ {:.1f}s, bass only {:.1f}s; '
+              'potential 4-voice SPK4 {:.1f}s'.format(
                   title, cov['silent'], cov['one'], cov['two'],
-                  cov['three_plus'], cov['bass_only']), flush=True)
+                  cov['three_plus'], cov['four_plus'], cov['bass_only'],
+                  cov['four_candidate']), flush=True)
     # Diagnostic counts help identify the "all kicks" / "all bass velocity
     # 107" regressions without requiring music uploads for every conversion.
     from collections import Counter
