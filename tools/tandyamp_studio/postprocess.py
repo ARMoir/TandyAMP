@@ -97,10 +97,13 @@ def clean_stem_notes(notes: list[Note], part: str,
     for i, n in enumerate(valid):
         if .085 <= n.end - n.start < .15 and 0 < i < len(valid)-1:
             before, after = valid[i-1], valid[i+1]
-            near = (n.start - before.end <= .10 and
-                    after.start - n.end <= .10)
+            # This heuristic describes a *sequence*, not three overlapping
+            # chord tones. Negative gaps used to count as "near" and could
+            # delete a legitimate quiet upper chord voice in Full mode.
+            near = (-.010 <= n.start - before.end <= .10 and
+                    -.010 <= after.start - n.end <= .10)
             if (near and before.pitch == after.pitch and
-                    abs(before.pitch-n.pitch) >= 11 and
+                    abs(before.pitch-n.pitch) in (12, 24) and
                     n.velocity < min(before.velocity, after.velocity)):
                 continue
         filtered.append(n)

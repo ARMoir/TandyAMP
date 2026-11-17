@@ -2,6 +2,16 @@
 
 ## Sound-first transcription update
 
+**Continuity follow-up:** cleanup now distinguishes overlapping chord tones
+from a short sequential octave glitch, and only treats 12/24-semitone jumps
+as octave glitches. Guitar-bleed removal trims duplicated overlap instead of
+deleting an entire longer harmony note, retaining meaningful sustained tails.
+These fixes apply when retranscribing audio; they cannot recover notes from
+an already-pruned MIDI. Keep the settings that worked for your previous run.
+101 local regression tests cover these changes, including real chord overlap,
+duplicate suppression and sustained tails. Improved listening quality for this
+follow-up has not yet been confirmed on hardware.
+
 The aim is a recognizable, enjoyable Tandy arrangement: preserve the riff,
 melody, bass and rhythm; add fullness only when it helps the music.
 

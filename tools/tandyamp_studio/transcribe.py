@@ -218,25 +218,39 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
 
 
 def remove_guitar_bleed(guitar: list[Note], other: list[Note]) -> list[Note]:
-    """Don't double a guitar note when it leaks into Demucs' other stem."""
+    """Remove duplicated overlap, preserving independently sustained tails.
+
+    A short guitar attack must not erase a much longer other-stem note.
+    Only matched intervals are removed; no durations or pitches are invented.
+    """
     if not guitar:
         return other
     from collections import defaultdict
+    from dataclasses import replace
     by_pitch: dict[int, list[Note]] = defaultdict(list)
     for n in guitar:
         by_pitch[n.pitch].append(n)
     kept = []
     for n in other:
-        matched = False
+        fragments = [(n.start, n.end)]
         for g in by_pitch.get(n.pitch, []):
             overlap = max(0.0, min(n.end,g.end) - max(n.start,g.start))
             if (overlap >= min(.12, (n.end-n.start)*.55)
                     and abs(n.start-g.start) <= .14):
-                matched = True
-                break
-        if not matched:
-            kept.append(n)
-    return kept
+                remaining = []
+                for start, end in fragments:
+                    if g.end <= start or g.start >= end:
+                        remaining.append((start, end))
+                    else:
+                        if g.start > start:
+                            remaining.append((start, g.start))
+                        if g.end < end:
+                            remaining.append((g.end, end))
+                fragments = remaining
+        # Match Full-mode harmony's minimum; don't leave tiny edge clicks.
+        kept.extend(replace(n, start=start, end=end)
+                    for start, end in fragments if end-start >= .060)
+    return sorted(kept, key=lambda n: (n.start, n.end, n.pitch))
 
 
 def transcribe_audio(path: Path, stems: bool = False,
@@ -331,8 +345,8 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
         before = len(groups['other'])
         groups['other'] = remove_guitar_bleed(groups['guitar'],
                                              groups['other'])
-        print(f'  other: removed {before-len(groups["other"])} '
-              'overlapping guitar-bleed notes', flush=True)
+        print(f'  other: {before} -> {len(groups["other"])} events after '
+              'removing guitar-bleed overlap (sustained tails retained)', flush=True)
 
     notes: list[Note] = []
     for name, _part in stems_to_transcribe:
