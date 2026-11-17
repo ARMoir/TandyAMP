@@ -35,7 +35,7 @@ def write_json(path: Path, value) -> None:
 
 
 def note_metrics(notes: list[Note], duration: float | None = None,
-                 spk4: str = 'adapt') -> dict:
+                 spk4: str = 'adapt', voice_selection: str = 'legacy') -> dict:
     """Count candidates separately from approximate *audible* voice occupancy.
 
     Include source leading/trailing silence. Role coverage is interval union,
@@ -54,14 +54,23 @@ def note_metrics(notes: list[Note], duration: float | None = None,
     active = set()
     audible = [0.0] * 5
     roles = Counter()
+    audible_roles = Counter()
+    previous_tones = []
+    steals = 0
     longest_gap = gap = 0.0
     previous = 0.0
     for at, on, index in events:
         span = at - previous
         if span > 0:
             current = [notes[i] for i in active]
-            tones, bass, _drum = assign_preview_voices(current, spk4)
+            tones, bass, _drum = assign_preview_voices(
+                current, spk4, voice_selection=voice_selection,
+                previous_tones=previous_tones, now=previous)
+            steals += sum(n in current and n not in tones for n in previous_tones)
+            previous_tones = tones
             audible[len(tones) + int(bass is not None)] += span
+            for part in {n.part for n in tones + ([bass] if bass is not None else [])}:
+                audible_roles[part] += span
             present = {n.part for n in current if n.part != 'drums'}
             for part in present:
                 roles[part] += span
@@ -80,13 +89,16 @@ def note_metrics(notes: list[Note], duration: float | None = None,
             'candidate_seconds': coverage,
             'preview_voice_seconds': {str(i): v for i, v in enumerate(audible)},
             'role_active_seconds': dict(roles), 'longest_pitched_gap': longest_gap,
+            'preview_role_seconds': dict(audible_roles),
+            'preview_voice_steals': steals, 'voice_selection': voice_selection,
             'accuracy': 'Not measured without a reference transcription/listening review',
             'preview_scope': 'Approximate allocator, not cycle-accurate DOS playback'}
 
 
 def save_stage(directory: Path, name: str, notes: list[Note],
-               duration: float | None = None, spk4: str = 'adapt') -> dict:
-    report = note_metrics(notes, duration, spk4)
+               duration: float | None = None, spk4: str = 'adapt',
+               voice_selection: str = 'legacy') -> dict:
+    report = note_metrics(notes, duration, spk4, voice_selection)
     write_json(Path(directory) / (name + '.json'),
                {'metrics': report, 'notes': [asdict(n) for n in notes]})
     return report

@@ -13,6 +13,16 @@ from transcribe import _predict
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_metrics_follow_smart_mode_and_measure_audible_roles(self):
+        notes = [Note(0, 1, p, 35, 'melody') for p in (84, 86, 88)]
+        notes.append(Note(0, 1, 64, 95, 'guitar'))
+        legacy = note_metrics(notes, spk4='off')
+        smart = note_metrics(notes, spk4='off', voice_selection='smart')
+        self.assertNotIn('guitar', legacy['preview_role_seconds'])
+        self.assertEqual(smart['preview_role_seconds']['guitar'], 1)
+        self.assertEqual(smart['voice_selection'], 'smart')
+        self.assertEqual(smart['preview_voice_steals'], 0)
+
     def test_source_silence_and_overlapping_role_union(self):
         notes = [Note(1, 3, 60, 90, 'guitar'), Note(2, 4, 67, 90, 'guitar')]
         got = note_metrics(notes, duration=6)

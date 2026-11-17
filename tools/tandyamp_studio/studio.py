@@ -84,8 +84,8 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         raise FileExistsError(f'Refusing to overwrite existing SOURCE.MP3 in {target}')
     files = export(arranged, target, voice_selection=voice_selection)
     from diagnostics import save_stage
-    save_stage(target, 'INPUT', notes, spk4=spk4)
-    save_stage(target, 'METRICS', arranged, spk4=spk4)
+    save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
+    save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
     if audio_input and accompaniment != 'off':
         report = ('TandyAMP Studio accompaniment provenance\n'
                   'Separation: {}\nAccompaniment: {}\n'

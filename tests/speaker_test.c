@@ -241,6 +241,24 @@ int main(void)
                 have_new=1;
         assert(have_new);
     }
+    /* Soft channel diversity leaves room for vocal and bass among a
+       strong guitar chord, without disabling polyphonic guitar solos. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_OFF);
+    ta.cc_program[0]=80;ta.cc_program[1]=33;ta.cc_program[4]=30;
+    handle_cc(0,119,77);
+    on(4,60,95);on(4,64,95);on(4,67,95);
+    on(0,72,95);on(1,36,120);flush_mix();
+    {
+        int guitar=0,vocal=0,bass=0;
+        for(i=0;i<TA_VOICES;i++){
+            if(ta.voices[i].channel==4)guitar++;
+            if(ta.voices[i].channel==0)vocal++;
+            if(ta.voices[i].channel==1)bass++;
+        }
+        assert(guitar==1 && vocal==1 && bass==1);
+    }
+    off(0,72);off(1,36);flush_mix();
+    for(i=0;i<TA_VOICES;i++)assert(ta.voices[i].channel==4);
     handle_cc(0,119,0);
     assert(!smart_voice_mode);
     handle_cc(0,119,77);

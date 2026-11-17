@@ -16,6 +16,37 @@ from preview import assign_preview_voices
 
 
 class SmartSelectionTests(unittest.TestCase):
+    def test_guitar_chord_leaves_space_for_strong_vocal(self):
+        guitar = [Note(0, 1, p, 95, 'guitar') for p in (60, 64, 67)]
+        vocal = Note(0, 1, 72, 95, 'melody')
+        tones, _, _ = assign_preview_voices(
+            guitar + [vocal], 'off', voice_selection='smart', now=.2)
+        self.assertIn(vocal, tones)
+        self.assertTrue(any(n.part == 'guitar' for n in tones))
+        alone, _, _ = assign_preview_voices(guitar, 'off', voice_selection='smart')
+        self.assertEqual(len(alone), 3)
+
+    def test_bass_foundation_survives_when_speaker_is_off(self):
+        notes = [Note(0, 1, p, 95, 'guitar') for p in (60, 64, 67)]
+        vocal = Note(0, 1, 72, 95, 'melody')
+        bass = Note(0, 1, 36, 120, 'bass')
+        tones, speaker, _ = assign_preview_voices(
+            notes + [vocal, bass], 'off', voice_selection='smart', now=.2)
+        self.assertIsNone(speaker)
+        self.assertIn(bass, tones)
+        self.assertEqual({n.part for n in tones}, {'bass', 'guitar', 'melody'})
+
+    def test_strong_new_attack_can_replace_a_held_support_note(self):
+        guitar = Note(0, 2, 64, 95, 'guitar')
+        vocal = Note(0, 2, 72, 95, 'melody')
+        old = Note(0, 2, 67, 60, 'harmony')
+        new = Note(.3, 1, 69, 100, 'harmony')
+        tones, _, _ = assign_preview_voices(
+            [guitar, vocal, old, new], 'off', voice_selection='smart',
+            previous_tones=[guitar, vocal, old], now=.3)
+        self.assertIn(new, tones)
+        self.assertNotIn(old, tones)
+
     def test_smart_protects_strong_guitar_from_weak_vocal_harmonic(self):
         notes = [
             Note(0, 1, 40, 95, 'bass'),

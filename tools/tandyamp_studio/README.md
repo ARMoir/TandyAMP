@@ -1,5 +1,38 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Smart balance and continuity refinement
+
+Smart selection now gives a stronger preference to finishing an already
+sounding phrase, balanced by an equally strong bonus for a clear new attack.
+A modest same-channel penalty keeps a guitar chord from automatically taking
+every PSG voice while a vocal is present; spare voices can still play guitar
+chords. Credible Studio bass receives a small PSG preference when PIT2 cannot
+take it. These are musical-role heuristics, not a guarantee of transcription
+accuracy. **Legacy selection is unchanged.**
+
+The Python preview and DOS player implement these preferences together.
+Update **TANDYAMP.EXE** for the real hardware change. An existing smart-marked
+MIDI already activates the new allocator; you do not need to rerun separation.
+For a fresh conversion, keep the settings you liked and select **Voices: smart**.
+
+On the supplied fuller Paranoid INPUT.json, an end-to-end arrangement and
+full-length preview comparison against commit `597fda6` measured:
+
+| Approximate preview measurement | Before | After |
+| --- | ---: | ---: |
+| Premature PSG voice interruptions | 173 | 153 |
+| Guitar audible seconds | 102.66 | 101.89 |
+| Vocal audible seconds | 63.05 | 63.09 |
+| Bass audible seconds | 122.58 | 124.11 |
+| Harmony audible seconds | 31.00 | 34.18 |
+
+This is one song, using existing transcription notes and a non-cycle-accurate
+preview. It is not a listening score or a claim of hardware-verified quality.
+No invented notes or tempo changes are involved. METRICS.json now measures
+the selected voice mode (previously it always measured legacy), and includes
+audible role seconds and premature voice interruptions. Hardware listening
+is still the deciding test.
+
 ## Smart voice selection (experimental, opt-in)
 
 The sound of guitar-led Tandy arrangements depends not only on which notes

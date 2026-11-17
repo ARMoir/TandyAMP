@@ -315,7 +315,7 @@ static ta_s32 note_priority(const TAActiveNote *n)
             score+=80L;
         /* A conspicuous new note can win against a sustained alternative. */
         if(n->age_q8<256U && n->gain>=84U)
-            score+=260L;
+            score+=700L;
         /* Weak squeals should not displace a strong midrange riff. */
         if(n->note>80 && n->gain<68U)
             score-=320L+((ta_s32)n->note-80L)*7L;
@@ -526,11 +526,17 @@ static void rebuild_voices(int allow_speaker)
             }
             if(!smart_voice_mode && k==1 && selected[0]>=0 &&
                ta.notes[selected[0]].note>=60 && n->note<60)score+=5000L;
+            /* Keep a credible Studio bass audible on PSG if PIT2 cannot
+               take it. This is a soft preference, not a reserved channel. */
+            if(smart_voice_mode && ta.speaker_voice.source<0 &&
+               n->channel==1U && ta.cc_program[1]==33U && n->gain>=48U &&
+               n->note>=24 && n->note<=52)score+=200L;
             for(j=0;j<k;j++)if(selected[j]>=0 &&
-                ta.notes[selected[j]].channel==n->channel)score-=100L;
+                ta.notes[selected[j]].channel==n->channel)
+                    score-=(smart_voice_mode?400L:100L);
             for(j=0;j<TA_VOICES;j++)
                 if(ta.voices[j].source==(signed short)i)
-                    score+=(smart_voice_mode?340L:110L); /* preserve phrase; strong attacks may still win */
+                    score+=(smart_voice_mode?700L:110L); /* preserve phrase; strong attacks may still win */
             if(score>best || (score==best && found>=0 &&
                 n->stamp>ta.notes[found].stamp)){
                 best=score;

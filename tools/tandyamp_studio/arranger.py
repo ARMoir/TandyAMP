@@ -172,9 +172,9 @@ def _smart_candidate_priority(n: Note, previous: bool, now: float) -> int:
         role = {'bass': 480, 'harmony': 240, 'accomp': 80}.get(n.part, 0)
     score = role + velocity * 6
     if previous:
-        score += 340
+        score += 700
     if 0 <= now-n.start <= .08 and velocity >= 84:
-        score += 260
+        score += 700
     if n.pitch > 80 and velocity < 68:
         score -= 320 + (n.pitch-80)*7
     return score

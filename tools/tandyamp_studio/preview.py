@@ -61,16 +61,22 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass',
                 break
     tones = []
     played = set()
-    for n in pitched:
-        if n is bass:
-            continue
+    remaining = [n for n in pitched if n is not bass and
+                 (voice_selection == 'legacy' or bass is None or n.pitch != bass.pitch)]
+    while remaining and len(tones) < 3:
+        if voice_selection == 'smart':
+            def score(n):
+                same_role = sum(k.part == n.part for k in tones)
+                foundation = (200 if bass is None and n.part == 'bass' and
+                              BASS_MIN <= n.pitch <= BASS_MAX and n.velocity >= 48 else 0)
+                return (_smart_candidate_priority(n, n in previous, now) +
+                        foundation - 400*same_role)
+            remaining.sort(key=lambda n: (-score(n), n.start, n.pitch))
+        n = remaining.pop(0)
         pitch = _freq(n.pitch)
-        if pitch in played:
-            continue
-        played.add(pitch)
-        tones.append(n)
-        if len(tones) == 3:
-            break
+        if pitch not in played:
+            played.add(pitch)
+            tones.append(n)
     drum = max(drums, key=lambda n: (n.velocity, -n.start), default=None)
     return tones, bass, drum
 
