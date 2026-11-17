@@ -11,6 +11,8 @@ static void rebuild_voices(int allow_speaker);
 static void silence_noise(void);
 static const char *last_error="OK";
 static ta_u8 synth_dirty=0, controllers_dirty=0;
+/* Opt-in TandyAMP Studio smart voices: MIDI channel 1 CC119 value 77. */
+static ta_u8 smart_voice_mode=0;
 static ta_u16 output_period[TA_VOICES];
 static ta_u16 speaker_output=0;
 static ta_u16 release_clock=0;
@@ -118,6 +120,7 @@ static void clear_synth(void)
 {
     unsigned c,v;
     ta.sequence=1;
+    smart_voice_mode=0; /* never carry a song's voice-selection mode forward */
     synth_dirty=controllers_dirty=0;
     ta.mix_attenuation=0;
     release_clock=0;
@@ -294,6 +297,31 @@ static ta_s32 note_priority(const TAActiveNote *n)
 {
     ta_s32 score;
     if(n->note<0)return -100000L;
+    if(smart_voice_mode){
+        /* Studio channel roles: 0 vocals, 1 bass, 2 other, 3 generated
+           support, 4 lead guitar. Real PSG: 3 tones; PIT2 bass separately.
+           Strong guitar phrases beat incidental high vocal harmonics.
+           Weak guitar artifacts do not overpower genuine melody attacks. */
+        score=(n->held?170L:0L)+(ta_s32)n->gain*6L;
+        if(n->channel==4 && ta.cc_program[4]==30U)
+            score+=(n->gain>=65U?1220L:n->gain>=45U?870L:420L);
+        else if(n->channel==0 && ta.cc_program[0]==80U)
+            score+=(n->gain>=65U?930L:550L);
+        else if(n->channel==1 && ta.cc_program[1]==33U)
+            score+=480L;
+        else if(n->channel==2)
+            score+=240L;
+        else if(n->channel==3 && ta.cc_program[3]==48U)
+            score+=80L;
+        /* A conspicuous new note can win against a sustained alternative. */
+        if(n->age_q8<256U && n->gain>=84U)
+            score+=260L;
+        /* Weak squeals should not displace a strong midrange riff. */
+        if(n->note>80 && n->gain<68U)
+            score-=320L+((ta_s32)n->note-80L)*7L;
+        score-=(ta_s32)n->env_step*14L;
+        return score;
+    }
     score=(n->held?1000L:200L)+(ta_s32)n->gain*3L;
     if(n->note>=60){
         score+=180L; /* No abrupt priority cutoff at C#7 (MIDI 97). */
@@ -490,18 +518,19 @@ static void rebuild_voices(int allow_speaker)
             score=note_priority(n);
             /* Reserve the first voice for the tune, next for available bass.
                This keeps long chords from replacing the audible melody. */
-            if(k==0 && n->note>=60){
+            if(!smart_voice_mode && k==0 && n->note>=60){
                 /* Keep a treble melody across C7 instead of a 5000-point
                    cliff at note 97. Taper only very high notes smoothly. */
                 score+=5000L-(n->note>96?
                     ((ta_s32)n->note-96L)*60L:0L);
             }
-            if(k==1 && selected[0]>=0 &&
+            if(!smart_voice_mode && k==1 && selected[0]>=0 &&
                ta.notes[selected[0]].note>=60 && n->note<60)score+=5000L;
             for(j=0;j<k;j++)if(selected[j]>=0 &&
                 ta.notes[selected[j]].channel==n->channel)score-=100L;
             for(j=0;j<TA_VOICES;j++)
-                if(ta.voices[j].source==(signed short)i)score+=110L; /* voice-leading hysteresis */
+                if(ta.voices[j].source==(signed short)i)
+                    score+=(smart_voice_mode?340L:110L); /* preserve phrase; strong attacks may still win */
             if(score>best || (score==best && found>=0 &&
                 n->stamp>ta.notes[found].stamp)){
                 best=score;
@@ -804,6 +833,9 @@ static void on(ta_u8 channel,ta_u8 note,ta_u8 vel)
 static void handle_cc(ta_u8 c,ta_u8 cc,ta_u8 val)
 {
     unsigned i;
+    /* Reserved controller 119 value 77 is a TandyAMP Studio opt-in.
+       Legacy MIDI and normal GM controller messages are unchanged. */
+    if(c==0U && cc==119U){smart_voice_mode=(ta_u8)(val==77U);synth_dirty=1;}
     if(cc==1){ta.cc_modulation[c]=val;controllers_dirty=1;}
     if(cc==7){ta.cc_volume[c]=val;render_channel(c);}
     if(cc==11){ta.cc_expression[c]=val;render_channel(c);}

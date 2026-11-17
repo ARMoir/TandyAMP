@@ -190,6 +190,64 @@ int main(void)
     assert(ta.speaker_divider==0 && !ta.speaker_enabled);
     assert(ta.speaker_octave_up==0);
 
+    /* Smart selection is opt-in and never leaks from one song to another.
+       Guitar (channel 4/program 30) should survive weak high harmonics.
+       Other voices join only when room exists, and a held support voice
+       should not flicker when a slightly louder note arrives. */
+    clear_synth();ta.playing=1;
+    ta_set_speaker(TA_SPK_OFF);
+    assert(!smart_voice_mode);
+    ta.cc_program[0]=80;
+    ta.cc_program[2]=48;
+    ta.cc_program[3]=48;
+    ta.cc_program[4]=30;
+    on(4,64,95);on(0,72,95);on(0,96,35);
+    on(2,60,88);on(3,67,60);
+    handle_cc(0,119,77);flush_mix();
+    assert(smart_voice_mode);
+    {
+        int have_guitar=0,have_vocal=0,have_harmony=0;
+        for(i=0;i<TA_VOICES;i++){
+            if(ta.voices[i].note==64 && ta.voices[i].channel==4)have_guitar=1;
+            if(ta.voices[i].note==72 && ta.voices[i].channel==0)have_vocal=1;
+            if(ta.voices[i].note==60 && ta.voices[i].channel==2)have_harmony=1;
+            assert(ta.voices[i].note!=96); /* weak high harmonic muted */
+        }
+        assert(have_guitar && have_vocal && have_harmony);
+    }
+    off(2,60);flush_mix(); /* accompanying chord fills vacated slot */
+    {
+        int have_support=0;
+        for(i=0;i<TA_VOICES;i++)
+            if(ta.voices[i].channel==3 && ta.voices[i].note==67)
+                have_support=1;
+        assert(have_support);
+    }
+    on(3,69,63);flush_mix(); /* weak competing support cannot steal */
+    {
+        int have_held=0;
+        for(i=0;i<TA_VOICES;i++){
+            if(ta.voices[i].note==67 && ta.voices[i].channel==3)
+                have_held=1;
+            assert(ta.voices[i].note!=69);
+        }
+        assert(have_held);
+    }
+    off(3,67);flush_mix();
+    {
+        int have_new=0;
+        for(i=0;i<TA_VOICES;i++)
+            if(ta.voices[i].note==69 && ta.voices[i].channel==3)
+                have_new=1;
+        assert(have_new);
+    }
+    handle_cc(0,119,0);
+    assert(!smart_voice_mode);
+    handle_cc(0,119,77);
+    clear_synth();
+    assert(!smart_voice_mode);
+    ta_set_speaker(TA_SPK_BASS);
+
     puts("PASS: MIDI 24..52 bass-only PIT2 (true octave), bends, "
          "three-way adaptive octave lock, note collisions, live toggle and mute");
     return 0;

@@ -12,7 +12,7 @@ import random
 import struct
 import wave
 
-from arranger import BASS_MIN, BASS_MAX, Note
+from arranger import BASS_MIN, BASS_MAX, Note, _smart_candidate_priority
 
 PSG_CLOCK = 3579545.0 / 32.0
 PIT_CLOCK = 1193182.0
@@ -29,15 +29,25 @@ def _freq(note: int, speaker: bool = False) -> float:
     return clock / div
 
 
-def assign_preview_voices(active: list[Note], spk4: str = 'bass') -> tuple[list[Note], Note | None, Note | None]:
+def assign_preview_voices(active: list[Note], spk4: str = 'bass',
+                          voice_selection: str = 'legacy',
+                          previous_tones: list[Note] | None = None,
+                          now: float = 0.0) -> tuple[list[Note], Note | None, Note | None]:
     """Match the Tandy constraints without pretending preview == DOS engine."""
     if spk4 not in ('off', 'bass', 'adapt'):
         raise ValueError('Unknown SPK4 mode')
+    if voice_selection not in ('legacy', 'smart'):
+        raise ValueError('Voice selection must be legacy or smart')
     pitched = [n for n in active if n.part != 'drums']
     drums = [n for n in active if n.part == 'drums']
     order = {'melody': 0, 'guitar': 1, 'harmony': 2,
              'bass': 3, 'accomp': 4}
-    pitched.sort(key=lambda n: (order.get(n.part, 3), -n.velocity, n.start))
+    if voice_selection == 'smart':
+        previous = set(previous_tones or [])
+        pitched.sort(key=lambda n: (-_smart_candidate_priority(
+            n, n in previous, now), n.start, n.pitch))
+    else:
+        pitched.sort(key=lambda n: (order.get(n.part, 3), -n.velocity, n.start))
     bass = None
     if spk4 != 'off':
         required = 2 if spk4 == 'adapt' else 3
@@ -66,7 +76,8 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass') -> tuple[list[
 
 
 def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
-                spk4: str = 'bass') -> Path:
+                spk4: str = 'bass',
+                voice_selection: str = 'legacy') -> Path:
     if not notes:
         raise ValueError('Cannot preview an empty arrangement')
     seconds = min(seconds, max(n.end for n in notes))
@@ -107,7 +118,9 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                 updated = True
             if updated:
                 tones, speaker, drum = assign_preview_voices(
-                    [notes[i] for i in sorted(active)], spk4)
+                    [notes[i] for i in sorted(active)], spk4,
+                    voice_selection=voice_selection,
+                    previous_tones=tones, now=tick / RATE)
             t = tick / RATE
             mix = 0.0
             for n in tones:

@@ -155,8 +155,34 @@ def _psg_pitch(n: Note) -> int:
 
 
 
+
+def _smart_candidate_priority(n: Note, previous: bool, now: float) -> int:
+    """Score the musical role, not treble pitch alone, on the laptop.
+
+    The DOS player uses an analogous (not identical) lightweight scoring
+    rule when CC119=77 appears in the exported MIDI. Always preserve strong
+    new attacks but favor completing an already playing guitar phrase.
+    """
+    velocity = n.velocity
+    if n.part == 'guitar':
+        role = 1220 if velocity >= 65 else 870 if velocity >= 45 else 420
+    elif n.part == 'melody':
+        role = 930 if velocity >= 65 else 550
+    else:
+        role = {'bass': 480, 'harmony': 240, 'accomp': 80}.get(n.part, 0)
+    score = role + velocity * 6
+    if previous:
+        score += 340
+    if 0 <= now-n.start <= .08 and velocity >= 84:
+        score += 260
+    if n.pitch > 80 and velocity < 68:
+        score -= 320 + (n.pitch-80)*7
+    return score
+
+
 def select_candidates(notes: Iterable[Note], spk4: bool | str = True,
-                      limit: int = 6) -> list[Note]:
+                      limit: int = 6,
+                      voice_selection: str = 'legacy') -> list[Note]:
     """Retain a small *candidate* pool for the real-time Tandy voice allocator.
 
     The physical limit is three PSG tones plus one *eligible* PIT2 bass.
@@ -172,6 +198,8 @@ def select_candidates(notes: Iterable[Note], spk4: bool | str = True,
         raise ValueError('SPK4 mode must be off, bass, or adapt')
     if not 4 <= limit <= 8:
         raise ValueError('Candidate pool must contain 4 to 8 slots')
+    if voice_selection not in ('legacy', 'smart'):
+        raise ValueError('Voice selection must be legacy or smart')
 
     source = [n for n in notes if n.part != 'drums' and n.end > n.start]
     drums = [n for n in notes if n.part == 'drums']
@@ -195,7 +223,11 @@ def select_candidates(notes: Iterable[Note], spk4: bool | str = True,
                 active.discard(ident)
             pos += 1
 
-        ranked = sorted(active, key=lambda i: (-_priority(source[i], i in chosen), i))
+        ranked = sorted(
+            active, key=lambda i: (-(
+                _smart_candidate_priority(source[i], i in chosen, at)
+                if voice_selection == 'smart' else
+                _priority(source[i], i in chosen)), i))
         selected: set[int] = set()
         reserve = None
         if mode != 'off':
@@ -327,11 +359,15 @@ def reduce_drums(notes: Iterable[Note], preset: str = 'balanced') -> list[Note]:
 
 
 def prepare(notes: Iterable[Note], preset: str = 'balanced',
-            spk4: bool | str = True, preserve: bool = False) -> list[Note]:
+            spk4: bool | str = True, preserve: bool = False,
+            voice_selection: str = 'legacy') -> list[Note]:
+    if voice_selection not in ('legacy', 'smart'):
+        raise ValueError('Voice selection must be legacy or smart')
     normalized = normalize(notes, preset, preserve=preserve)
     # Full audio mode keeps candidate notes for the DOS voice allocator to
     # choose from; Clean mode retains the original offline 3+1 pruning.
-    arranged = (select_candidates(normalized, spk4, limit=6)
+    arranged = (select_candidates(normalized, spk4, limit=6,
+                                  voice_selection=voice_selection)
                 if preserve else select_voices(normalized, spk4))
     return sorted([n for n in arranged if n.part != 'drums'] + reduce_drums(arranged, preset), key=lambda n: (n.start, n.end, n.pitch))
 
@@ -397,13 +433,20 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
     }
 
 
-def make_midi(notes: Iterable[Note], offset: float, until: float) -> bytes:
+def make_midi(notes: Iterable[Note], offset: float, until: float,
+              voice_selection: str = 'legacy') -> bytes:
     """Render one fixed-tempo type-0 MIDI: small, simple parser budget for DOS."""
+    if voice_selection not in ('legacy', 'smart'):
+        raise ValueError('Voice selection must be legacy or smart')
     events = []
     programs = {'melody': 80, 'bass': 33, 'harmony': 48,
                 'accomp': 48, 'guitar': 30}
     for part, prog in programs.items():
         events.append((0, 0, mido.Message('program_change', channel=PART_CHANNEL[part], program=prog, time=0)))
+    if voice_selection == 'smart':
+        # Opt-in for updated TANDYAMP.EXE; older DOS builds ignore CC119.
+        events.append((0, 0, mido.Message('control_change', channel=0,
+                                          control=119, value=77, time=0)))
     for n in notes:
         if n.start >= until or n.end <= offset:
             continue
@@ -431,7 +474,8 @@ def make_midi(notes: Iterable[Note], offset: float, until: float) -> bytes:
 
 
 def export(notes: Iterable[Note], destination: Path, max_bytes: int = 42000,
-           max_seconds: float = 180.0) -> list[Path]:
+           max_seconds: float = 180.0,
+           voice_selection: str = 'legacy') -> list[Path]:
     """Split automatically at note boundaries and enforce DOS 8.3 filenames."""
     if max_bytes < 256 or max_bytes >= MAX_FILE:
         raise ValueError('max_bytes must be 256..45055')
@@ -450,14 +494,16 @@ def export(notes: Iterable[Note], destination: Path, max_bytes: int = 42000,
     start = 0.0
     while start < length - 0.0001:
         end = min(length, start + max_seconds)
-        data = make_midi(notes, start, end)
+        data = make_midi(notes, start, end,
+                         voice_selection=voice_selection)
         while len(data) > max_bytes:
             # Binary search end for the longest section that fits. Never
             # create a broken or over-limit MIDI and silently discard notes.
             lo, hi = start, end
             for _ in range(26):
                 midpoint = (lo + hi) / 2
-                trial = make_midi(notes, start, midpoint)
+                trial = make_midi(notes, start, midpoint,
+                                  voice_selection=voice_selection)
                 if len(trial) <= max_bytes:
                     lo = midpoint
                 else:
@@ -465,7 +511,8 @@ def export(notes: Iterable[Note], destination: Path, max_bytes: int = 42000,
             end = lo
             if end - start < 0.25:
                 raise ValueError('MIDI event density exceeds selected size limit')
-            data = make_midi(notes, start, end)
+            data = make_midi(notes, start, end,
+                             voice_selection=voice_selection)
         chunks.append(data)
         if len(chunks) > 64:
             raise ValueError('More than 64 chunks required; shorten input or raise max_bytes')

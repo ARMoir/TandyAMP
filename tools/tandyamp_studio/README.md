@@ -1,5 +1,70 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Smart voice selection (experimental, opt-in)
+
+The sound of guitar-led Tandy arrangements depends not only on which notes
+were transcribed but **which ones the three PSG tones play at each instant**.
+The previous DOS allocator favors high melody notes aggressively, sometimes
+allowing weak vocal harmonics to displace a strong guitar phrase.
+
+Studio now offers **Voices: legacy / smart** and CLI
+`--voice-selection legacy|smart`. Default is **legacy** so all prior
+conversions and unrelated MIDI files retain their behavior. Smart is an
+explicit A/B experiment:
+
+- **Riff protection:** a recognizable, sufficiently strong guitar note
+  (dedicated channel 5 / program 31 in human 1-based terms) gets a high
+  priority; a weak guitar artifact does not automatically beat vocals
+- **Phrase continuity:** an already sounding PSG tone receives extra
+  selection hysteresis, reducing disruptive voice stealing; an especially
+  strong new attack can still replace it
+- **Weak high tones:** quiet notes above MIDI 80 have a reduced chance of
+  displacing a stronger midrange riff or melody
+- **Harmony in the gaps:** transcribed harmony and explicitly inferred
+  accompaniment can occupy free PSG channels, but do not outrank a strong
+  lead phrase
+- **Four real pitched voices:** the usual SPK4 ADAPT/BASS scheduling
+  remains unchanged. Up to three PSG tones plus one eligible low PIT2
+  bass play at a time. Noise drums remain on their own channel.
+
+Smart mode sets an **opt-in TandyAMP MIDI marker:** channel 1
+(zero-based channel 0), controller 119, value 77, at tick zero. This is a
+valid type-0 MIDI controller event. The updated DOS `TANDYAMP.EXE`
+recognizes it and switches to role-aware selection for that song alone;
+the setting resets between songs. An **older DOS executable ignores the
+marker** and will continue using the original allocator. The source
+MIDI remains otherwise compatible with standard MIDI software.
+**Update the DOS player too before judging smart mode on real hardware.**
+
+The laptop preview approximates the same role-aware behavior when smart is
+selected, but is not cycle-accurate to the DOS engine. Importantly, smart
+mode does **not** change playback tempo or fabricate chord notes. It uses
+the existing transcribed candidates.
+
+**Fast A/B experiment using an existing generated MIDI:** Copy an existing
+TandyAMP MIDI into a new directory and convert that file with smart
+selection and Notes=Full. This preserves up to six note candidates; you
+do **not** have to run Demucs again just to assess voice-selection quality.
+
+```bat
+py -3.11 studio.py --cli "C:\Users\alexr\Music\BLACKS01.MID" --voice-selection smart --note-preservation full --spk4 adapt --preview -o "C:\Users\alexr\Music\SMART_TEST"
+```
+
+Use the **actual path** of your previous BLACKS01.MID. For the matched
+legacy control change `--voice-selection smart` to `--voice-selection
+legacy` and choose a different output folder. No source is overwritten.
+
+For a fresh six-stem conversion:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --guitar-separation --accompaniment recover --note-preservation full --drum-style rock --spk4 adapt --voice-selection smart --preview -o "C:\Users\alexr\Music\TANDY_SMART"
+```
+
+Do not interpret a lower voice-switch count as proof of a better arrangement:
+it must also preserve recognizable riff attacks and audible musical phrasing.
+Compare both WAV previews and a real Tandy recording. Generated accompaniment
+remains explicitly identified in ARRANGE.TXT if requested.
+
 ## Sound-first transcription update
 
 **Continuity follow-up:** cleanup now distinguishes overlapping chord tones
