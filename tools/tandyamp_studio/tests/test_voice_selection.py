@@ -47,6 +47,48 @@ class SmartSelectionTests(unittest.TestCase):
         self.assertIn(new, tones)
         self.assertNotIn(old, tones)
 
+    def test_quieter_vocal_survives_loud_guitar_chord(self):
+        guitar = [Note(0, 2, p, 110, 'guitar') for p in (60, 64, 67)]
+        vocal = Note(0, 2, 74, 50, 'melody')
+        tones, _, _ = assign_preview_voices(
+            guitar + [vocal], 'off', voice_selection='smart',
+            previous_tones=guitar, now=.5)
+        self.assertIn(vocal, tones)
+        self.assertTrue(any(n.part == 'guitar' for n in tones))
+
+    def test_moderate_bass_falls_back_without_displacing_either_lead(self):
+        notes = [Note(0, 2, p, 110, 'guitar') for p in (60, 64, 67)]
+        notes += [Note(0, 2, 74, 50, 'melody'), Note(0, 2, 40, 70, 'bass')]
+        tones, _, _ = assign_preview_voices(notes, 'off', voice_selection='smart', now=.5)
+        self.assertEqual({n.part for n in tones}, {'guitar', 'melody', 'bass'})
+
+    def test_candidate_pool_preserves_quiet_lead_amid_dense_chord(self):
+        chord = [Note(0, 2, p, 110, 'guitar') for p in (48, 52, 55, 60, 64, 67, 72)]
+        vocal = Note(0, 2, 74, 50, 'melody')
+        notes = select_candidates(chord + [vocal], voice_selection='smart')
+        self.assertIn(vocal, notes)
+        self.assertLessEqual(len(notes), 6)
+
+    def test_quiet_transcribed_leads_gain_dynamics_without_pitch_or_time_changes(self):
+        from postprocess import calibrate_lead_dynamics
+        notes = [Note(i, i+.2, 60+i, v, 'guitar')
+                 for i, v in enumerate((25, 30, 32, 35, 40, 45, 50, 60, 90, 100))]
+        result = calibrate_lead_dynamics(notes, 'guitar')
+        self.assertGreater(result[3].velocity, notes[3].velocity)
+        self.assertEqual([(n.start, n.end, n.pitch) for n in result],
+                         [(n.start, n.end, n.pitch) for n in notes])
+        self.assertEqual(sorted(n.velocity for n in result), [n.velocity for n in result])
+        self.assertTrue(all(a.velocity <= round(b.velocity*1.6) for a,b in zip(result,notes)))
+        self.assertEqual(calibrate_lead_dynamics(notes, 'harmony'), notes)
+        strong = [Note(i, i+.2, 60, 100, 'melody') for i in range(10)]
+        self.assertEqual(calibrate_lead_dynamics(strong, 'melody'), strong)
+
+    def test_full_leads_keep_their_original_high_register(self):
+        from arranger import normalize
+        notes = [Note(0, 1, 89, 90, 'guitar'), Note(0, 1, 91, 90, 'melody')]
+        self.assertEqual([n.pitch for n in normalize(notes, preserve=True)], [89, 91])
+        self.assertEqual([n.pitch for n in normalize(notes)], [77, 79])
+
     def test_smart_protects_strong_guitar_from_weak_vocal_harmonic(self):
         notes = [
             Note(0, 1, 40, 95, 'bass'),

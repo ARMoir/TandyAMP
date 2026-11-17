@@ -117,8 +117,28 @@ def clean_stem_notes(notes: list[Note], part: str,
         selected = _limit_polyphony(filtered, cap)
     if part == 'bass':
         selected = join_bass_fragments(selected)
+    if preservation == 'full':
+        selected = calibrate_lead_dynamics(selected, part)
     return selected
 
+
+
+def calibrate_lead_dynamics(notes: list[Note], part: str) -> list[Note]:
+    """Map unusually weak model velocities to usable lead dynamics.
+
+    Basic Pitch velocity is not a calibrated stem loudness measurement.
+    A robust 90th-percentile reference raises quiet lead stems by at most
+    1.6x, retaining their ordering and leaving already strong tracks alone.
+    Apply only to full audio transcription, never imported MIDI or backing.
+    """
+    if part not in ('guitar', 'melody') or len(notes) < 8:
+        return notes
+    levels = sorted(n.velocity for n in notes)
+    reference = levels[int((len(levels)-1)*.90)]
+    gain = min(1.6, max(1.0, 96 / max(1, reference)))
+    if gain == 1.0:
+        return notes
+    return [replace(n, velocity=min(127, round(n.velocity*gain))) for n in notes]
 
 
 def join_bass_fragments(notes: list[Note], gap: float = .027) -> list[Note]:

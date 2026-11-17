@@ -386,6 +386,10 @@ static signed short choose_speaker_bass(void)
         unsigned count=0;
         ta_s32 score;
         if(!speaker_note_audible(n))continue;
+        /* Studio knows the bass stem. Never turn a low guitar/vocal note
+           into an unattenuated PIT2 tone just because it is lower. */
+        if(smart_voice_mode &&
+           (n->channel!=1U || ta.cc_program[1]!=33U))continue;
         for(j=0;j<TA_ACTIVE_NOTES && count<3;j++){
             TAActiveNote *other=&ta.notes[j];
             int duplicate=0;
@@ -414,6 +418,9 @@ static ta_u8 choose_adaptive_octave(ta_u8 note)
 {
     unsigned i,loud=0;
     unsigned raised=(unsigned)note+12U;
+    /* Studio bass keeps a consistent register across repeated notes.
+       Do not octave-shift E2/D2 etc. according to changing PSG loudness. */
+    if(smart_voice_mode && note>=36U)return 0;
     if(note>=44U)return 0; /* E2 and above keep their original octave. */
     for(i=0;i<TA_VOICES;i++){
         TAVoice *v=&ta.voices[i];
@@ -516,6 +523,16 @@ static void rebuild_voices(int allow_speaker)
                 ta.notes[selected[j]].period==n->period)already=1;
             if(already)continue;
             score=note_priority(n);
+            if(smart_voice_mode && n->gain>=45U &&
+               ((n->channel==0U && ta.cc_program[0]==80U) ||
+                (n->channel==4U && ta.cc_program[4]==30U))){
+                int represented=0;
+                for(j=0;j<k;j++)if(selected[j]>=0 &&
+                   ta.notes[selected[j]].channel==n->channel)represented=1;
+                /* One credible vocal and guitar line before extra chord
+                   tones. Remaining slots still allow polyphonic riffs. */
+                if(!represented)score+=3000L;
+            }
             /* Reserve the first voice for the tune, next for available bass.
                This keeps long chords from replacing the audible melody. */
             if(!smart_voice_mode && k==0 && n->note>=60){
@@ -530,7 +547,7 @@ static void rebuild_voices(int allow_speaker)
                take it. This is a soft preference, not a reserved channel. */
             if(smart_voice_mode && ta.speaker_voice.source<0 &&
                n->channel==1U && ta.cc_program[1]==33U && n->gain>=48U &&
-               n->note>=24 && n->note<=52)score+=200L;
+               n->note>=24 && n->note<=52)score+=2200L;
             for(j=0;j<k;j++)if(selected[j]>=0 &&
                 ta.notes[selected[j]].channel==n->channel)
                     score-=(smart_voice_mode?400L:100L);
@@ -723,7 +740,7 @@ static void update_tone_effects(ta_u16 elapsed_q8)
         envelope_clock=(ta_u16)(envelope_clock&127U);
         for(i=0;i<TA_ACTIVE_NOTES;i++){
             n=&ta.notes[i];
-            if(n->note<0 || (n->style==0 && n->note<90))continue;
+            if(n->note<0 || (!smart_voice_mode && n->style==0 && n->note<90))continue;
             if(n->age_q8<8192U){
                 unsigned old_age=n->age_q8;
                 unsigned age=n->age_q8+add;
@@ -734,7 +751,8 @@ static void update_tone_effects(ta_u16 elapsed_q8)
             /* Unspecified/sustained GM instruments still need a note
                age for the delayed high-treble trim; no GM decay here. */
             if(n->style==0)continue;
-            if(n->style==1){
+            if(n->style==1 && !(smart_voice_mode &&
+               n->channel==4U && ta.cc_program[4]==30U)){
                 step=n->age_q8/512U;
                 if(step>6U)step=6U;
             }else{

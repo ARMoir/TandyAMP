@@ -128,7 +128,8 @@ def normalize(notes: Iterable[Note], preset: str = 'balanced',
         else:
             # Fold notes to audible, practical PSG ranges before the V20 sees them.
             while p < 45: p += 12
-            while p > config['high']: p -= 12
+            high = 127 if preserve and n.part in ('guitar', 'melody') else config['high']
+            while p > high: p -= 12
         velocity = max(24, min(127, n.velocity))
         if n.part == 'bass':
             # Preserve the model's relative bass dynamics. The old max(107)
@@ -242,10 +243,21 @@ def select_candidates(notes: Iterable[Note], spk4: bool | str = True,
                 selected.add(reserve)
 
         pitches = set()
+        if voice_selection == 'smart':
+            # Preserve at least one credible candidate from each lead stem
+            # even when a dense chord outranks a quieter vocal phrase.
+            for role in ('guitar', 'melody'):
+                lead = next((i for i in ranked if source[i].part == role
+                             and source[i].velocity >= 45), None)
+                if lead is not None:
+                    pitch = _psg_pitch(source[lead])
+                    if pitch not in pitches:
+                        selected.add(lead)
+                        pitches.add(pitch)
         for i in ranked:
             if len(selected) >= limit:
                 break
-            if i == reserve:
+            if i in selected:
                 continue
             # Avoid wasting candidate slots on duplicate PSG pitches.
             pitch = _psg_pitch(source[i])

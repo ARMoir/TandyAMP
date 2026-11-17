@@ -266,6 +266,49 @@ int main(void)
     assert(!smart_voice_mode);
     ta_set_speaker(TA_SPK_BASS);
 
+    /* A marked Studio song sends ONLY the actual bass stem to PIT2.
+       Low guitar/vocal notes must stay on the volume-controlled PSG. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_ADAPT);
+    ta.cc_program[0]=80;ta.cc_program[1]=33;ta.cc_program[4]=30;
+    handle_cc(0,119,77);
+    on(4,48,127);on(0,72,127);on(2,67,127);flush_mix();
+    assert(ta.speaker_voice.source<0 && pit_divider==0);
+    on(1,40,127);flush_mix();
+    check_bass_exclusive(40,14479);
+    assert(ta.speaker_octave_up==0); /* E2 stays E2 in a loud mix. */
+    off(1,40);flush_mix();
+    assert(pit_divider==0); /* Never replace bass with low guitar. */
+
+    /* Moderate vocals remain audible beside a strong held guitar chord. */
+    clear_synth();ta.playing=1;ta_set_speaker(TA_SPK_OFF);
+    ta.cc_program[0]=80;ta.cc_program[4]=30;handle_cc(0,119,77);
+    on(4,60,110);on(4,64,110);on(4,67,110);flush_mix();
+    on(0,74,50);flush_mix();
+    for(i=0;i<TA_VOICES;i++)if(ta.voices[i].channel==0)break;
+    assert(i<TA_VOICES && ta.voices[i].note==74);
+    on(1,40,70);ta.cc_program[1]=33;flush_mix();
+    {
+        int vocal=0,guitar=0,bass=0;
+        for(i=0;i<TA_VOICES;i++){
+            if(ta.voices[i].channel==0)vocal++;
+            if(ta.voices[i].channel==4)guitar++;
+            if(ta.voices[i].channel==1)bass++;
+        }
+        assert(vocal==1 && guitar==1 && bass==1);
+    }
+    /* Sustained distorted guitar is not a piano: at most 4dB decay.
+       Sustained vocal age also advances so attack priority can expire. */
+    for(calls=0;calls<40;calls++)update_tone_effects(128);
+    for(i=0;i<TA_ACTIVE_NOTES;i++)if(ta.notes[i].note>=0){
+        assert(ta.notes[i].age_q8>=5120U);
+        if(ta.notes[i].channel==4)assert(ta.notes[i].env_step==2);
+    }
+    clear_synth();ta.playing=1;
+    ta.cc_program[4]=30;on(4,64,110);
+    for(calls=0;calls<40;calls++)update_tone_effects(128);
+    for(i=0;i<TA_ACTIVE_NOTES;i++)if(ta.notes[i].note==64)
+        assert(ta.notes[i].env_step==6); /* Unmarked MIDI unchanged. */
+
     puts("PASS: MIDI 24..52 bass-only PIT2 (true octave), bends, "
          "three-way adaptive octave lock, note collisions, live toggle and mute");
     return 0;

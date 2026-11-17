@@ -1,5 +1,36 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Lead preservation and SPK4 bass routing
+
+For audio conversion use **Full**, **Voices: smart**, and the desired SPK4
+mode. Full mode now preserves the original upper register of guitar/vocals
+instead of folding them down to the preset treble ceiling. Very low PSG
+notes still need octave folding because of the chip's minimum frequency.
+Quiet transcribed lead stems receive a bounded velocity calibration (up to
+1.6x against their 90th percentile); timing, pitch, relative dynamics and
+backing velocities are retained. Imported MIDI receives no such calibration.
+
+Smart allocation protects one credible guitar and vocal line before extra
+chord tones. Held distorted-guitar notes decay by at most 4 dB rather than
+12 dB. When PIT2 is unavailable, credible bass has a stronger PSG fallback
+preference. Sustained lead age now advances so attack priority expires.
+
+For smart-marked Studio MIDI, SPK4 selects **only channel 1/program 33 bass**.
+Previously a low guitar or vocal note could be selected instead. ADAPT keeps
+notes C2 and above in their written bass octave instead of changing their
+register according to the PSG mix. Lower notes retain the existing octave
+and collision rules. SPK4 remains a fixed-volume square wave; these fixes
+cannot provide a hardware volume control. Unmarked MIDI retains the original
+player behavior.
+
+Update TANDYAMP.EXE for the playback changes. Reconvert audio for the lead
+velocity and register changes. The new official-audio Paranoid conversion
+uses six-stem separation, sensitive transcription and no generated harmony.
+Host playback tests compare the same MIDI through the old/new C engines;
+they establish routing and note coverage, not acoustic balance or subjective
+quality. The approximate WAV preview cannot validate PIT2 loudness on a Tandy.
+
+
 ## Smart balance and continuity refinement
 
 Smart selection now gives a stronger preference to finishing an already
@@ -259,7 +290,7 @@ audio-specific settings. The DOS player does not need changes.
 
 ## Tempo verification and four-voice candidate selection
 
-The MIDI export stores a **fixed 500,000 �s/quarter-note tempo marker (120 BPM) at 480 PPQN**, but each original audio timestamp is encoded at **960 MIDI ticks per second**. That does *not* retime the music to 120 BPM. A regression test reimports a song with note edges spanning over 160 seconds and asserts millisecond-level timing agreement. If an actual DOS Tandy takes significantly longer than the exported MIDI duration, check the hardware player/clock rather than blindly accelerating the offline transcription.
+The MIDI export stores a **fixed 500,000 ï¿½s/quarter-note tempo marker (120 BPM) at 480 PPQN**, but each original audio timestamp is encoded at **960 MIDI ticks per second**. That does *not* retime the music to 120 BPM. A regression test reimports a song with note edges spanning over 160 seconds and asserts millisecond-level timing agreement. If an actual DOS Tandy takes significantly longer than the exported MIDI duration, check the hardware player/clock rather than blindly accelerating the offline transcription.
 
 **Full** mode now retains a **bounded six-note pitched candidate pool** (actual transcription notes, not invented harmony) for the live DOS selector rather than permanently pruning the MIDI to three PSG notes plus one bass before playback. This gives the DOS player alternates as a lead or chord changes and makes four-note combinations possible wherever the original transcription contains sufficient independent material. **The hardware output remains limited to three distinct PSG tone notes + one eligible low PIT2 speaker bass**; other candidates are not simultaneously audible. Up to 32 active MIDI notes are already supported by TandyAMP, but the laptop caps its candidate pool at six to limit work on 7 MHz hardware. The noise channel is separate and unchanged.
 

@@ -67,10 +67,12 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass',
         if voice_selection == 'smart':
             def score(n):
                 same_role = sum(k.part == n.part for k in tones)
-                foundation = (200 if bass is None and n.part == 'bass' and
+                foundation = (2200 if bass is None and n.part == 'bass' and
                               BASS_MIN <= n.pitch <= BASS_MAX and n.velocity >= 48 else 0)
                 return (_smart_candidate_priority(n, n in previous, now) +
-                        foundation - 400*same_role)
+                        foundation - 400*same_role +
+                        (3000 if n.part in ('guitar', 'melody') and
+                         n.velocity >= 45 and same_role == 0 else 0))
             remaining.sort(key=lambda n: (-score(n), n.start, n.pitch))
         n = remaining.pop(0)
         pitch = _freq(n.pitch)
