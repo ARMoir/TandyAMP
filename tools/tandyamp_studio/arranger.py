@@ -19,7 +19,7 @@ BASS_MIN, BASS_MAX = 24, 52
 PPQN = 480
 TEMPO = 500000
 TICKS_PER_SECOND = PPQN * 1_000_000 / TEMPO
-PART_CHANNEL = {'melody': 0, 'bass': 1, 'harmony': 2, 'drums': 9}
+PART_CHANNEL = {'melody': 0, 'bass': 1, 'harmony': 2, 'accomp': 3, 'guitar': 4, 'drums': 9}
 PRESETS = {
     'quality': {'high': 92, 'min_duration': 0.040, 'drum_gap': 0.085},
     'balanced': {'high': 86, 'min_duration': 0.065, 'drum_gap': 0.105},
@@ -55,6 +55,10 @@ def load_midi(path: Path) -> list[Note]:
         if end - start >= 0.012:
             if chan == 9:
                 part = 'drums'
+            elif chan == 3 and program == 48:
+                part = 'accomp'  # inferred support, provenance retained
+            elif chan == 4 and program is not None and 24 <= program <= 31:
+                part = 'guitar'
             elif program is not None and 32 <= program <= 39:
                 part = 'bass'
             elif chan == 1 and pitch <= 60:
@@ -139,7 +143,8 @@ def normalize(notes: Iterable[Note], preset: str = 'balanced',
 
 
 def _priority(n: Note, previous: bool) -> int:
-    part = {'melody': 1100, 'bass': 825, 'harmony': 370}.get(n.part, 0)
+    part = {'melody': 1100, 'bass': 825, 'guitar': 680,
+            'harmony': 370, 'accomp': 180}.get(n.part, 0)
     return part + n.velocity * 3 + (200 if previous else 0) + (50 if n.pitch >= 60 else 0)
 
 
@@ -395,7 +400,8 @@ def voice_coverage(notes: Iterable[Note]) -> dict[str, float]:
 def make_midi(notes: Iterable[Note], offset: float, until: float) -> bytes:
     """Render one fixed-tempo type-0 MIDI: small, simple parser budget for DOS."""
     events = []
-    programs = {'melody': 80, 'bass': 33, 'harmony': 48}
+    programs = {'melody': 80, 'bass': 33, 'harmony': 48,
+                'accomp': 48, 'guitar': 30}
     for part, prog in programs.items():
         events.append((0, 0, mido.Message('program_change', channel=PART_CHANNEL[part], program=prog, time=0)))
     for n in notes:

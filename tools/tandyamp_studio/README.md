@@ -15,6 +15,73 @@ Windows-friendly **offline arranger** for turning an existing MIDI file, YouTube
 
 **Audio input (experimental):** Install heavier dependencies with `py -3.11 -m pip install -r requirements-audio.txt`. Basic Pitch transcribes pitches; it may require an ONNX/TensorFlow backend and a working audio decoder/FFmpeg depending on your environment. Optional **Separate stems** invokes Demucs (large model download, heavy RAM/CPU/GPU usage) and independently transcribes bass, vocals and other, plus heuristic drum onsets. Without stems, pitched audio is directly transcribed; drum reconstruction is not available. Rock drum analysis requires `--stems`. These operations have not been end-to-end verified on every Windows/Python/ML environment. Run first with an existing `.MID`.
 
+## V7: Guitar separation and chord-guided accompaniment
+
+**Goal:** A more complete song arrangement, not merely a smaller MIDI.
+The existing four-stem Demucs model puts most instruments together in
+`other.wav`. For guitar-led rock recordings, select **Isolate guitar
+(6-stem Demucs)** in the Studio GUI, or `--guitar-separation` in the CLI.
+This selects the official experimental `htdemucs_6s` model and transcribes
+`guitar.wav` separately, alongside bass, vocals, and the residual
+`other.wav`. `--guitar-separation` automatically enables separation, so
+`--stems` is optional with this flag. The extra model can be slower and
+needs a first-run download. Demucs' six-stem `piano` output can bleed or
+contain artifacts; Studio deliberately does not blindly transcribe it.
+Separated guitar notes are kept on **MIDI channel 5** (zero-based 4),
+with their own instrument program, and suspected duplicate guitar bleed
+in the other stem is removed.
+
+**Accompaniment** is an optional choice in both the GUI and CLI:
+
+- `off` (default): only notes from actual transcription; best for objective A/B tests
+- `recover`: estimate stable power/major/minor chords from the separated guitar
+  (or four-stem other) audio, then add **only strongly observed missing chord
+  tones** when there is available PSG capacity
+- `harmonize`: creative reconstruction; may add quieter inferred thirds/fifths
+  guided by the detected chord. More fullness, but sometimes less accuracy
+
+Accompaniment requires `--stems` or `--guitar-separation`. It doesn't
+download chord libraries, use copyrighted MIDI backing tracks, invent
+random drum hits or force a metronome pattern. Guitar/other chroma
+profiles and stable chord evidence are analyzed offline on the laptop.
+Unsupported chords, ambiguous roots and near-silent intervals are
+rejected rather than completed automatically. The generated notes are
+**explicitly different from transcribed notes**: part `accomp`, dedicated
+**MIDI channel 4** (zero-based 3), lower velocities, and an
+`ARRANGE.TXT` provenance report alongside the MIDI. No new note is
+pretended to have come from Basic Pitch. Chord inference from distorted
+guitar is heuristic, so compare by ear.
+
+**Suggested Paranoid V7 test (guitar + conservative recovered harmony):**
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --guitar-separation --accompaniment recover --drum-style rock --preset balanced --note-preservation full --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_V7_RECOVER"
+```
+
+**Same six-stem transcription, without generated harmony:**
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --guitar-separation --accompaniment off --drum-style rock --preset balanced --note-preservation full --spk4 adapt --preview -o "C:\Users\alexr\Music\TANDY_V7_ORIGINAL"
+```
+
+To try creative harmony, change `--accompaniment recover` to
+`--accompaniment harmonize` and choose another output folder.
+
+These are MIDI **candidates**: real playback remains limited to
+**three SN76489 PSG tone voices plus one eligible independent PIT2
+speaker bass**. Noise-channel drums remain separate. The previously
+implemented six-candidate cap and 44 KiB segment limit still apply.
+Generated support notes may occupy one of the three PSG voices; the
+fourth speaker is reserved only for sufficiently audible low bass.
+If the audio does not provide confident chord evidence, the converter
+can still produce a sparse passage. An acoustic reconstruction is not
+guaranteed to match the original.
+
+The existing YouTube MP3 cache is reused by URL and bitrate, but
+Demucs 6-stem separation, transcription and chroma analysis must run
+again. Existing imported MIDI files are not altered by these optional
+audio-specific settings. The DOS player does not need changes.
+
 ## Tempo verification and four-voice candidate selection
 
 The MIDI export stores a **fixed 500,000 µs/quarter-note tempo marker (120 BPM) at 480 PPQN**, but each original audio timestamp is encoded at **960 MIDI ticks per second**. That does *not* retime the music to 120 BPM. A regression test reimports a song with note edges spanning over 160 seconds and asserts millisecond-level timing agreement. If an actual DOS Tandy takes significantly longer than the exported MIDI duration, check the hardware player/clock rather than blindly accelerating the offline transcription.
@@ -180,6 +247,8 @@ convert_cli.bat "https://youtu.be/dQw4w9WgXcQ" --mp3-only
 | `--stems` | Optional Demucs separation before transcription |
 | `--drum-style auto|rock` | Drum onset cleanup strategy when using `--stems`; default auto |
 | `--note-preservation full|clean` | Audio transcription note retention; full is the new default, clean matches V5 |
+| `--guitar-separation` | Use optional Demucs htdemucs_6s to isolate guitar (implies stems) |
+| `--accompaniment off|recover|harmonize` | Optional evidence-based / explicitly generated chord support; default off |
 | `--preview` | Export an approximate 30-second WAV |
 | `--mp3-only` | Download MP3 to `-o` and exit; **no AI or MIDI conversion** |
 | `--keep-mp3` | Keep `SOURCE.MP3` in the resulting DOS-MIDI folder |

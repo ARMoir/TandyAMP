@@ -35,7 +35,8 @@ def assign_preview_voices(active: list[Note], spk4: str = 'bass') -> tuple[list[
         raise ValueError('Unknown SPK4 mode')
     pitched = [n for n in active if n.part != 'drums']
     drums = [n for n in active if n.part == 'drums']
-    order = {'melody': 0, 'bass': 1, 'harmony': 2}
+    order = {'melody': 0, 'guitar': 1, 'harmony': 2,
+             'bass': 3, 'accomp': 4}
     pitched.sort(key=lambda n: (order.get(n.part, 3), -n.velocity, n.start))
     bass = None
     if spk4 != 'off':
@@ -118,7 +119,9 @@ def preview_wav(notes: list[Note], output: Path, seconds: float = 30.0,
                 fade = math.exp(-age/1.3) if n.part == 'harmony' else 1.0
                 # Balance the laptop preview for listening tests: leave
                 # melody present and reduce persistent low square-wave energy.
-                tone_gain = .118 if n.part == 'bass' else .145
+                tone_gain = (.118 if n.part == 'bass' else
+                             .098 if n.part == 'accomp' else
+                             .133 if n.part == 'harmony' else .145)
                 amp = tone_gain * (n.velocity/127.0) * attack * release * fade
                 f = _freq(n.pitch)
                 if f > 1500:
