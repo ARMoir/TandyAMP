@@ -114,7 +114,11 @@ class GuideFreeAutoTuneTests(unittest.TestCase):
                            Phrase('melody','vocal',(lead,))))
         arranged,_=arrange_tuned(score,[bass,held,weak,next_attack,lead])
         guitar=[x for x in arranged if x.part=='guitar']
-        self.assertEqual([(x.pitch,x.start) for x in guitar],[(52,0),(57,1.02)])
+        # AutoTune may transpose the complete phrase by an octave to
+        # make it audible beside bass/vocals. Preserve contour and timing.
+        self.assertEqual([(x.pitch % 12,x.start) for x in guitar],
+                         [(52 % 12,0),(57 % 12,1.02)])
+        self.assertEqual(guitar[1].pitch - guitar[0].pitch,5)
         self.assertGreaterEqual(guitar[0].end,.98)
         self.assertEqual([x.pitch for x in arranged if x.part=='melody'],[67])
         self.assertTrue(any(x.part=='bass' for x in arranged))
