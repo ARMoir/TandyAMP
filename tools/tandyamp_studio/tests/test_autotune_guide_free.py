@@ -124,5 +124,52 @@ class GuideFreeAutoTuneTests(unittest.TestCase):
         self.assertTrue(any(x.part=='bass' for x in arranged))
 
 
+    def test_automatic_backing_does_not_invent_a_fifth(self):
+        bass = n(0,1,48,95,'bass')
+        guitar = n(0,.30,60,88,'guitar')
+        singer = n(.05,.8,67,92,'melody')
+        score = Score((0.,.5,1.),(),(
+            Phrase('bass','bass',(bass,)),
+            Phrase('guitar','backing',(guitar,)),
+            Phrase('melody','vocal',(singer,)),
+        ))
+        out, _ = arrange_tuned(score,[bass,guitar,singer])
+        kept = [x for x in out if x.part=='guitar']
+        self.assertEqual(len(kept),1)
+        self.assertEqual(kept[0].pitch % 12,60 % 12)
+        self.assertGreater(kept[0].end, .30)
+
+    def test_source_supported_guitar_fifth_can_fill_backing_role(self):
+        bass = n(0,1,48,95,'bass')
+        guitar = n(0,.30,60,88,'guitar')
+        singer = n(.05,.8,67,92,'melody')
+        recorded_fifth = n(.03,.35,55,86,'guitar')
+        score = Score((0.,.5,1.),(),(
+            Phrase('bass','bass',(bass,)),
+            Phrase('guitar','backing',(guitar,)),
+            Phrase('melody','vocal',(singer,)),
+        ))
+        out, _ = arrange_tuned(
+            score,[bass,guitar,singer,recorded_fifth])
+        kept = [x for x in out if x.part=='guitar']
+        self.assertEqual(len(kept),1)
+        self.assertEqual(kept[0].pitch % 12,55 % 12)
+
+    def test_weak_fifth_artifact_is_not_counted_as_supported(self):
+        bass = n(0,1,48,95,'bass')
+        guitar = n(0,.30,60,88,'guitar')
+        singer = n(.05,.8,67,92,'melody')
+        artifact = n(.13,.16,55,45,'guitar')
+        score = Score((0.,.5,1.),(),(
+            Phrase('bass','bass',(bass,)),
+            Phrase('guitar','backing',(guitar,)),
+            Phrase('melody','vocal',(singer,)),
+        ))
+        out, _ = arrange_tuned(score,[bass,guitar,singer,artifact])
+        kept = [x for x in out if x.part=='guitar']
+        self.assertEqual(len(kept),1)
+        self.assertEqual(kept[0].pitch % 12,60 % 12)
+
+
 if __name__=='__main__':
     unittest.main()

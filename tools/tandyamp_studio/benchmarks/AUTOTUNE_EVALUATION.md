@@ -95,16 +95,59 @@ the foreground or keeps two guitar notes with the same onset.
   note, but strong repeated picks remain separate attacks.
 - Genuine new pitches interrupt the held riff at a specific onset
   rather than fighting over two simultaneous guitar voices.
-- Simultaneous pitch estimates choose one credible note for the single
-  Tandy guitar role, instead of being emitted as an accidental chord.
+- Simultaneous pitch estimates choose the stronger sustained guitar
+  candidate rather than blindly favoring the highest pitch first.
 - Weak semitone pitch corrections require **another sounding stem to
   support the target pitch**. A supposedly “correct” key signature or
   a chord root alone is not enough to overwrite an actual blues/chromatic
   note. Independent observed pitch evidence can validate out-of-key
   musical tones.
 
+### Harmonic guard: source-supported fifths only
+
+Another guide-free rule previously **changed a guitar root into its
+fifth** when it matched the bass root under a vocal phrase—even without
+an audible fifth detected in the source. This can add an unsupported
+backing pitch to an already crowded song.
+
+The new rule **keeps the original guitar pitch** unless a separate
+guitar/harmony source proposal contains a matching fifth with enough
+duration (at least 140 ms), velocity (at least 63) and overlap.
+It still allows the established backing-note hold/velocity behavior,
+and a demonstrably present power-chord fifth can still support the
+vocal. A 30 ms weak high harmonic cannot authorize that change.
+
+Three regression cases cover (a) no supported fifth, (b) a supported
+source fifth, and (c) a weak fleeting artifact. This gate is only in
+automatic tuning: the **approved guide-based PARATUNE arrangement is
+unchanged**.
+
 These are small guide-free changes to `_automatic_mix` and its cross-stem
 tuner; **the authored-MIDI `_reference_mix` path is untouched**.
+
+### Measured A/B result (same synthetic candidate notes)
+
+The GitHub Actions run on November 18, 2026 sampled each candidate
+arrangement at **10-millisecond intervals** for **2.83 seconds**, using
+the known five-note riff as ground truth.
+
+| Metric | Old guitar gate | New coherent guitar gate |
+| --- | ---: | ---: |
+| Correct pitch-set frames / 283 | 173 | **283** |
+| Frames missing the expected phrase | 74 | **0** |
+| Frames sounding an incorrect pitch | 36 | **0** |
+| Pitched guitar note events | 7 | **5** |
+| Frames with multiple simultaneous guitar notes | 0 | **0** |
+
+The old same-onset selector already output a single note but could
+prioritize a **higher, weaker octave artifact**; the new selector favors
+stronger sustained evidence. Other false high notes prematurely cut
+a held riff, resulting in missing notes until the next phrase attack.
+
+**Interpretation:** This is a reproducible improvement against **synthetic
+known MIDI candidates only**. It establishes better phrase continuity,
+but does not measure how accurately Basic Pitch recognizes a YouTube
+performance or how pleasing the hardware playback is.
 
 The [reproducible A/B benchmark](autotune_phrase_ab.py) creates a
 known riff, a short false high harmonic, a false repeated E3 fragment,

@@ -504,12 +504,24 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
             bass_note = _near_note(bass, bass_times, (n.start + n.end) / 2)
             if bass_note and n.pitch % 12 == bass_note.pitch % 12:
                 fifth = 55 + (bass_note.pitch + 7 - 55) % 12
+                # A power-chord fifth is useful only if the recording
+                # actually supplied it. Do not conjure a new guitar tone
+                # from an inferred bass root just to fill a Tandy voice.
+                supported_fifth = any(
+                    p.part in ('guitar', 'harmony')
+                    and p.pitch % 12 == fifth % 12
+                    and p.velocity >= 63
+                    and p.end - p.start >= .14
+                    and p.start < n.end + .05
+                    and p.end > n.start + .08
+                    for p in proposals
+                )
                 voice = _near_note(vocals, vocal_times, (n.start + n.end) / 2)
-                if voice and fifth == _psg_pitch(voice):
+                if supported_fifth and voice and fifth == _psg_pitch(voice):
                     fifth -= 12
                 next_support = bisect_left(other_times, n.end)
                 limit = other_times[next_support] if next_support < len(other) else float('inf')
-                n = replace(n, pitch=fifth,
+                n = replace(n, pitch=fifth if supported_fifth else n.pitch,
                             end=min(limit, max(n.end, n.start + .79 * period)),
                             velocity=max(44, min(64, n.velocity)))
         supporting.append(n)
