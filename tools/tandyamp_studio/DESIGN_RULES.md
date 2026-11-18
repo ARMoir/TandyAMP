@@ -1,6 +1,6 @@
 # TandyAMP Studio — musical arrangement design rules
 
-**Status:** Design contract with an **opt-in first implementation** in `musical_arranger.py` (`--arrangement musical`). This does not change the default Build56 pipeline or DOS player. Advanced source-informed phrase recognition, genre adaptation and hardware audition optimization are **not implemented**.
+**Status:** Design contract with experimental implementations: new strict **CORE** in `core_arranger.py` (`--arrangement core`) and a fuller first pass in `musical_arranger.py` (`--arrangement musical`). This does not change the default Build56 pipeline or DOS player. Advanced source-informed phrase recognition, genre adaptation and hardware audition optimization are **not implemented**.
 
 ## The goal: the best *Tandy* MIDI, not the most complete MIDI
 
@@ -115,6 +115,25 @@ The opt-in **MUSICAL** arranger now implements one deterministic foundation/iden
 Document the input/source SHA-256, command/options, Studio commit, model versions, note-count/role changes, salient omissions/insertions, PSG/SPK4 eligibility, MIDI files produced, listening notes and physical EX results. For source-audio comparisons, the *same* original track must be used; an unrelated benchmark song is **not** acoustic ground truth.
 
 **Reject** a change that produces a fuller-looking score but loses the signature riff, destroys bass/drum pocket, interrupts a classical phrase, invents unwanted notes, or changes tempo.
+
+
+
+### Implemented KISS CORE interpretation
+
+The opt-in [CORE selector](core_arranger.py) implements these rules with
+an intentionally tiny musical budget: **bass + drums create the groove;
+one guitar riff voice bridges that to one vocal lead; optional sustained
+support appears only in empty pitched slots**. It never adds filler to
+reach four pitched MIDI notes and never changes how TANDYAMP.EXE
+allocates sound channels. The original, fuller MUSICAL mode remains
+available for comparison. Build56 classic is still the default.
+
+CORE is not an AI genre classifier or complete source-aware melody
+reconstruction. Its rhythm relationship comes from **preserving real
+onsets** and reducing duplicate drum transients. It respects the
+existing transcription's role estimates, so poor upstream separation
+still produces errors. Validate source, MIDI and physical playback
+before deciding if the tighter result is musically superior.
 
 ## Current status
 

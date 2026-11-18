@@ -1,5 +1,74 @@
 # TandyAMP Studio (laptop-side tools)
 
+## CORE: the KISS four-part Tandy arrangement (new, opt-in)
+
+**Drums + bass make the groove. Guitar connects that groove to the
+vocals. Nothing else plays unless it's genuinely necessary.**
+
+CORE is deliberately **stricter than MUSICAL**. Instead of carrying a
+large candidate cloud or filling every PSG oscillator with chords, it
+keeps **one meaningful bass line, one guitar/riff voice and one
+vocal/lead voice** at a time, plus **one shared PSG noise drum part**.
+When guitar, vocal or bass is missing, one *sustained, credible*
+harmonic/counterpart line may fill the available pitched slot. No
+generic chords, no 4+ voice density target, no automatic beat grid.
+
+- **Bass:** Keep the true bass notes, rhythmic movement, offbeat timing
+  and pauses. It is not rebuilt from an arbitrary piano note.
+- **Drums:** Preserve kick/snare accents and useful hats. Remove very
+  closely repeated hats (~100 ms) and competing hits on the one noise
+  generator; never invent percussion or force all bass notes onto kicks.
+- **Guitar:** Select *one* recognizable riff pitch at a time; don't let
+  guitar harmonics/chord stacks monopolize three PSG channels.
+  A significant new riff attack can replace a held note.
+- **Vocals:** Keep one meaningful vocal melody, including natural
+  phrasing, so the guitar can support and link to it.
+- **Support:** Only enters when the core trio doesn't already occupy
+  the three pitched slots and the source note is credibly strong or a
+  continuing musical phrase. No additions merely to fill silence.
+
+CORE exports a **maximum of three different pitched PSG notes** plus
+the drum/noise channel. The optional PC speaker SPK4 remains controlled
+by TandyAMP's existing playback rules. **It is not forced to play a
+fourth pitched voice**: the DOS player's SPK4 eligibility gate can
+leave bass on PSG when three independent non-bass pitches are absent.
+That is deliberate: we will not add extra chords just to force SPK4.
+
+### Run the YouTube source with CORE
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core -o "C:\Users\alexr\Music\TANDY_CORE"
+```
+
+Or choose **Arrangement → core** in the GUI. Studio uses the existing
+Build56 six-stem / sensitive transcription settings by default and
+then applies the much simpler CORE arrangement.
+
+A folder named `<VIDEO>_CORE` contains size-safe type-0 DOS MIDI,
+`PLAY.BAT`, the optional approximate `PREVIEW.WAV`, `INPUT.json`,
+`METRICS.json` and `CORE.TXT`. The report counts the pitched source
+notes retained, note fragments written, drums and selected roles.
+For a no-AI comparison, feed an already-transcribed MIDI directly.
+
+### A/B controls
+
+- `--arrangement classic` — original preferred Build56 baseline;
+  **still the default** and completely unchanged
+- `--arrangement musical` — previous, fuller experiment
+- `--arrangement core` — new stricter **bass + drums → guitar → vocal**
+  mode, output isolated under `_CORE`
+- `--max-raw` — original high-recall audio transcription, *not* a final
+  hardware arrangement; incompatible with the two arranger experiments
+
+**Limitations:** CORE uses stem role assignments as produced by the
+transcription model; if guitar or vocals are absent/misidentified in
+the source transcription, no downstream filter can recreate them.
+The laptop preview is not cycle-accurate and we have not established
+that CORE sounds better than Build56 without physical Tandy listening.
+The DOS executable and player settings have not been changed.
+
+
+
 ## New experiment: MUSICAL — the simplest Tandy arrangement
 
 Studio now has an **opt-in working implementation** of the

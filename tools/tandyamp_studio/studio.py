@@ -45,23 +45,27 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
-    if arrangement not in ('classic', 'musical'):
-        raise ValueError('Arrangement must be classic or musical')
-    if max_raw and arrangement == 'musical':
-        raise ValueError('MAX RAW and MUSICAL are alternative output modes')
+    if arrangement not in ('classic', 'musical', 'core'):
+        raise ValueError('Arrangement must be classic, musical or core')
+    if max_raw and arrangement != 'classic':
+        raise ValueError('MAX RAW and arranged modes are alternative output modes')
     keep_candidates = (not max_raw and arrangement == 'classic' and
                        note_preservation == 'full' and
                        (audio_input or voice_selection == 'smart'))
     music_report = None
     if max_raw:
         arranged = list(notes)
-    elif arrangement == 'musical':
+    elif arrangement in ('musical', 'core'):
         from arranger import normalize
         from musical_arranger import arrange_musically
         # Preserve credible note attacks and original timing before making
         # the *offline* three-tone (+ eligible SPK4) arrangement.
         candidates = normalize(notes, preset, preserve=True)
-        arranged, music_report = arrange_musically(candidates, spk4=spk4)
+        if arrangement == 'core':
+            from core_arranger import arrange_core
+            arranged, music_report = arrange_core(candidates, spk4=spk4)
+        else:
+            arranged, music_report = arrange_musically(candidates, spk4=spk4)
     else:
         arranged = prepare(notes, preset, spk4,
                            preserve=keep_candidates,
@@ -75,11 +79,14 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
               'unaltered. No voice cap, velocity floor or pitch folding.',
               flush=True)
     elif music_report is not None:
-        print('MUSICAL: selected {} original pitched notes, produced {} '
+        print('{}: selected {} original pitched notes, produced {} '
               'pitched fragments and {} drum hits from {} source events.'
-              .format(music_report.selected_source_notes,
-                      music_report.output_pitched_fragments,
-                      music_report.output_drums, len(notes)), flush=True)
+              .format(arrangement.upper(), music_report.retained_source_notes if
+                      arrangement == 'core' else music_report.selected_source_notes,
+                      music_report.chosen_pitched if arrangement == 'core'
+                      else music_report.output_pitched_fragments,
+                      music_report.chosen_drums if arrangement == 'core'
+                      else music_report.output_drums, len(notes)), flush=True)
     else:
         print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
     if voice_selection == 'smart' and not max_raw:
@@ -116,7 +123,8 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         print('  Bass: {} notes, velocity range {}..{}, {} distinct levels'.format(
             len(bass_velocities), min(bass_velocities), max(bass_velocities),
             len(set(bass_velocities))), flush=True)
-    target = output_dir / (target_name + ('_MUSIC' if arrangement == 'musical' else '_TANDY'))
+    folder_suffix = {'classic':'_TANDY','musical':'_MUSIC','core':'_CORE'}[arrangement]
+    target = output_dir / (target_name + folder_suffix)
     if saved_mp3 is not None and (target / 'SOURCE.MP3').exists():
         raise FileExistsError(f'Refusing to overwrite existing SOURCE.MP3 in {target}')
     if max_raw:
@@ -129,8 +137,9 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
         save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
         if music_report is not None:
-            (target / 'MUSIC.TXT').write_text(music_report.as_text(),
-                                               encoding='ascii')
+            report_name = 'CORE.TXT' if arrangement == 'core' else 'MUSIC.TXT'
+            (target / report_name).write_text(music_report.as_text(),
+                                              encoding='ascii')
     if audio_input and accompaniment != 'off' and not max_raw:
         report = ('TandyAMP Studio accompaniment provenance\n'
                   'Separation: {}\nAccompaniment: {}\n'
@@ -190,10 +199,10 @@ def convert(input_file: str | Path, output_dir: Path,
         raise ValueError('Unknown transcription profile: ' + transcription)
     if voice_selection not in ('legacy', 'smart'):
         raise ValueError('Voice selection must be legacy or smart')
-    if arrangement not in ('classic', 'musical'):
-        raise ValueError('Arrangement must be classic or musical')
-    if max_raw and arrangement == 'musical':
-        raise ValueError('MAX RAW and MUSICAL are alternative output modes')
+    if arrangement not in ('classic', 'musical', 'core'):
+        raise ValueError('Arrangement must be classic, musical or core')
+    if max_raw and arrangement != 'classic':
+        raise ValueError('MAX RAW and arranged modes are alternative output modes')
     if max_raw and mp3_only:
         raise ValueError('MAX RAW creates MIDI, so it cannot be combined with --mp3-only')
     source = str(input_file).strip()
@@ -297,7 +306,7 @@ def gui(initial_input: str = '') -> None:
     ttk.Label(outer, text='Voices').grid(row=10, column=0, sticky='w', pady=6)
     ttk.Combobox(outer, textvariable=voice_selection, values=['legacy', 'smart'], state='readonly', width=19).grid(row=10, column=1, sticky='w', padx=8)
     ttk.Label(outer, text='Arrangement').grid(row=11, column=0, sticky='w', pady=6)
-    ttk.Combobox(outer, textvariable=arrangement, values=['classic', 'musical'], state='readonly', width=19).grid(row=11, column=1, sticky='w', padx=8)
+    ttk.Combobox(outer, textvariable=arrangement, values=['classic', 'musical', 'core'], state='readonly', width=19).grid(row=11, column=1, sticky='w', padx=8)
     ttk.Checkbutton(outer, text='MAX RAW (YouTube/audio: all six stems, all detected notes, no leveling)', variable=max_raw).grid(row=12, column=0, columnspan=3, sticky='w', pady=2)
     ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=13, column=0, columnspan=3, sticky='w', pady=2)
     ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=14, column=0, columnspan=3, sticky='w', pady=2)
@@ -422,9 +431,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--voice-selection', choices=['legacy', 'smart'],
                         default=DEFAULTS['voice_selection'],
                         help='Smart opt-in: guitar-riff priority, attack-aware smooth voice selection (requires new DOS player)')
-    parser.add_argument('--arrangement', choices=['classic', 'musical'],
+    parser.add_argument('--arrangement', choices=['classic', 'musical', 'core'],
                         default='classic',
-                        help='Opt-in simplified musical arrangement with foundation/identity/support; classic is Build56 default')
+                        help='Core: sparse bass+drums/guitar/vocals, Musical: fuller experimental; classic remains Build56 default')
     parser.add_argument('--max-raw', action='store_true',
                         default=DEFAULTS['max_raw'],
                         help='YouTube/audio: six stems, high-recall decoding, no note/velocity/voice pruning; split DOS MIDI by size only')
