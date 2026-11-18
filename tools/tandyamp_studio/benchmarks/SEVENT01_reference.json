@@ -1,0 +1,51 @@
+{
+  "schema": "tandyamp-studio-musical-benchmark-v1",
+  "title": "SEVENT01 — Seventh Son musical arrangement reference",
+  "file_name": "SEVENT01.MID",
+  "source": "user-supplied existing MIDI; original file not committed",
+  "sha256": "82c53291a4918ea1c62191b9a702ca02fee43aa073b8d8208f79e8efb04f0303",
+  "file_bytes": 28829,
+  "midi_type": 0,
+  "tracks": 1,
+  "ppqn": 480,
+  "tempo_microseconds_per_beat": 500000,
+  "duration_seconds": 180,
+  "note_count": 3810,
+  "notes_by_zero_based_channel": {
+    "0_melody": 216,
+    "1_bass": 1150,
+    "2_harmony": 1497,
+    "9_drums": 947
+  },
+  "drums_gm": {
+    "36_kick": 191,
+    "38_snare": 281,
+    "42_closed_hat": 475
+  },
+  "pitch_coverage_seconds": {
+    "0": 8.8927,
+    "1": 7.8437,
+    "2": 3.0542,
+    "3": 3.4521,
+    "4_plus": 156.7573
+  },
+  "chord_group_onsets": {
+    "distinct_times": 961,
+    "two_or_more": 420,
+    "three": 116
+  },
+  "onset_match_definition": "For each bass note onset, at least one onset in comparison part within ±0.050 seconds; MIDI time based, no re-quantization",
+  "bass_onsets_50ms": {
+    "bass_total": 1150,
+    "any_drum": 1029,
+    "harmony": 1122,
+    "kick": 232,
+    "snare": 325,
+    "hat": 472
+  },
+  "smart_voice_controller_119_77_present": false,
+  "separate_guitar_note_channel_present": false,
+  "principle": "Drums+bass create groove; guitar builds riffs and connects groove to vocals; supporting harmony strengthens—not clutters—the song.",
+  "interpretation": "Positive example, not a target quota. Not source-ground-truth for YouTube transcriptions.",
+  "documentation": "SEVENT01_MUSICAL_BENCHMARK.md"
+}

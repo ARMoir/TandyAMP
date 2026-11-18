@@ -1,5 +1,13 @@
 # TandyAMP — Winamp-inspired MIDI player for Tandy 1000 DOS
 
+**Musical-quality reference:** [SEVENT01 (Seventh Son) arranging benchmark](tools/tandyamp_studio/benchmarks/SEVENT01_MUSICAL_BENCHMARK.md).
+Its core principle is **drums and bass create the groove; guitar builds
+the riffs and connects the rhythm to the vocals; harmony supports the
+whole**. Studio's preferred Build56 Paranoid recipe remains the
+conversion default. The benchmark is documented guidance for future
+optional Groove Clean work, not a new note-removal setting or DOS
+player change.
+
 The [post-build-29 review](docs/POST_BUILD_29_REVIEW.md) documents fixes for
 pause/resume loudness, failed-load speaker silence, adaptive bass overlap,
 PIT2-to-PSG fallback, oversized MIDI tracks and alphabetical playlist truncation.

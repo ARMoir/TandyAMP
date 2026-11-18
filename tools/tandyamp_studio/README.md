@@ -1,5 +1,33 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Musical-quality benchmark: SEVENT01 (Seventh Son)
+
+**[SEVENT01 full benchmark and arranging guidance](benchmarks/SEVENT01_MUSICAL_BENCHMARK.md)** ·
+[Machine-readable reference measurements](benchmarks/SEVENT01_reference.json)
+
+The user-provided `SEVENT01.MID` is our **positive musical-quality
+benchmark**, alongside the preferred Build56 Paranoid conversion (our
+**sound / audio-transcription settings baseline**). The reference MIDI
+is not distributed in the repository.
+
+**Central principle: drums + bass establish the groove; guitar builds
+the riffs and bridges that groove to the vocal melody; supporting
+harmonies reinforce the result.** Keep the funk and lose unwanted
+transcription noise. The reference has **3,810** note pairs in 180
+seconds, with **89.5%** of bass onsets within 50 ms of a drum attack,
+**97.6%** within 50 ms of a chord-layer onset, and **87.1%** of time
+with four or more *available* pitched MIDI notes. The relationship
+between rhythmic roles matters, not those numbers as quotas.
+
+**Not yet implemented:** This is the documented **design and acceptance
+benchmark** for future optional Groove Clean processing, not an
+automatic note-filter or change to the current Build56 defaults.
+Avoid deleting syncopated accents, blues notes or real harmony simply
+to reduce note count. Our positive reference is a pre-arranged MIDI,
+not ground-truth transcription for Paranoid's YouTube audio.
+
+
+
 ## Default sound: Paranoid SPK4 Build56 best mix
 
 The **default Studio configuration** now reproduces the conversion
