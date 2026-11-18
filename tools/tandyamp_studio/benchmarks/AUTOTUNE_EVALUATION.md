@@ -206,6 +206,29 @@ three-tone hardware-native case. Unlike the Paranoid-specific audible
 reference, these scenarios prove **invariants** that should carry
 across source material.
 
+### First multi-style results (GitHub Actions, 2026-11-18)
+
+The synthetic **same-candidate** benchmark passed across all four
+unrelated musical contexts. It tests *structure* and does not claim to
+measure the quality of audio transcription or speaker playback.
+
+| Scenario | Input → output events | Optional support admitted | Pitched PSG maximum |
+| --- | ---: | ---: | ---: |
+| Rock rhythm + lead | 7 → 5 | 0 of 2 | 3 |
+| Classical counterpoint (no drums) | 4 → 3 | 1 of 2 | 3 |
+| Electronic bass + melody + pulse | 4 → 4 | 1 of 1 | 3 |
+| Hardware-native three-tone (no drums) | 3 → 3 | 1 of 1 | 3 |
+
+**Protected core phrases were unchanged in every case**, including
+their note start/end, pitch and velocity. The instrument mix varies,
+but the same admission algorithm and thresholds are used throughout.
+
+A separate SPK4 regression explicitly tests that an E2 bass sent to
+PIT2 must not be mistaken for the E3 PSG pitch it would otherwise
+be folded to; a real E3 support note may use the PSG when **ADAPT**
+can route the actual E2 bass independently. The current sound engine,
+not this offline planner, determines whether SPK4 is ultimately audible.
+
 The summary of protected and admitted parts is included in the
 `PITCH.TXT` output for a guide-free `--arrangement tuned` conversion.
 Neither original audio, AI stem weights nor note estimates are altered

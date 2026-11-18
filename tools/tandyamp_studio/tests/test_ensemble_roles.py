@@ -85,6 +85,16 @@ class EnsembleRoleTests(unittest.TestCase):
         self.assertEqual(len(strict),3)
         self.assertEqual(len(adaptive),4)
 
+    def test_spk4_is_independent_of_psg_folded_bass_pitch(self):
+        # E2 on SPK4 and E3 on the PSG are physically different voices.
+        # The fold-to-PSG-E3 shortcut must not discard the true E3 support.
+        song=[n('bass',0,1,40,92),n('guitar',0,1,60,92),
+              n('melody',0,1,64,92),n('harmony',0,1,52,89)]
+        adaptive,_=arrange_ensemble(song,spk4='adapt')
+        psg_only,_=arrange_ensemble(song,spk4='off')
+        self.assertEqual(as_keys(adaptive),as_keys(song))
+        self.assertEqual(len(psg_only),3)
+
     def test_speaker_does_not_force_low_part_to_play_when_unavailable(self):
         song=[n('bass',0,1,59,95),n('guitar',0,1,64),
               n('melody',0,1,72),n('harmony',0,1,67,100)]

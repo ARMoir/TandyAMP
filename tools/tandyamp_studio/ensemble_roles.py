@@ -39,6 +39,19 @@ class EnsembleReport:
                  self.rejected_competition)
 
 
+def _speaker_bass(played: list[Note], spk4: str) -> Note | None:
+    """Potential low SPK4 role, never a guaranteed audible PIT2 voice."""
+    if spk4 == 'off':
+        return None
+    bass = [n for n in played if n.part == 'bass' and
+            BASS_MIN <= n.pitch <= BASS_MAX and n.velocity >= 58]
+    if len(bass) != 1:
+        return None
+    others = {_psg_pitch(n) for n in played if n.part != 'bass'}
+    required = 2 if spk4 == 'adapt' else 3
+    return bass[0] if len(others) >= required else None
+
+
 def _available(played: list[Note], spk4: str) -> bool:
     """Check the physical tone budget over one interval.
 
@@ -47,15 +60,10 @@ def _available(played: list[Note], spk4: str) -> bool:
     """
     if not played:
         return True
-    bass = [n for n in played if n.part == 'bass' and
-            BASS_MIN <= n.pitch <= BASS_MAX and n.velocity >= 58]
-    other = [n for n in played if n.part != 'bass']
-    others = {_psg_pitch(n) for n in other}
-    required = 2 if spk4 == 'adapt' else 3
-    if (spk4 != 'off' and bass and len(others) >= required):
-        # The player sends at most one qualifying bass to PIT2; any
-        # non-selected bass still consumes a PSG tone.
-        return len(others) <= 3 and len(bass) == 1
+    speaker = _speaker_bass(played, spk4)
+    if speaker is not None:
+        return len({_psg_pitch(n) for n in played
+                    if n is not speaker}) <= 3
     return len({_psg_pitch(n) for n in played}) <= 3
 
 
@@ -77,7 +85,9 @@ def _fits_whole_note(note: Note, accepted: list[Note], spk4: str) -> bool:
         live = [n for n in overlapping if n.start <= mid < n.end]
         # A simultaneous note with the same effective pitch merely
         # doubles the PSG voice and can make an unnecessary reattack.
-        if any(_psg_pitch(n) == _psg_pitch(note) for n in live):
+        speaker = _speaker_bass(live + [note], spk4)
+        if any(_psg_pitch(n) == _psg_pitch(note)
+               for n in live if n is not speaker):
             return False
         if not _available(live + [note], spk4):
             return False
