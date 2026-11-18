@@ -1,5 +1,7 @@
 # TandyAMP — Winamp-inspired MIDI player for Tandy 1000 DOS
 
+**CORE phrase smoothing:** TandyAMP Studio now holds fragmented notes, connects very small lead gaps, and removes narrowly identified pitch blips, protecting real attacks and bass/drum groove. It runs automatically for CORE audio inputs, not for imported MIDI; see [Studio documentation](tools/tandyamp_studio/README.md#core-smoothing--hold-connect-or-remove-opt-in-via-core). The DOS player and Build56 defaults are unchanged.
+
 **New KISS CORE mode:** `--arrangement core` produces a deliberately sparse Tandy arrangement: drums and bass establish the groove; one guitar riff connects it to one vocal melody. Additional harmony enters only where meaningful. This is opt-in; [Studio instructions](tools/tandyamp_studio/README.md#core-the-kiss-four-part-tandy-arrangement-new-opt-in). Build56 remains the default, and no DOS code changes are required.
 
 **New optional musical arranger:** The laptop Studio now supports `--arrangement musical`, an experimental offline **foundation / identity / support** simplifier. See [Studio usage](tools/tandyamp_studio/README.md#new-experiment-musical--the-simplest-tandy-arrangement) and [implementation](tools/tandyamp_studio/musical_arranger.py). Build56 stays the default and MAX RAW stays separate.

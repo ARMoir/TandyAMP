@@ -118,6 +118,20 @@ Document the input/source SHA-256, command/options, Studio commit, model version
 
 
 
+### Implemented optional CORE audio phrase smoothing
+
+The CORE arranger now supports **HOLD / CONNECT / REMOVE** on audio
+transcriptions, with one small set of conservative thresholds rather
+than a growing pile of music-specific rules. Repeated same-pitch
+fragments ≤50 ms apart can be held, small ≤45 ms guitar/lead gaps can
+be connected as legato (not a PSG crossfade), and weak ≤65 ms
+A–B–A pitch spikes can be suppressed. Strong re-attacks, kick/snare
+reinforcement, bass rests, chromatic ornaments and a three-PSG-pitch
+cap are protected. Smoothing is automatic **only** when CORE receives
+audio; imported MIDI defaults to unchanged attacks, with an explicit
+override. The original Build56 recipe and the DOS executable are
+untouched.
+
 ### Implemented KISS CORE interpretation
 
 The opt-in [CORE selector](core_arranger.py) implements these rules with

@@ -28,6 +28,9 @@ class CoreReport:
     source_drums: int
     chosen_drums: int
     role_counts: dict[str, int]
+    held_joins: int = 0
+    connected_gaps: int = 0
+    removed_blips: int = 0
 
     def as_text(self) -> str:
         return (
@@ -42,10 +45,14 @@ class CoreReport:
             'Source drum hits: {}\n'
             'Output drum hits: {}\n'
             'Retained pitched source roles: {}\n'
+            'Held/merged same-pitch fragments: {}\n'
+            'Connected short phrase gaps: {}\n'
+            'Removed short unsupported pitch blips: {}\n'
             'Musical quality still requires physical Tandy listening.\n'
         ).format(self.source_pitched, self.retained_source_notes,
                  self.chosen_pitched, self.source_drums, self.chosen_drums,
-                 repr(dict(sorted(self.role_counts.items()))))
+                 repr(dict(sorted(self.role_counts.items()))),
+                 self.held_joins, self.connected_gaps, self.removed_blips)
 
 
 def _select_one(ids: list[int], notes: list[Note], chosen: set[int],
@@ -68,9 +75,17 @@ def _select_one(ids: list[int], notes: list[Note], chosen: set[int],
             score -= 480  # short, quiet high harmonics often are bleed
         if n.velocity < 42 and duration < .09:
             score -= 210
-        # Prefer a clear lower guitar fundamental to a near-tied harmonic.
-        if n.part == 'guitar' and n.pitch > 80:
-            score -= min(120, (n.pitch-80)*12)
+        # Prefer a credible guitar fundamental over a simultaneous weak
+        # upper partial, even if that partial began a few milliseconds first.
+        # A real high solo with no competing guitar remains intact.
+        if n.part == 'guitar':
+            if n.pitch > 80:
+                score -= min(120, (n.pitch-80)*12)
+            if any(notes[j].part == 'guitar' and
+                   notes[j].pitch <= n.pitch-7 and
+                   notes[j].velocity >= n.velocity+18
+                   for j in ids if j != i):
+                score -= 320
         return score, -n.start, -i
 
     return max(ids, key=quality)
@@ -94,8 +109,119 @@ def _drums_core(notes: list[Note]) -> list[Note]:
     return result
 
 
+
+def smooth_core_fragments(notes: Iterable[Note],
+                          ) -> tuple[list[Note], dict[str, int]]:
+    """Conservative audio-derived CORE phrase smoothing.
+
+    HOLD: merge repeated same-pitch transcription fragments, except strong
+    new attacks or kick/snare-reinforced rearticulations.
+    CONNECT: extend a lead note across a <=45ms gap to the next onset.
+    REMOVE: only a weak, short A-B-A pitch blip (not arbitrary short notes).
+    Noise drums are never moved or quantized by this stage.
+    There is no crossfade on the SN76489; 'connect' is literal legato.
+    """
+    incoming = list(notes)
+    drums = [n for n in incoming if n.part == 'drums']
+    groups: dict[tuple[str, int], list[Note]] = {}
+    for n in incoming:
+        if n.part != 'drums':
+            groups.setdefault((n.part, n.program), []).append(n)
+    strong_hits = [n.start for n in drums if n.pitch in (36, 38, 40)]
+    stats = {'held_joins': 0, 'connected_gaps': 0,
+             'removed_blips': 0}
+    output = list(drums)
+
+    # Legato or same-pitch holds must never create a fourth PSG pitch
+    # while other voices play. We inspect only the tiny gap being filled.
+    def room_to_extend(part: str, begin: float, end: float, pitch: int) -> bool:
+        if end <= begin + 1e-8:
+            return True
+        concurrent = [n for n in incoming
+                      if n.part not in ('drums', part) and
+                      n.start < end and n.end > begin]
+        if len(concurrent) < 3:
+            return True
+        boundaries = sorted({begin, end} |
+                            {max(begin, n.start) for n in concurrent} |
+                            {min(end, n.end) for n in concurrent})
+        our_pitch = _psg_pitch(Note(begin, end, pitch, 80, part))
+        for a, b in zip(boundaries, boundaries[1:]):
+            if b-a <= 1e-8:
+                continue
+            when = (a+b)*.5
+            pitches = {_psg_pitch(n) for n in concurrent
+                       if n.start <= when < n.end}
+            if len(pitches | {our_pitch}) > 3:
+                return False
+        return True
+
+    for (part, _program), group in groups.items():
+        group.sort(key=lambda n: (n.start, n.end))
+        # A-B-A where the middle note is weak and extremely short is often
+        # a detector pitch spike. Keep true passing notes if they are strong
+        # or do not immediately revert to the original pitch.
+        keep: list[Note] = []
+        for i, n in enumerate(group):
+            if 0 < i < len(group)-1 and part in ('guitar', 'melody'):
+                before, after = group[i-1], group[i+1]
+                if (n.pitch != before.pitch == after.pitch and
+                        n.end-n.start <= .065 and
+                        n.velocity <= min(before.velocity, after.velocity)-12 and
+                        -.002 <= n.start-before.end <= .04 and
+                        -.002 <= after.start-n.end <= .055 and
+                        before.end-before.start >= .065 and
+                        after.end-after.start >= .065):
+                    stats['removed_blips'] += 1
+                    continue
+            keep.append(n)
+
+        merged: list[Note] = []
+        for n in keep:
+            if not merged:
+                merged.append(n)
+                continue
+            previous = merged[-1]
+            gap = n.start-previous.end
+            if (n.pitch == previous.pitch and
+                    -.002 <= gap <= .05 and
+                    (n.end-n.start <= .22 or
+                     previous.end-previous.start <= .22)):
+                # Preserve strong re-attacks and rhythm-section accents.
+                strong_restrike = (n.velocity >= 88 and
+                                   n.velocity >= previous.velocity+25)
+                beat_restrike = (n.velocity >= previous.velocity+12 and
+                                 any(abs(n.start-t) <= .055
+                                     for t in strong_hits))
+                if (not strong_restrike and not beat_restrike and
+                        room_to_extend(part, previous.end, n.start,
+                                       previous.pitch)):
+                    merged[-1] = replace(previous,
+                                         end=max(previous.end, n.end))
+                    stats['held_joins'] += 1
+                    continue
+
+            # Pitch transitions don't "blend" on this hardware; merely
+            # connect a tiny unintentional gap when both notes are real.
+            if (part in ('guitar', 'melody', 'harmony') and
+                    n.pitch != previous.pitch and
+                    0 < gap <= .045 and
+                    previous.end-previous.start >= .075 and
+                    n.end-n.start >= .07 and
+                    min(n.velocity, previous.velocity) >= 55 and
+                    room_to_extend(part, previous.end, n.start,
+                                   previous.pitch)):
+                merged[-1] = replace(previous, end=n.start)
+                stats['connected_gaps'] += 1
+            merged.append(n)
+        output.extend(merged)
+    output.sort(key=lambda n: (n.start,n.end,n.part,n.pitch))
+    return output, stats
+
+
 def arrange_core(notes: Iterable[Note],
-                 spk4: str = 'adapt') -> tuple[list[Note], CoreReport]:
+                 spk4: str = 'adapt',
+                 smooth: bool = False) -> tuple[list[Note], CoreReport]:
     """Keep real bass/riff/vocal voices; admit support only in their gaps.
 
     The source role labels are transcription estimates. An existing MIDI
@@ -231,9 +357,15 @@ def arrange_core(notes: Iterable[Note],
     drum_out = _drums_core(drums)
     output = sorted(emitted+drum_out,
                     key=lambda n:(n.start,n.end,n.part,n.pitch))
+    smooth_stats = {'held_joins': 0, 'connected_gaps': 0,
+                    'removed_blips': 0}
+    if smooth:
+        output, smooth_stats = smooth_core_fragments(output)
     report = CoreReport(
-        source_pitched=len(notes),chosen_pitched=len(emitted),
+        source_pitched=len(notes),
+        chosen_pitched=sum(n.part != 'drums' for n in output),
         retained_source_notes=len(chosen_ever),source_drums=len(drums),
         chosen_drums=len(drum_out),
-        role_counts=dict(Counter(notes[i].part for i in chosen_ever)))
+        role_counts=dict(Counter(notes[i].part for i in chosen_ever)),
+        **smooth_stats)
     return output, report

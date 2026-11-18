@@ -1,5 +1,58 @@
 # TandyAMP Studio (laptop-side tools)
 
+## CORE smoothing — hold, connect or remove (opt-in via CORE)
+
+A new **phrase smoother** addresses the abrupt staccato opening heard in
+the user-provided `TANDY_CORE.zip`. The original output repeatedly restarted
+**E3 / MIDI 52** between approximately **1.06 and 1.65 seconds**, even
+when consecutive same-pitch notes touched exactly. The result sounded more
+like disconnected transcription fragments than a held guitar line.
+
+Smoothing is **part of CORE only**; the existing Build56 **classic** and
+older **musical** arrangements are untouched. The default is
+`--core-smoothing auto`:
+
+- **YouTube / MP3 / WAV / FLAC / OGG:** smoothing **on** in CORE.
+- **Imported MIDI:** smoothing **off** in CORE. Deliberately composed
+  re-attacks, such as in SEVENT01 or DEMO, must not be flattened.
+- **Manual override:** `--core-smoothing on` or `off`. In the GUI use
+  the **CORE smoothing** selector (auto / on / off).
+
+The three carefully bounded operations are:
+
+| Decision | Rule | What is protected |
+| --- | --- | --- |
+| **HOLD** | Join same-pitch short fragments separated by **≤50 ms**, when one is ≤220 ms | Strong new note attacks and drum-aligned re-articulations remain separate |
+| **CONNECT** | Extend a genuine guitar/lead/harmony note across a gap of **≤45 ms** to the following different pitch | Bass rests, major pauses, weak pitch changes and the three-PSG-tone limit |
+| **REMOVE** | Suppress only a very short **≤65 ms**, weak **A–B–A** pitch excursion returning immediately to the original pitch | True ornamentation and sufficiently strong chromatic notes |
+
+This isn't a general “delete all short notes” rule. The SN76489 does
+not have real crossfades; **CONNECT is legato**. Drum hit timestamps
+are unchanged. CORE still uses at most three PSG pitches, with the
+noise channel and existing optional SPK4 behavior.
+
+Try the new smoother on the same YouTube recording:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core --core-smoothing on -o "C:\Users\alexr\Music\CORE_SMOOTH"
+```
+
+To hear the same algorithm *without* smoothing, keeping the source,
+transcription and CORE priorities otherwise equal:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core --core-smoothing off -o "C:\Users\alexr\Music\CORE_UNSMOOTHED"
+```
+
+The output `CORE.TXT` contains the **held-join, connected-gap and
+removed-pitch-blip counts**. The approximate preview still covers only
+30 seconds, including the opening. Listen to the real Tandy before
+considering the smoothed arrangement better; smoothing cannot recreate
+guitar notes that transcription never detected or reconstruct a full
+riff from an inaccurate stem.
+
+
+
 ## CORE: the KISS four-part Tandy arrangement (new, opt-in)
 
 **Drums + bass make the groove. Guitar connects that groove to the
