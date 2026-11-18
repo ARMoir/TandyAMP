@@ -230,7 +230,7 @@ def convert(input_file: str | Path, output_dir: Path,
                                   accompaniment=accompaniment, transcription=transcription,
                                   voice_selection=voice_selection,
                                   **({'max_raw': True} if max_raw else {}),
-                                  **({'arrangement': 'musical'} if arrangement == 'musical' else {}))
+                                  **({'arrangement': arrangement} if arrangement != 'classic' else {}))
     if source.lower().startswith(('http://', 'https://')):
         raise ValueError('Only single-video YouTube links are supported (https://youtu.be/... or youtube.com/watch?v=...)')
     if keep_mp3 or mp3_only:
@@ -245,7 +245,7 @@ def convert(input_file: str | Path, output_dir: Path,
                           accompaniment=accompaniment, transcription=transcription,
                           voice_selection=voice_selection,
                           **({'max_raw': True} if max_raw else {}),
-                          **({'arrangement': 'musical'} if arrangement == 'musical' else {}))
+                          **({'arrangement': arrangement} if arrangement != 'classic' else {}))
 
 
 def gui(initial_input: str = '') -> None:
