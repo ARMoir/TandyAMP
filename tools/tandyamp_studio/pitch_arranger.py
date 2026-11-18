@@ -174,6 +174,9 @@ def _stem_correction(score: Score) -> tuple[Score, Counter[str]]:
     counts: Counter[str] = Counter()
     for phrase in score.phrases:
         group = phrase.notes
+        if phrase.reconstructed:
+            corrected.extend(group)
+            continue
         for i, n in enumerate(group):
             before = group[i - 1] if i else None
             after = group[i + 1] if i + 1 < len(group) else None
@@ -202,9 +205,10 @@ def _ensemble_correction(score: Score, counts: Counter[str]) -> tuple[Score, Pit
                              by_passage.get(i + 1, [])) or global_key
             for i, group in by_passage.items()}
     corrected = []
+    riff = {n for phrase in score.phrases if phrase.reconstructed for n in phrase.notes}
     for n in notes:
         key = keys[floor(n.start / 8)]
-        if n.part not in sounding or n.end - n.start > .33:
+        if n in riff or n.part not in sounding or n.end - n.start > .33:
             corrected.append(n)
             continue
         middle = (n.start + n.end) / 2
@@ -503,7 +507,9 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
     other_times = [n.start for n in other]
     backing_attacks = {n.start for phrase in score.phrases
                        if phrase.part == 'guitar' and phrase.function == 'backing'
+                       and not phrase.reconstructed
                        for n in phrase.notes}
+    reconstructed = any(phrase.reconstructed for phrase in score.phrases)
     beats = score.beats
     period = median([b - a for a, b in zip(beats, beats[1:]) if .24 <= b - a <= 1.]
                     or [.5])
@@ -546,7 +552,7 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
     if evidence is not None and evidence.guitar_support:
         pedal = [replace(n, end=min(n.end, intro_end)) for n in evidence.guitar_support
                  if n.start < intro_end - .045]
-    elif counts and guitar:
+    elif counts and guitar and not reconstructed:
         root, repeats = counts.most_common(1)[0]
         if repeats >= 3:
             supporting, pedal = _intro_counterline(supporting, proposals, low, root,
@@ -555,8 +561,8 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
         i = bisect_left(other_times, n.end)
         if i == 0 or other[i - 1].end <= n.start:
             groups['harmony'].append(n)
-    groups['guitar'] = _coherent_guitar_line(supporting, .006,
-                                            commit_full=True)
+    groups['guitar'] = (supporting if reconstructed else
+                        _coherent_guitar_line(supporting, .006, commit_full=True))
     groups['melody'] = [_vocal_level(n) for n in vocals]
     groups['bass'] = [replace(n, velocity=min(86, max(56, n.velocity))) for n in bass]
     return normalize((n for group in groups.values() for n in group), preset, preserve=True)
@@ -584,13 +590,18 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
                      ensemble_repairs=ensemble.corrected)
     mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
                            preset, evidence)
+    # The reconstructed part already owns these attacks and releases.
+    riff_attacks = {n.start for phrase in tuned.phrases if phrase.reconstructed
+                    for n in phrase.notes}
+    riff = [n for n in mixed if n.part == 'guitar' and n.start in riff_attacks]
+    mixed = [n for n in mixed if n.part != 'guitar' or n.start not in riff_attacks]
     from score_polish import (merge_duplicate_attacks, commit_role_notes,
                               connect_legato_gaps)
     merged, merged_count = merge_duplicate_attacks(mixed)
     committed, declined_count = commit_role_notes(merged)
     connected, legato_count = connect_legato_gaps(committed)
     from ensemble_roles import arrange_ensemble
-    arranged, voice_report = arrange_ensemble(connected, spk4=spk4)
+    arranged, voice_report = arrange_ensemble(connected + riff, spk4=spk4)
     report = replace(report, note_commit={
         'duplicates_merged': merged_count,
         'competing_notes_declined': declined_count,

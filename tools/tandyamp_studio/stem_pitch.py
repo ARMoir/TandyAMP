@@ -26,6 +26,59 @@ class StemPitch:
     strength: ndarray
     cents: float
 
+    def sustain_strength(self, note: Note) -> float | None:
+        """Relative fundamental energy through the body of a proposed note."""
+        index = note.pitch - self.first
+        if not 0 <= index < self.strength.shape[1]:
+            return None
+        margin = min(.037, (note.end - note.start) * .20)
+        start = max(0, round((note.start + margin) / FRAME_SECONDS))
+        end = max(start + 1, round((note.end - margin) / FRAME_SECONDS))
+        frames = self.strength[start:end]
+        if not len(frames):
+            return 0.
+        return float(frames[:, index].sum() /
+                     max(1.e-8, float(frames.max(axis=1).sum())))
+
+    def has_reattack(self, note: Note) -> bool | None:
+        """Check for a new rise in the same fundamental at an apparent restart."""
+        index = note.pitch - self.first
+        onset = round(note.start / FRAME_SECONDS)
+        if not 0 <= index < self.strength.shape[1] or onset < 3:
+            return None
+        before = self.strength[onset - 3:onset, index]
+        after = self.strength[onset:onset + 3, index]
+        if len(after) < 2 or not after.max():
+            return None
+        return bool(after.mean() >= 1.32 * before.mean())
+
+    def riff_notes(self, part: str, program: int) -> list[Note]:
+        """Offer independently measured tones the MIDI decoder may have missed."""
+        import numpy as np
+
+        signal = self.strength
+        if not signal.size or not signal.max():
+            return []
+        peak = signal.max(axis=1)
+        audible = peak > np.percentile(peak[peak > 0], 80) * .045
+        active = (signal >= .35 * peak[:, None]) & audible[:, None]
+        active[:, 1:] &= signal[:, 1:] > signal[:, :-1]
+        active[:, :-1] &= signal[:, :-1] >= signal[:, 1:]
+        active[1:-1] |= active[:-2] & active[2:]
+        result = []
+        for index, track in enumerate(active.T):
+            edges = np.flatnonzero(np.diff(track, prepend=False, append=False))
+            for start, end in zip(edges[::2], edges[1::2]):
+                if end - start < 3:
+                    continue
+                begin = max(0., (start - .5) * FRAME_SECONDS)
+                finish = (end - .5) * FRAME_SECONDS
+                confidence = signal[start:end, index].sum() / peak[start:end].sum()
+                velocity = round(50 + 29 * confidence)
+                result.append(Note(begin, finish, self.first + index, velocity,
+                                   part, program))
+        return result
+
     def retune(self, note: Note) -> Note:
         """Use the sustained part of an attack to reject scoops and blips."""
         import numpy as np

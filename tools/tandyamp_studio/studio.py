@@ -14,7 +14,9 @@ from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
 from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, safe_name
 
 if TYPE_CHECKING:
+    from arranger import Note
     from pitch_arranger import Reference
+    from score_polish import PolishReport
 
 ARRANGEMENTS = {
     'tuned': '_TUNED', 'classic': '_TANDY', 'musical': '_MUSIC', 'core': '_CORE',
@@ -26,6 +28,17 @@ def _default_arrangement(source: str, max_raw: bool = False) -> str:
                    and Path(source).suffix.lower() in ('.mid', '.midi')):
         return 'classic'
     return DEFAULTS['arrangement']
+
+
+def _stabilize_tuned(notes: list[Note]) -> tuple[list[Note], PolishReport]:
+    from dataclasses import replace
+    from score_polish import reject_register_spikes, stabilize_audio_candidates
+
+    guitar = [n for n in notes if n.part == 'guitar']
+    cleaned, report = reject_register_spikes(n for n in notes if n.part != 'guitar')
+    cleaned, changes = stabilize_audio_candidates(cleaned)
+    candidates = sorted(cleaned + guitar, key=lambda n: (n.start, n.end, n.part, n.pitch))
+    return candidates, replace(report, source_notes=len(notes), **changes)
 
 
 def _convert_local(input_file: Path, output_dir: Path, target_name: str,
@@ -76,18 +89,13 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     raw_transcribed_notes = list(notes)
     cleanup_report = None
     if evidence is not None and arrangement == 'tuned' and reference is None:
-        from dataclasses import replace as replace_report
-        from score_polish import (reject_register_spikes,
-                                  stabilize_audio_candidates)
-        notes, cleanup_report = reject_register_spikes(notes)
-        notes, stable = stabilize_audio_candidates(notes)
-        cleanup_report = replace_report(cleanup_report, **stable)
+        notes, cleanup_report = _stabilize_tuned(notes)
         print('Guide-free score stabilization: {} isolated register spikes '
               'removed, {} repeated source fragments combined '
-              '({} vocal/guitar pitch wobbles); {} candidate notes remain.'
+              '({} pitch wobbles); {} candidates before riff reconstruction.'
               .format(cleanup_report.removed_register_spikes,
-                      stable['merged_source_fragments'],
-                      stable['removed_pitch_jitter'], len(notes)),
+                      cleanup_report.merged_source_fragments,
+                      cleanup_report.removed_pitch_jitter, len(notes)),
               flush=True)
     keep_candidates = (not max_raw and arrangement == 'classic' and
                        note_preservation == 'full' and

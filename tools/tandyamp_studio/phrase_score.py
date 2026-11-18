@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from arranger import Note, _psg_pitch, normalize
 from core_arranger import _drums_core
+from riff import reconstruct_riff
 
 if TYPE_CHECKING:
     from stem_pitch import StemPitch
@@ -34,6 +35,7 @@ class Phrase:
     part: str
     function: str
     notes: tuple[Note, ...]
+    reconstructed: bool = False
 
     @property
     def start(self) -> float:
@@ -126,7 +128,8 @@ def _has_signal(notes: list[Note], role: str,
 
 
 def _line(notes: list[Note], role: str, groove: _Groove, *,
-          finish_notes: bool = False) -> list[Note]:
+          finish_notes: bool = False,
+          weights: dict[Note, float] | None = None) -> list[Note]:
     """Find a maximum-scoring attack path through complete note proposals.
 
     Each edge considers the gap, interval, and overlap with the previous
@@ -157,9 +160,11 @@ def _line(notes: list[Note], role: str, groove: _Groove, *,
                 weight += .11
             if _near(groove.accents, n.start, .044):
                 weight += .13
-        # Octave and overtone duplicates near an onset need independent
-        # evidence to beat the lower fundamental of the same attack.
-        if any(n.pitch - m.pitch in (12, 19, 24, 28, 31, 36)
+        if weights is not None:
+            # The phrase search has already scored the local register,
+            # overtones and repeat evidence for this proposal.
+            weight = weights[n]
+        elif any(n.pitch - m.pitch in (12, 19, 24, 28, 31, 36)
                and m.velocity >= n.velocity - 7 and m.end > n.start + .05
                for m in notes[bisect_left(starts, n.start - .056):
                               bisect_right(starts, n.start + .042)]):
@@ -191,6 +196,8 @@ def _line(notes: list[Note], role: str, groove: _Groove, *,
                         finish_notes and gap < -1e-7):
                     continue
                 motion = (.15 - .052 * min(16, max(0, interval - 4)))
+                if weights is not None:
+                    motion = .024 - .016 * min(16, max(0, interval - 4))
                 continuity = motion * (1 - max(0., gap) / link)
                 overlap_cost = 1.3 * max(0., -gap) + .10 * (gap < -.060)
                 branch = scores[j] + continuity - overlap_cost
@@ -297,6 +304,59 @@ def _guitar_bed(notes: list[Note], vocal: Phrase, groove: _Groove,
     ]
 
 
+def _instrumental_groups(line: list[Note], period: float) -> list[list[Note]]:
+    """Open a new phrase at a rest or a sustained register change."""
+    groups = []
+    for passage in _group(line, max(.34, 1.06 * period)):
+        start = 0
+        for i in range(4, len(passage) - 3):
+            if i - start < 4:
+                continue
+            before = median(n.pitch for n in passage[max(start, i - 5):i])
+            after = median(n.pitch for n in passage[i:i + 5])
+            if (abs(after - before) >= 8
+                    and abs(passage[i - 1].pitch - before) <= 4
+                    and abs(passage[i].pitch - after) <= 4):
+                groups.append(passage[start:i])
+                start = i
+        groups.append(passage[start:])
+    return groups
+
+
+def _instrumental_phrases(notes: list[Note], role: str, bass: list[Note],
+                          vocals: list[Phrase], groove: _Groove, evidence: ScoreEvidence
+                          ) -> list[Phrase]:
+    signal = evidence.pitches.get(role)
+    if signal is not None and notes:
+        notes = notes + signal.riff_notes(role, notes[0].program)
+    candidates = reconstruct_riff(_has_signal(notes, role, evidence), groove.period, signal)
+    bass = normalize(bass, preserve=True)
+    for n, weight in candidates.weights.items():
+        i = bisect_right(bass, n.start, key=lambda other: other.end)
+        j = bisect_left(bass, n.end, lo=i, key=lambda other: other.start)
+        doubled = sum(min(n.end, other.end) - max(n.start, other.start)
+                      for other in bass[i:j] if _psg_pitch(other) == _psg_pitch(n))
+        # A detector often returns the same low tone already covered by
+        # the rhythm section. Favor a different observed riff note when
+        # the two parts would otherwise take turns on the same PSG tone.
+        candidates.weights[n] = weight * (1 - .55 * doubled / (n.end - n.start))
+    chosen = _line(list(candidates.weights), role, groove, finish_notes=True,
+                   weights=candidates.weights)
+    if role != 'guitar' and sum(n.start in candidates.repeated for n in chosen) < 3:
+        return []
+    # Guitar is the player's companion voice. The same lane can serve a
+    # repeating keyboard or synth figure when there is no separate guitar.
+    chosen = [n if role == 'guitar' else replace(n, part='guitar', program=30)
+              for n in chosen]
+    phrases = []
+    for group in _instrumental_groups(chosen, groove.period):
+        recurring = sum(n.start in candidates.repeated for n in group)
+        sung = any(p.start < group[-1].end and p.end > group[0].start for p in vocals)
+        function = 'riff' if recurring >= 3 or not sung else 'backing'
+        phrases.append(Phrase('guitar', function, tuple(group), reconstructed=True))
+    return phrases
+
+
 def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
                       *, connect: bool = True, recover_riff: bool = False,
                       finish_notes: bool = False) -> Score:
@@ -329,38 +389,36 @@ def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
               for group in _group(line('melody'), rest)]
     phrases.extend(vocals)
 
-    guitar = line('guitar')
-    if recover_riff and 'guitar' in evidence.pitches:
-        entrance = min(vocals[0].start if vocals else float('inf'), 16.)
-        upper, lower = evidence.pitches['guitar'].guitar_voices()
-        # Replace the instrumental opening only when the stem yields a
-        # confident multi-note line and genuine two-note voicing.
-        recovered = [n for n in upper if n.end <= entrance + .025]
-        pedal = [n for n in lower if n.end <= entrance + .025]
-        if (len(recovered) >= 5 and len({n.pitch for n in recovered}) >= 3
-                and len(pedal) >= 2 and guitar
-                and recovered[0].start <= guitar[0].start + .34
-                and recovered[-1].end - recovered[0].start >= min(1.2, entrance * .5)):
-            begin, end = recovered[0].start, recovered[-1].end
-            guitar = ([n for n in guitar if n.end <= begin] + recovered +
-                      [n for n in guitar if n.start >= end])
-            evidence.guitar_support = [n for n in pedal if n.start >= begin and n.end <= end]
-    repeats = _recurring_attacks(guitar, groove.period)
-    vocal_starts = [p.start for p in vocals]
-    slots: dict[tuple[int, bool], list[Note]] = defaultdict(list)
-    for n in guitar:
-        i = bisect_right(vocal_starts, n.start) - 1
-        sung = i >= 0 and n.start < vocals[i].end
-        slots[i, sung].append(n)
     guitar_phrases = []
-    for (i, sung), group in slots.items():
-        for phrase in _group(group, rest):
-            recurring = sum(n.start in repeats for n in phrase)
-            keep_riff = not sung or recurring >= max(3, len(phrase) * .6)
-            if not keep_riff:
-                phrase = _guitar_bed(phrase, vocals[i], groove, bass_attacks)
-            guitar_phrases.append(Phrase('guitar', 'riff' if keep_riff else 'backing',
-                                         tuple(phrase)))
+    if recover_riff:
+        for role in ('guitar', 'harmony'):
+            guitar_phrases = _instrumental_phrases(
+                source[role], role, bass, vocals, groove, evidence)
+            if guitar_phrases:
+                break
+        if guitar_phrases and role == 'guitar' and 'guitar' in evidence.pitches:
+            entrance = min(bass[0].start if bass else float('inf'),
+                           vocals[0].start if vocals else float('inf'))
+            _, lower = evidence.pitches['guitar'].guitar_voices()
+            evidence.guitar_support = [replace(n, velocity=66) for n in lower
+                                       if n.end <= entrance]
+    else:
+        guitar = line('guitar')
+        repeats = _recurring_attacks(guitar, groove.period)
+        vocal_starts = [p.start for p in vocals]
+        slots: dict[tuple[int, bool], list[Note]] = defaultdict(list)
+        for n in guitar:
+            i = bisect_right(vocal_starts, n.start) - 1
+            sung = i >= 0 and n.start < vocals[i].end
+            slots[i, sung].append(n)
+        for (i, sung), group in slots.items():
+            for phrase in _group(group, rest):
+                recurring = sum(n.start in repeats for n in phrase)
+                keep_riff = not sung or recurring >= max(3, len(phrase) * .6)
+                if not keep_riff:
+                    phrase = _guitar_bed(phrase, vocals[i], groove, bass_attacks)
+                guitar_phrases.append(Phrase('guitar', 'riff' if keep_riff else 'backing',
+                                             tuple(phrase)))
     phrases.extend(guitar_phrases)
 
     # One fallback line is useful when the harmonic stem is the only backing
@@ -389,7 +447,7 @@ def _overlap(line: list[Note], phrase: Phrase) -> list[Note]:
 
 
 def _register(notes: tuple[Note, ...], others: list[Note], center: int,
-              velocity: float = 1.) -> list[Note]:
+              velocity: float = 1., *, preserve_register: bool = False) -> list[Note]:
     """Choose one octave for the phrase to retain its contour and avoid unisons."""
     ordered = sorted(others, key=lambda n: n.start)
     octaves = range(-72, 73, 12)
@@ -410,8 +468,10 @@ def _register(notes: tuple[Note, ...], others: list[Note], center: int,
             raw = n.pitch + shift
             pitch = fold(raw)
             duration = n.end - n.start
-            seconds += duration * (abs(pitch - center) + 2 * max(0, pitch - 79)
-                                   + abs(raw - pitch))
+            placement = abs(pitch - center)
+            if preserve_register:
+                placement = .35 * placement + .78 * abs(shift)
+            seconds += duration * (placement + 2 * max(0, pitch - 79) + abs(raw - pitch))
             while first < len(ordered) and ordered[first].end <= n.start:
                 first += 1
             for i in range(first, len(ordered)):
@@ -424,7 +484,9 @@ def _register(notes: tuple[Note, ...], others: list[Note], center: int,
         return seconds
 
     shift = min(inside or octaves, key=lambda value: (cost(value), abs(value)))
-    return [replace(n, pitch=fold(n.pitch + shift), velocity=round(n.velocity * velocity))
+    return [replace(n, pitch=fold(n.pitch + shift),
+                    velocity=round(velocity * (min(92, max(62, n.velocity))
+                                               if preserve_register else n.velocity)))
             for n in notes]
 
 
@@ -443,6 +505,7 @@ def arrange_score(score: Score, preset: str = 'balanced') -> list[Note]:
         vocal_overlap = _overlap(vocals, phrase)
         gain = .72 if phrase.function == 'backing' else .86 if vocal_overlap else 1.
         neighbors = _overlap(bass, phrase) + vocal_overlap
-        backing.extend(_register(phrase.notes, neighbors,
-                                 62 if vocal_overlap else 64, gain))
+        center = 62 if vocal_overlap and not phrase.reconstructed else 64
+        backing.extend(_register(phrase.notes, neighbors, center, gain,
+                                 preserve_register=phrase.reconstructed))
     return normalize(bass + vocals + backing + list(score.drums), preset, preserve=True)

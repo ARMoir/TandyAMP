@@ -1,14 +1,17 @@
 # TandyAMP Studio (laptop-side tools)
 
-**Stronger automatic phrase smoothing:** Guide-free `--arrangement tuned` now
-combines same-pitch source fragments *before* note selection, rejects
-unsupported short high guitar beeps, and connects tiny lead/riff gaps
-*after* full-note commitment. Strong rhythmic re-attacks, chromatic
-ornaments, true rests, and the approved MIDI-guided PARATUNE take
-remain protected. [Rules and benchmarks](benchmarks/NOTE_COMPLETION.md).
+**Automatic riff reconstruction:** The default audio and YouTube conversion
+looks for repeated pitch contours and attack spacing across the separated
+instrumental stem. It uses the stem's fundamental pitch and the surrounding
+register to reject overtones, recover missed pitches, and join fragments of
+sustained notes. Repeated attacks and rests carry into the score. The guitar
+keeps its own PSG line under vocals, with a lower playback level. A recurring
+keyboard or synth line in the harmonic stem can fill the same role on songs
+without a separate guitar.
 
-
-**New guide-free Note Completion and context cleanup:** [source-relative register filtering, adjacent attack merging, full-note commitment and real-ZIP benchmarks](benchmarks/NOTE_COMPLETION.md). Existing guided PARATUNE and player are unchanged.
+The output's `SCORE.json` marks reconstructed instrumental phrases. The
+[note completion benchmarks](benchmarks/NOTE_COMPLETION.md) describe the
+cleanup used for the other parts.
 
 
 ### Universal phrase-to-hardware ensemble check (guide-free AutoTune)
@@ -41,12 +44,11 @@ approved guided PARATUNE export remain unchanged.
 
 ## Tuned: the hardware-approved audio default
 
-Studio uses **Tuned** for MP3, WAV, FLAC, OGG and YouTube. It first corrects
-small pitch excursions within each selected musical line, then checks those
-lines against the neighboring pitches and the local key. The arrangement
-puts the bass and drum groove under the riff and leaves space for the vocal
-when it enters. The corrections change MIDI pitches. Drum hits supply
-timing and keep their original pitches.
+Studio uses **Tuned** for MP3, WAV, FLAC, OGG and YouTube. It corrects pitch
+estimates within each stem, reconstructs musical phrases, then checks the
+score against pitches sounding in the other parts before PSG voicing.
+Confirmed riff pitches and note lengths carry through to the mix. Drum hits
+supply the timing context for the score.
 
 | Setting | Default |
 | --- | --- |
