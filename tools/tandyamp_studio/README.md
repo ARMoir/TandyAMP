@@ -21,13 +21,19 @@ timing and keep their original pitches.
 | Phrase smoothing | `auto` |
 | Desktop WAV preview | On |
 
-Open Studio and convert an audio file, or run:
+From this directory, give Studio a single YouTube video URL and an output folder:
 
 ```bat
-py -3.11 studio.py --cli "song.mp3"
+python studio.py "https://www.youtube.com/watch?v=BOTIIw76qiE" "C:\Music\Tandy MIDI"
 ```
 
-The `_TUNED` folder includes the DOS files, `SCORE.json` and `PITCH.TXT`.
+Studio downloads the audio, separates and transcribes the stems, corrects
+pitch, and writes DOS-ready MIDI into a song-specific `_TUNED` subfolder.
+Copy the `.MID` files and `PLAY.BAT` to the Tandy. Longer arrangements may
+produce several numbered MIDI files. You can also pass a local audio file
+as the first argument. The `-o` output option remains available.
+
+The `_TUNED` folder also includes `SCORE.json` and `PITCH.TXT`.
 Imported MIDI uses Classic by default. Use `--arrangement core`,
 `--arrangement musical`, or `--arrangement classic --spk4 adapt` for
 comparison. `--max-raw` still exports the high-recall transcription.
@@ -717,8 +723,8 @@ Every command with a positional input runs entirely in the console, with **no GU
 REM Download YouTube MP3 only, without AI or MIDI dependencies:
 py -3.11 studio.py --cli "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --mp3-only -o "C:\Music\Downloaded"
 
-REM YouTube -> MP3 -> 3 PSG tones + SPK4 bass -> DOS MIDI:
-py -3.11 studio.py --cli "https://youtu.be/dQw4w9WgXcQ" --spk4 bass --preset balanced
+REM YouTube to Tuned DOS MIDI in one command:
+python studio.py "https://youtu.be/dQw4w9WgXcQ" "C:\Music\Tandy MIDI"
 
 REM Better experimental transcription through AI-separated stems:
 py -3.11 studio.py --cli "https://youtu.be/dQw4w9WgXcQ" --stems --spk4 adapt --preview --keep-mp3
@@ -735,7 +741,8 @@ convert_cli.bat "https://youtu.be/dQw4w9WgXcQ" --mp3-only
 | Argument | Behavior |
 | --- | --- |
 | `INPUT` | Single YouTube watch/short/live link, or local .MID/.MP3/.WAV/.FLAC/.OGG file |
-| `-o, --output FOLDER` | Output parent directory; default `./TANDY_OUT` |
+| `OUTPUT_FOLDER` | Optional second positional argument. Parent folder for the output |
+| `-o, --output FOLDER` | Alternative to the second positional argument. CLI default is `./TANDY_OUT` |
 | `--cli` / `--no-gui` | Never launch the GUI; requires input |
 | `--gui` | Force graphical interface; optional INPUT pre-fills entry |
 | `--preset quality|balanced|performance` | Offline voice-optimizing strategy |

@@ -8,8 +8,11 @@ import types
 import unittest
 from unittest.mock import patch
 
+import mido
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from arranger import Note, load_midi
 import studio
 import youtube
 from youtube import AudioDownload, download_youtube_mp3, is_youtube_url, safe_name, validate_video_url
@@ -139,6 +142,30 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(conv.call_args.kwargs['accompaniment'], 'recover')
             self.assertTrue(conv.call_args.kwargs['keep_mp3'])
             self.assertEqual(conv.call_args.args[3], 'adapt')
+            self.assertEqual(conv.call_args.args[1], Path('output'))
+
+    def test_url_and_output_folder_write_pitch_corrected_dos_midi(self):
+        song = [Note(0., .5, 60, 89, 'guitar', 30),
+                Note(.11, .29, 61, 70, 'melody', 80),
+                Note(.11, .18, 38, 83, 'drums', 0)]
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / 'Tandy MIDI'
+            with (patch('studio.download_youtube_mp3', side_effect=self.fake_download),
+                  patch('studio.gui', side_effect=AssertionError('GUI launched')),
+                  patch('transcribe.transcribe_audio', return_value=song) as transcribe):
+                self.assertEqual(studio.main(['https://youtu.be/dQw4w9WgXcQ', str(output)]), 0)
+            midi, = output.glob('*_TUNED/*.MID')
+            self.assertEqual(mido.MidiFile(midi).type, 0)
+            self.assertEqual([n.pitch % 12 for n in load_midi(midi) if n.part == 'melody'], [0])
+            self.assertIn('audio phrase score', (midi.parent / 'PITCH.TXT').read_text())
+            self.assertIn(b'TANDYAMP /NOSPK4', (midi.parent / 'PLAY.BAT').read_bytes())
+            self.assertIn('score_evidence', transcribe.call_args.kwargs)
+
+    def test_reject_two_output_folders(self):
+        with patch('studio.convert', side_effect=AssertionError('conversion started')):
+            with self.assertRaises(SystemExit) as cm:
+                studio.main(['https://youtu.be/dQw4w9WgXcQ', 'first folder', '-o', 'other'])
+        self.assertEqual(cm.exception.code, 2)
 
     def test_cli_requires_input_and_does_not_open_gui(self):
         with patch('studio.gui', side_effect=AssertionError('GUI launched')):

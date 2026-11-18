@@ -323,7 +323,7 @@ def convert(input_file: str | Path, output_dir: Path,
                           **options)
 
 
-def gui(initial_input: str = '') -> None:
+def gui(initial_input: str = '', *, initial_output: Path | None = None) -> None:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
     from concurrent.futures import ThreadPoolExecutor
@@ -339,7 +339,7 @@ def gui(initial_input: str = '') -> None:
     root.geometry('710x735')
     root.minsize(625, 675)
     path = tk.StringVar(value=initial_input)
-    output = tk.StringVar(value=str(Path.home() / 'Music'))
+    output = tk.StringVar(value=str(initial_output or Path.home() / 'Music'))
     preset = tk.StringVar(value=DEFAULTS['preset'])
     spk4 = tk.StringVar(value=DEFAULTS['spk4'])
     drum_style = tk.StringVar(value=DEFAULTS['drum_style'])
@@ -485,8 +485,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description='TandyAMP Studio: YouTube/MP3/MIDI to 16-bit DOS TandyAMP')
     parser.add_argument('input', nargs='?', help='Local MIDI/audio path or quoted single-video YouTube URL')
-    parser.add_argument('-o', '--output', type=Path, default=Path.cwd() / 'TANDY_OUT',
-                        help='Parent directory for generated files')
+    parser.add_argument('output_folder', nargs='?', type=Path,
+                        help='Parent folder for the generated MIDI and playback files')
+    parser.add_argument('-o', '--output', type=Path,
+                        help='Set the output folder (default: ./TANDY_OUT)')
     parser.add_argument('--preset', choices=PRESETS,
                         default=DEFAULTS['preset'])
     parser.add_argument('--spk4', choices=['off', 'bass', 'adapt'],
@@ -547,8 +549,14 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument('--cli', '--no-gui', action='store_true', help='Never open the GUI; require input')
     mode.add_argument('--gui', action='store_true', help='Open the graphical interface')
     args = parser.parse_args(argv)
+    if args.output_folder is not None and args.output is not None:
+        parser.error('specify the output folder once, as a positional argument or with --output')
+    output_dir = args.output_folder or args.output
     if args.gui or (args.input is None and not args.cli):
-        gui(args.input or '')
+        if output_dir is None:
+            gui(args.input or '')
+        else:
+            gui(args.input or '', initial_output=output_dir)
         return 0
     if args.input is None:
         parser.error('a file or single-video YouTube URL is required in --cli mode')
@@ -566,7 +574,7 @@ def main(argv: list[str] | None = None) -> int:
         ) if value is not None
     }
     try:
-        convert(args.input, args.output, args.preset, args.spk4,
+        convert(args.input, output_dir or Path.cwd() / 'TANDY_OUT', args.preset, args.spk4,
                 args.stems, args.preview, keep_mp3=args.keep_mp3,
                 mp3_only=args.mp3_only, mp3_quality=args.mp3_quality,
                 drum_style=args.drum_style,
