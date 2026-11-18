@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from arranger import Note, _psg_pitch, normalize
 from core_arranger import _drums_core
+from lead_lines import instrumental_answers, vocal_candidates, vocal_sections
 from riff import reconstruct_riff
 
 if TYPE_CHECKING:
@@ -385,18 +386,25 @@ def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
     bass_attacks = tuple(n.start for n in bass)
     phrases = [Phrase('bass', 'bass', tuple(group))
                for group in _group(bass, rest)]
-    vocals = [Phrase('melody', 'vocal', tuple(group))
-              for group in _group(line('melody'), rest)]
+    singing = line('melody')
+    if recover_riff and 'melody' in evidence.pitches:
+        repairs = vocal_candidates(_has_signal(source['melody'], 'melody', evidence),
+                                   singing, evidence.pitches['melody'], groove.period)
+        recovered = _line(list(repairs), 'melody', groove, finish_notes=True, weights=repairs)
+        singing = sorted(singing + recovered, key=lambda n: n.start)
+    vocals = [Phrase('melody', 'vocal', tuple(group)) for group in _group(singing, rest)]
     phrases.extend(vocals)
 
     guitar_phrases = []
+    companion_source = None
     if recover_riff:
         for role in ('guitar', 'harmony'):
             guitar_phrases = _instrumental_phrases(
                 source[role], role, bass, vocals, groove, evidence)
             if guitar_phrases:
+                companion_source = role
                 break
-        if guitar_phrases and role == 'guitar' and 'guitar' in evidence.pitches:
+        if companion_source == 'guitar' and 'guitar' in evidence.pitches:
             entrance = min(bass[0].start if bass else float('inf'),
                            vocals[0].start if vocals else float('inf'))
             _, lower = evidence.pitches['guitar'].guitar_voices()
@@ -421,9 +429,20 @@ def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
                                              tuple(phrase)))
     phrases.extend(guitar_phrases)
 
-    # One fallback line is useful when the harmonic stem is the only backing
-    # (including four-stem audio). Do not fill holes between riff attacks.
-    backing = sorted(line('harmony') + line('accomp'), key=lambda n: n.start)
+    harmony = line('harmony')
+    if recover_riff and companion_source != 'harmony':
+        sections = vocal_sections([(p.start, p.end) for p in vocals], groove.period)
+        guitar = [n for p in guitar_phrases for n in p.notes]
+        answers = instrumental_answers(harmony, sections, bass, guitar, groove.period,
+                                       evidence.levels, evidence.pitches.get('harmony'))
+        for answer in answers:
+            lead = tuple(replace(n, part='melody', program=80) for n in answer)
+            phrases.append(Phrase('melody', 'instrumental lead', lead, reconstructed=True))
+        promoted = {n for answer in answers for n in answer}
+        harmony = [n for n in harmony if n not in promoted]
+
+    # Optional backing occupies the gaps between complete instrumental phrases.
+    backing = sorted(harmony + line('accomp'), key=lambda n: n.start)
     occupied = sorted((p.start, p.end) for p in guitar_phrases)
     occupied_ends = [b for _, b in occupied]
     last_end = 0.
@@ -495,17 +514,35 @@ def arrange_score(score: Score, preset: str = 'balanced') -> list[Note]:
     bass = normalize((n for p in score.phrases if p.part == 'bass'
                       for n in p.notes), preset, preserve=True)
     vocals: list[Note] = []
-    for phrase in score.phrases:
-        if phrase.part == 'melody':
-            vocals.extend(_register(phrase.notes, _overlap(bass, phrase), 67))
+    lead_phrases = [p for p in score.phrases if p.function == 'instrumental lead']
+    sung_phrases = [p for p in score.phrases
+                   if p.part == 'melody' and p.function != 'instrumental lead']
+    for phrase in sung_phrases:
+        vocals.extend(_register(phrase.notes, _overlap(bass, phrase), 67))
+    periods = [b - a for a, b in zip(score.beats, score.beats[1:]) if .24 <= b - a <= 1.]
+    sung_sections = vocal_sections([(p.start, p.end) for p in sung_phrases],
+                                  median(periods) if periods else .5)
+    section_ends = [end for _, end in sung_sections]
     backing: list[Note] = []
     for phrase in score.phrases:
         if phrase.part in ('bass', 'melody'):
             continue
         vocal_overlap = _overlap(vocals, phrase)
-        gain = .72 if phrase.function == 'backing' else .86 if vocal_overlap else 1.
         neighbors = _overlap(bass, phrase) + vocal_overlap
         center = 62 if vocal_overlap and not phrase.reconstructed else 64
-        backing.extend(_register(phrase.notes, neighbors, center, gain,
-                                 preserve_register=phrase.reconstructed))
+        if phrase.reconstructed:
+            gain = .72 if phrase.function == 'backing' else .86
+            placed = _register(phrase.notes, neighbors, center, preserve_register=True)
+            for n in placed:
+                i = bisect_right(section_ends, n.start)
+                sung = i < len(sung_sections) and sung_sections[i][0] <= n.start
+                backing.append(replace(n, velocity=round(n.velocity * gain)) if sung else n)
+        else:
+            gain = .72 if phrase.function == 'backing' else .86 if vocal_overlap else 1.
+            backing.extend(_register(phrase.notes, neighbors, center, gain))
+
+    guitar = [n for n in backing if n.part == 'guitar']
+    for phrase in lead_phrases:
+        neighbors = _overlap(bass, phrase) + _overlap(guitar, phrase)
+        vocals.extend(_register(phrase.notes, neighbors, 65, preserve_register=True))
     return normalize(bass + vocals + backing + list(score.drums), preset, preserve=True)

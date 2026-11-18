@@ -7,10 +7,13 @@ from dataclasses import dataclass, field, replace
 from math import floor, isfinite
 from pathlib import Path
 from statistics import median
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from arranger import BASS_MAX, BASS_MIN, Note, _psg_pitch, load_midi, normalize
 from phrase_score import Score, ScoreEvidence, _Groove, _line, arrange_score
+
+if TYPE_CHECKING:
+    from stem_pitch import StemPitch
 
 MAX_CORRECTION = 2
 ATTACK_TOLERANCE = .040
@@ -168,7 +171,15 @@ def _estimate_key(notes: list[Note]) -> tuple[str, set[int]] | None:
             if best[1] >= .80 and best[0] - alternative[0] >= .033 else None)
 
 
-def _stem_correction(score: Score) -> tuple[Score, Counter[str]]:
+def _sung_pitch_supported(n: Note, alternative: int, vocal: StemPitch | None) -> bool:
+    if vocal is None or n.part != 'melody':
+        return False
+    original = vocal.sustain_strength(n) or 0.
+    proposed = vocal.sustain_strength(replace(n, pitch=alternative)) or 0.
+    return original >= .55 and original > 1.15 * proposed
+
+
+def _stem_correction(score: Score, vocal: StemPitch | None = None) -> tuple[Score, Counter[str]]:
     """Pull weak one-note excursions back into an otherwise continuous line."""
     corrected = []
     counts: Counter[str] = Counter()
@@ -184,14 +195,16 @@ def _stem_correction(score: Score) -> tuple[Score, Counter[str]]:
                     0 < abs(n.pitch - before.pitch) <= MAX_CORRECTION and
                     n.end - n.start <= .32 and n.start - before.end <= .09 and
                     after.start - n.end <= .09 and
-                    n.velocity <= min(before.velocity, after.velocity) - 5):
+                    n.velocity <= min(before.velocity, after.velocity) - 5
+                    and not _sung_pitch_supported(n, before.pitch, vocal)):
                 counts[n.part] += 1
                 n = replace(n, pitch=before.pitch)
             corrected.append(n)
     return score.with_pitches(corrected), counts
 
 
-def _ensemble_correction(score: Score, counts: Counter[str]) -> tuple[Score, PitchReport]:
+def _ensemble_correction(score: Score, counts: Counter[str],
+                         vocal: StemPitch | None = None) -> tuple[Score, PitchReport]:
     """Check small pitch errors against the key and the local bass/guitar."""
     notes = score.pitched_notes()
     global_key = _estimate_key(notes)
@@ -224,7 +237,8 @@ def _ensemble_correction(score: Score, counts: Counter[str]) -> tuple[Score, Pit
         if n.pitch % 12 not in evidence and n.velocity < 80:
             candidates = [p for p in (n.pitch - 1, n.pitch + 1)
                           if 0 <= p <= 127 and p % 12 in evidence]
-            if len(candidates) == 1 and n.part != 'bass':
+            if (len(candidates) == 1 and n.part != 'bass'
+                    and not _sung_pitch_supported(n, candidates[0], vocal)):
                 counts[n.part] += 1
                 n = replace(n, pitch=candidates[0])
         corrected.append(n)
@@ -509,7 +523,7 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
                        if phrase.part == 'guitar' and phrase.function == 'backing'
                        and not phrase.reconstructed
                        for n in phrase.notes}
-    reconstructed = any(phrase.reconstructed for phrase in score.phrases)
+    reconstructed = any(p.part == 'guitar' and p.reconstructed for p in score.phrases)
     beats = score.beats
     period = median([b - a for a, b in zip(beats, beats[1:]) if .24 <= b - a <= 1.]
                     or [.5])
@@ -563,7 +577,9 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
             groups['harmony'].append(n)
     groups['guitar'] = (supporting if reconstructed else
                         _coherent_guitar_line(supporting, .006, commit_full=True))
-    groups['melody'] = [_vocal_level(n) for n in vocals]
+    answer_attacks = {n.start for p in score.phrases if p.function == 'instrumental lead'
+                      for n in p.notes}
+    groups['melody'] = [n if n.start in answer_attacks else _vocal_level(n) for n in vocals]
     groups['bass'] = [replace(n, velocity=min(86, max(56, n.velocity))) for n in bass]
     return normalize((n for group in groups.values() for n in group), preset, preserve=True)
 
@@ -578,30 +594,31 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
         aligned = reference.aligned_notes()
         corrected, report = _guide_correction(notes, aligned)
         return _reference_mix(corrected, reference, aligned), replace(report, reference_mix=True)
-    tuned, stem_repairs = _stem_correction(score)
+    vocal = evidence.pitches.get('melody') if evidence is not None else None
+    tuned, stem_repairs = _stem_correction(score, vocal)
     stem_offsets = {}
     if evidence is not None:
         stem_offsets = {role: round(track.cents, 1)
                         for role, track in sorted(evidence.pitches.items())}
         stem_repairs += evidence.pitch_corrections
-    tuned, ensemble = _ensemble_correction(tuned, Counter())
+    tuned, ensemble = _ensemble_correction(tuned, Counter(), vocal)
     report = replace(ensemble, corrected=dict(stem_repairs + Counter(ensemble.corrected)),
                      stem_offsets=stem_offsets, stem_repairs=dict(stem_repairs),
                      ensemble_repairs=ensemble.corrected)
     mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
                            preset, evidence)
-    # The reconstructed part already owns these attacks and releases.
-    riff_attacks = {n.start for phrase in tuned.phrases if phrase.reconstructed
-                    for n in phrase.notes}
-    riff = [n for n in mixed if n.part == 'guitar' and n.start in riff_attacks]
-    mixed = [n for n in mixed if n.part != 'guitar' or n.start not in riff_attacks]
+    # Completed instrumental phrases already own their attacks and releases.
+    instrumental = {(p.part, n.start) for p in tuned.phrases if p.reconstructed
+                    for n in p.notes}
+    protected = [n for n in mixed if (n.part, n.start) in instrumental]
+    mixed = [n for n in mixed if (n.part, n.start) not in instrumental]
     from score_polish import (merge_duplicate_attacks, commit_role_notes,
                               connect_legato_gaps)
     merged, merged_count = merge_duplicate_attacks(mixed)
     committed, declined_count = commit_role_notes(merged)
     connected, legato_count = connect_legato_gaps(committed)
     from ensemble_roles import arrange_ensemble
-    arranged, voice_report = arrange_ensemble(connected + riff, spk4=spk4)
+    arranged, voice_report = arrange_ensemble(connected + protected, spk4=spk4)
     report = replace(report, note_commit={
         'duplicates_merged': merged_count,
         'competing_notes_declined': declined_count,

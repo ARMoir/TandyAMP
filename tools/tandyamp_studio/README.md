@@ -9,9 +9,16 @@ keeps its own PSG line under vocals, with a lower playback level. A recurring
 keyboard or synth line in the harmonic stem can fill the same role on songs
 without a separate guitar.
 
-The output's `SCORE.json` marks reconstructed instrumental phrases. The
-[note completion benchmarks](benchmarks/NOTE_COMPLETION.md) describe the
-cleanup used for the other parts.
+The lead voice follows the singer through a verse. Studio checks the vocal
+stem for quieter notes missing between accepted syllables, including sung
+passing tones. Across a short breath it keeps the guitar underneath the
+vocal. In an instrumental break the guitar comes forward, and a distinct
+melody in the harmonic stem can take the free lead voice for its whole
+phrase. `SCORE.json` labels these passages `vocal`, `riff`, or
+`instrumental lead`.
+
+The [note completion benchmarks](benchmarks/NOTE_COMPLETION.md) describe
+the cleanup used for the other parts.
 
 
 ### Universal phrase-to-hardware ensemble check (guide-free AutoTune)
