@@ -67,6 +67,8 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
             from phrase_score import ScoreEvidence
             evidence = ScoreEvidence()
             transcribe_kwargs['score_evidence'] = evidence
+            if arrangement == 'tuned' and reference is None:
+                transcribe_kwargs['tune_stems'] = True
         notes = transcribe_audio(input_file, **transcribe_kwargs)
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
@@ -80,10 +82,12 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     elif evidence is not None:
         from phrase_score import arrange_score, reconstruct_score
         phrase_score = reconstruct_score(notes, evidence,
-                                         connect=core_smoothing != 'off')
+                                         connect=core_smoothing != 'off',
+                                         recover_riff=arrangement == 'tuned' and reference is None)
         if arrangement == 'tuned':
             from pitch_arranger import arrange_tuned
-            arranged, pitch_report = arrange_tuned(phrase_score, notes, preset, reference)
+            arranged, pitch_report = arrange_tuned(phrase_score, notes, preset, reference,
+                                                 evidence=evidence)
             print(pitch_report.as_text(), end='', flush=True)
         else:
             arranged = arrange_score(phrase_score, preset)

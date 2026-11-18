@@ -294,7 +294,8 @@ def transcribe_audio(path: Path, stems: bool = False,
                      accompaniment: str = 'off',
                      profile: str = 'standard',
                      raw_mode: bool = False,
-                     score_evidence: ScoreEvidence | None = None) -> list[Note]:
+                     score_evidence: ScoreEvidence | None = None,
+                     tune_stems: bool = False) -> list[Note]:
     """Transcribe guitar/vocals/bass and optionally infer sustained harmony.
 
     The 6-stem guitar model is opt-in: its first use downloads more weights
@@ -353,7 +354,8 @@ def transcribe_audio(path: Path, stems: bool = False,
                                 accompaniment=accompaniment, profile=profile,
                                 raw_mode=raw_mode,
                                 **({'score_evidence': score_evidence}
-                                   if score_evidence is not None else {}))
+                                   if score_evidence is not None else {}),
+                                **({'tune_stems': True} if tune_stems else {}))
 
 
 def stem_levels(path: Path) -> list[float]:
@@ -373,7 +375,8 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
                      cache_dir: Path | None = None,
                      diagnostics_dir: Path | None = None,
                      raw_mode: bool = False,
-                     score_evidence: ScoreEvidence | None = None) -> list[Note]:
+                     score_evidence: ScoreEvidence | None = None,
+                     tune_stems: bool = False) -> list[Note]:
     """Shared Studio/benchmark pipeline, with optional inspectable checkpoints."""
     from postprocess import clean_stem_notes
     from diagnostics import save_stage
@@ -406,6 +409,15 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
         keep_proposals = raw_mode or (score_evidence is not None and preservation == 'full')
         kept = raw if keep_proposals else clean_stem_notes(
             raw, part, preservation=preservation)
+        if tune_stems and score_evidence is not None and not raw_mode and kept:
+            from stem_pitch import measure_stem_pitch
+
+            pitch = measure_stem_pitch(wav, part)
+            score_evidence.pitches[part] = pitch
+            tuned = [pitch.retune(n) for n in kept]
+            score_evidence.pitch_corrections[part] = sum(a.pitch != b.pitch
+                                                        for a, b in zip(kept, tuned))
+            kept = tuned
         print(f'  {name}: {len(raw)} -> {len(kept)} notes '
               f'{"without pruning" if keep_proposals else "after cleanup"}',
               flush=True)

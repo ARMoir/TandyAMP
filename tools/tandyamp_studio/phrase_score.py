@@ -7,9 +7,13 @@ from dataclasses import dataclass, field, replace
 from heapq import heappop, heappush
 from math import floor, isfinite
 from statistics import median
+from typing import TYPE_CHECKING
 
 from arranger import Note, _psg_pitch, normalize
 from core_arranger import _drums_core
+
+if TYPE_CHECKING:
+    from stem_pitch import StemPitch
 
 
 @dataclass
@@ -19,6 +23,10 @@ class ScoreEvidence:
     beats: list[float] = field(default_factory=list)
     # RMS in consecutive 50 ms windows, before Basic Pitch normalizes audio.
     levels: dict[str, list[float]] = field(default_factory=dict)
+    # Runtime-only measurements. Excluded from the saved note checkpoints.
+    pitches: dict[str, StemPitch] = field(default_factory=dict, init=False, repr=False)
+    pitch_corrections: Counter[str] = field(default_factory=Counter, init=False, repr=False)
+    guitar_support: list[Note] = field(default_factory=list, init=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -282,7 +290,7 @@ def _guitar_bed(notes: list[Note], vocal: Phrase, groove: _Groove,
 
 
 def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
-                      *, connect: bool = True) -> Score:
+                      *, connect: bool = True, recover_riff: bool = False) -> Score:
     """Write the rhythm section, vocal and riff as independent musical lines."""
     evidence = evidence or ScoreEvidence()
     source: dict[str, list[Note]] = defaultdict(list)
@@ -312,6 +320,21 @@ def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
     phrases.extend(vocals)
 
     guitar = line('guitar')
+    if recover_riff and 'guitar' in evidence.pitches:
+        entrance = min(vocals[0].start if vocals else float('inf'), 16.)
+        upper, lower = evidence.pitches['guitar'].guitar_voices()
+        # Replace the instrumental opening only when the stem yields a
+        # confident multi-note line and genuine two-note voicing.
+        recovered = [n for n in upper if n.end <= entrance + .025]
+        pedal = [n for n in lower if n.end <= entrance + .025]
+        if (len(recovered) >= 5 and len({n.pitch for n in recovered}) >= 3
+                and len(pedal) >= 2 and guitar
+                and recovered[0].start <= guitar[0].start + .34
+                and recovered[-1].end - recovered[0].start >= min(1.2, entrance * .5)):
+            begin, end = recovered[0].start, recovered[-1].end
+            guitar = ([n for n in guitar if n.end <= begin] + recovered +
+                      [n for n in guitar if n.start >= end])
+            evidence.guitar_support = [n for n in pedal if n.start >= begin and n.end <= end]
     repeats = _recurring_attacks(guitar, groove.period)
     vocal_starts = [p.start for p in vocals]
     slots: dict[tuple[int, bool], list[Note]] = defaultdict(list)

@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import floor, isfinite
 from pathlib import Path
 from statistics import median
 from typing import Callable
 
 from arranger import BASS_MAX, BASS_MIN, Note, _psg_pitch, load_midi, normalize
-from phrase_score import Score, _Groove, _line, arrange_score
+from phrase_score import Score, ScoreEvidence, _Groove, _line, arrange_score
 
 MAX_CORRECTION = 2
 ATTACK_TOLERANCE = .040
@@ -29,11 +29,20 @@ class PitchReport:
     context: str
     corrected: dict[str, int]
     reference_mix: bool = False
+    stem_offsets: dict[str, float] = field(default_factory=dict)
+    stem_repairs: dict[str, int] = field(default_factory=dict)
+    ensemble_repairs: dict[str, int] = field(default_factory=dict)
 
     def as_text(self) -> str:
         mode = 'aligned MIDI guide' if self.reference_mix else 'audio phrase score'
+        stages = ''
+        if not self.reference_mix:
+            stages = (f'Pass 1 stem offsets in cents: {self.stem_offsets}\n'
+                      f'Pass 1 stem repairs: {dict(sorted(self.stem_repairs.items()))}\n'
+                      f'Pass 2 ensemble repairs: {dict(sorted(self.ensemble_repairs.items()))}\n')
         return (f'Pitch evidence: {self.context}\n'
                 f'Arrangement source: {mode}\n'
+                f'{stages}'
                 f'Pitch corrections by role: {dict(sorted(self.corrected.items()))}\n')
 
 
@@ -411,7 +420,7 @@ def _reference_mix(notes: list[Note], reference: Reference,
 
 
 def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
-                   preset: str) -> list[Note]:
+                   preset: str, evidence: ScoreEvidence | None = None) -> list[Note]:
     """Give each part a register and keep guitar support under the vocal."""
     groups = _by_part(notes)
     bass, guitar, vocals = groups['bass'], groups['guitar'], groups['melody']
@@ -448,15 +457,19 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
     low = [n for n in proposals if n.part == 'guitar' and 28 <= n.pitch <= 52
            and n.velocity >= 58 and n.end - n.start >= .085 and n.end <= intro_end]
     counts = Counter(n.pitch % 12 for n in low)
-    if counts and guitar:
+    pedal = []
+    if evidence is not None and evidence.guitar_support:
+        pedal = [replace(n, end=min(n.end, intro_end)) for n in evidence.guitar_support
+                 if n.start < intro_end - .045]
+    elif counts and guitar:
         root, repeats = counts.most_common(1)[0]
         if repeats >= 3:
             supporting, pedal = _intro_counterline(supporting, proposals, low, root,
                                                   intro_end, period)
-            for n in pedal:
-                i = bisect_left(other_times, n.end)
-                if i == 0 or other[i - 1].end <= n.start:
-                    groups['harmony'].append(n)
+    for n in pedal:
+        i = bisect_left(other_times, n.end)
+        if i == 0 or other[i - 1].end <= n.start:
+            groups['harmony'].append(n)
     groups['guitar'] = _monophonic(supporting, .006)
     groups['melody'] = [_vocal_level(n) for n in vocals]
     groups['bass'] = [replace(n, velocity=min(86, max(56, n.velocity))) for n in bass]
@@ -464,13 +477,23 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
 
 
 def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
-                  reference: Reference | None = None) -> tuple[list[Note], PitchReport]:
+                  reference: Reference | None = None, *,
+                  evidence: ScoreEvidence | None = None) -> tuple[list[Note], PitchReport]:
     """Apply small pitch repairs, then build a single hardware-ready mix."""
     if reference is not None:
         notes = sorted(arrange_score(score, preset), key=lambda n: (n.start, n.part, n.pitch))
         aligned = reference.aligned_notes()
         corrected, report = _guide_correction(notes, aligned)
         return _reference_mix(corrected, reference, aligned), replace(report, reference_mix=True)
-    tuned, counts = _stem_correction(score)
-    tuned, report = _ensemble_correction(tuned, counts)
-    return _automatic_mix(tuned, arrange_score(tuned, preset), proposals, preset), report
+    tuned, stem_repairs = _stem_correction(score)
+    stem_offsets = {}
+    if evidence is not None:
+        stem_offsets = {role: round(track.cents, 1)
+                        for role, track in sorted(evidence.pitches.items())}
+        stem_repairs += evidence.pitch_corrections
+    tuned, ensemble = _ensemble_correction(tuned, Counter())
+    report = replace(ensemble, corrected=dict(stem_repairs + Counter(ensemble.corrected)),
+                     stem_offsets=stem_offsets, stem_repairs=dict(stem_repairs),
+                     ensemble_repairs=ensemble.corrected)
+    return _automatic_mix(tuned, arrange_score(tuned, preset), proposals, preset,
+                          evidence), report
