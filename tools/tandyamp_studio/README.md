@@ -1,5 +1,43 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Tuned: the hardware-approved audio default
+
+Studio uses **Tuned** for MP3, WAV, FLAC, OGG and YouTube. It first corrects
+small pitch excursions within each selected musical line, then checks those
+lines against the neighboring pitches and the local key. The arrangement
+puts the bass and drum groove under the riff and leaves space for the vocal
+when it enters. The corrections change MIDI pitches. Drum hits supply
+timing and keep their original pitches.
+
+| Setting | Default |
+| --- | --- |
+| Arrangement | `tuned` |
+| Preset | `balanced` |
+| SPK4 | `off` (`PLAY.BAT` uses `/NOSPK4`) |
+| Voice selection | `smart` |
+| Transcription | Six-stem guitar separation, `sensitive`, `full` |
+| Drums | `rock` |
+| Accompaniment | `off` |
+| Phrase smoothing | `auto` |
+| Desktop WAV preview | On |
+
+Open Studio and convert an audio file, or run:
+
+```bat
+py -3.11 studio.py --cli "song.mp3"
+```
+
+The `_TUNED` folder includes the DOS files, `SCORE.json` and `PITCH.TXT`.
+Imported MIDI uses Classic by default. Use `--arrangement core`,
+`--arrangement musical`, or `--arrangement classic --spk4 adapt` for
+comparison. `--max-raw` still exports the high-recall transcription.
+
+The [PARATUNE hardware benchmark](benchmarks/PARATUNE_HARDWARE_BENCHMARK.md)
+records the audition settings and shows how to replay the approved excerpt.
+Tuned runs from audio alone by default. If you have an authored guide for a
+specific recording, use `--reference-midi` to apply its pitch and arrangement
+information.
+
 ## CORE audio phrase arrangement
 
 Choose **core** under **Arrangement** in the GUI or use `--arrangement core`.
@@ -47,8 +85,7 @@ to enable its optional smoothing.
 
 Studio now has an **opt-in working implementation** of the
 [unified musical design rules](DESIGN_RULES.md). In the GUI select
-**Arrangement → musical**, or use `--arrangement musical`. The default
-remains **classic**, reproducing the preferred Build56 recipe.
+**Arrangement → musical**, or use `--arrangement musical`. Select **Tuned** for the current audio conversion profile.
 
 MUSICAL is **not** an extra transcription model or a one-size-fits-all
 genre filter. It uses the existing transcription/MIDI input, then makes
@@ -86,7 +123,7 @@ py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrange
 transcription/model settings) using a separate output directory:
 
 ```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement classic -o "C:\Users\alexr\Music\TANDY_CLASSIC_A_B"
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement classic --spk4 adapt -o "C:\Users\alexr\Music\TANDY_CLASSIC_A_B"
 ```
 
 **For a quick, no-AI test**, supply an already converted MIDI:
@@ -108,7 +145,7 @@ of foundation/identity/support scoring, not complete formal motif
 recognition, spectral artifact verification, perfect counterpoint
 analysis, or automatic genre understanding. The 30-second preview is
 approximate. Test on the physical Tandy before promoting it as a new
-default. The DOS player and Build56 settings are unchanged.
+default. Use the Classic profile with SPK4 Adapt to compare against Build 56.
 
 
 
@@ -128,9 +165,7 @@ arranger**: identify the **foundation**, protect the **song's identity**,
 select **useful support**, then fit those notes to real hardware. Different
 styles inform those roles; they do not require separate complicated engines.
 
-This is a documented **future design/acceptance contract**, not a newly
-implemented cleanup algorithm. The preferred Build56 Studio conversion
-settings remain the default and MAX RAW stays opt-in.
+The design rules describe how to evaluate each arrangement. MAX RAW stays available for inspecting detector output.
 
 
 
@@ -140,8 +175,7 @@ settings remain the default and MAX RAW stays opt-in.
 [Machine-readable reference measurements](benchmarks/SEVENT01_reference.json)
 
 The user-provided `SEVENT01.MID` is our **positive musical-quality
-benchmark**, alongside the preferred Build56 Paranoid conversion (our
-**sound / audio-transcription settings baseline**). The reference MIDI
+benchmark**, alongside the [Paranoid hardware audition](benchmarks/PARATUNE_HARDWARE_BENCHMARK.md). The reference MIDI
 is not distributed in the repository.
 
 **Central principle: drums + bass establish the groove; guitar builds
@@ -155,67 +189,23 @@ between rhythmic roles matters, not those numbers as quotas.
 
 **Not yet implemented:** This is the documented **design and acceptance
 benchmark** for future optional Groove Clean processing, not an
-automatic note-filter or change to the current Build56 defaults.
+automatic note filter for this benchmark.
 Avoid deleting syncopated accents, blues notes or real harmony simply
 to reduce note count. Our positive reference is a pre-arranged MIDI,
 not ground-truth transcription for Paranoid's YouTube audio.
 
 
 
-## Default sound: Paranoid SPK4 Build56 best mix
+## Legacy comparison: Paranoid SPK4 Build 56
 
-The **default Studio configuration** now reproduces the conversion
-**settings** used to create the preferred `PARANOID.MID` inside the archived
-`Paranoid_SPK4_Build56.zip`:
+Run Classic with SPK4 Adapt to compare against Build 56.
 
-| Setting | Default |
-| --- | --- |
-| Preset | `balanced` |
-| Source separation | `--guitar-separation` (Demucs `htdemucs_6s`; 6 stems) |
-| Transcription | `sensitive` |
-| Note preservation | `full` |
-| Voice selection | `smart` |
-| SPK4 MIDI arrangement | `adapt` |
-| Drums | `rock` |
-| Accompaniment | `off` (no inferred chord filling) |
-| WAV preview | Enabled (Studio's standard approximate 30-second preview) |
-| MAX RAW | Off, remains an optional override |
-| YouTube MP3 quality | 192 kbps unless overridden |
+```bat
+py -3.11 studio.py --cli "Paranoid.mp3" --arrangement classic --spk4 adapt
+```
 
-Settings are defined once in `defaults.py` and shared by the GUI, CLI,
-and Python `convert()` entry point. The guitarist/vocal preset is not a
-six-note RAW dump: it uses **high-quality sensitive six-stem transcription
-plus musical voice selection**. The archived Build56 MIDI contains the
-`CC119=77` marker for the smart voice selector. Archived MIDI SHA-256:
+The archived `PARANOID.MID` SHA-256 is
 `c8f9c342a7632ac50df52f8eb6f4c26e0dc56e42c001ef52a5b7b9a1a606ad5f`.
-
-You can now run the original YouTube source **without specifying any
-conversion settings**:
-
-```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" -o "C:\Users\alexr\Music\TANDY_BUILD56_STYLE"
-```
-
-Equivalent fully explicit invocation:
-
-```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --preset balanced --guitar-separation --transcription sensitive --note-preservation full --voice-selection smart --spk4 adapt --drum-style rock --accompaniment off --preview -o "C:\Users\alexr\Music\TANDY_BUILD56_STYLE"
-```
-
-All existing individual choices still work. New CLI switches
-`--no-guitar-separation` and `--no-preview` can turn off the two
-default-on features; `--max-raw` bypasses this best-mix recipe entirely.
-
-**Provenance / reproducibility:** These are the verified conversion **option
-values**, not a promise of identical output bytes. The Build56 ZIP
-contains a 24,812-byte, 167.28-second format-0 MIDI and full-length
-reference preview; Studio's regular preview remains 30 seconds. Neural
-transcription models, source stream revisions, and subsequent code
-changes can produce differences even with the same flags. To hear the
-*exact* preferred result, use the archived `PARANOID.MID` itself.
-The DOS player is **unchanged** by these Studio default settings.
-
-
 
 ## MAX RAW: high-recall YouTube-to-MIDI with DOS-only splitting
 
@@ -771,7 +761,7 @@ py -3.11 studio.py "C:\Music\song.mp3" --spk4 bass --stems --preset quality
 py -3.11 studio.py "C:\Music\song.wav" --spk4 off --preset performance
 ```
 
-Output goes under `TANDY_OUT\<input>_TANDY` by default or under `-o YOUR_OUTPUT\<input>_TANDY`. Output MIDI names are DOS 8.3-safe (six-letter stem + `01.MID`, `02.MID`, etc.). The DOS `PLAY.BAT` uses `/NOSPK4`, `/SPK4`, or `/SPK4:ADAPT` as selected. **BASS and ADAPT arrange speaker bass differently**: ADAPT can reserve bass with two other distinct pitched notes, while BASS requires three, so use the generated `PLAY.BAT` or set the button to the matching mode. The `--preview` WAV is a bounded PSG/PIT2/noise approximation with note envelopes; **not** a hardware-accurate emulator.
+Audio output goes under `TANDY_OUT\<input>_TUNED` by default. Classic exports use the `_TANDY` suffix. Use `-o YOUR_OUTPUT` for a different parent directory. Output MIDI names are DOS 8.3-safe (six-letter stem + `01.MID`, `02.MID`, etc.). The DOS `PLAY.BAT` uses `/NOSPK4`, `/SPK4`, or `/SPK4:ADAPT` as selected. **BASS and ADAPT arrange speaker bass differently**: ADAPT can reserve bass with two other distinct pitched notes, while BASS requires three, so use the generated `PLAY.BAT` or set the button to the matching mode. The `--preview` WAV is a bounded PSG/PIT2/noise approximation with note envelopes; **not** a hardware-accurate emulator.
 
 ## Optimization rules
 

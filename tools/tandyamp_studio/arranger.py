@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
-from typing import Iterable
+from typing import Callable, Iterable
 
 try:
     import mido
@@ -37,8 +38,14 @@ class Note:
     program: int = 48
 
 
-def load_midi(path: Path) -> list[Note]:
-    """Decode SMF 0/1 into time-in-seconds notes, honoring tempo and sustain."""
+def load_midi(path: Path, *, channel_parts: Mapping[int, str] | None = None,
+              beat_to_time: Callable[[float], float] | None = None,
+              min_duration: float = .012) -> list[Note]:
+    """Decode SMF 0/1, honoring tempo and sustain.
+
+    A reference score can select channels and map its beats to an audio
+    performance's timing.
+    """
     midi = mido.MidiFile(str(path))
     if midi.type not in (0, 1):
         raise ValueError('Only MIDI type 0 or 1 is supported')
@@ -49,11 +56,17 @@ def load_midi(path: Path) -> list[Note]:
     held = defaultdict(deque)
     deferred = defaultdict(list)
     result = []
+    ticks = 0
+    elapsed = 0.
 
     def finish(rec: tuple, end: float) -> None:
         start, pitch, velocity, chan, program = rec
-        if end - start >= 0.012:
-            if chan == 9:
+        if end - start > 0 and end - start >= min_duration:
+            if channel_parts is not None:
+                if chan not in channel_parts:
+                    return
+                part = channel_parts[chan]
+            elif chan == 9:
                 part = 'drums'
             elif chan == 3 and program == 48:
                 part = 'accomp'  # inferred support, provenance retained
@@ -72,7 +85,9 @@ def load_midi(path: Path) -> list[Note]:
             result.append(Note(start, end, pitch, velocity, part, program if program is not None else (80 if part == 'melody' else 33 if part == 'bass' else 48)))
 
     for msg in mido.merge_tracks(midi.tracks):
-        sec += mido.tick2second(msg.time, midi.ticks_per_beat, tempo)
+        ticks += msg.time
+        elapsed += mido.tick2second(msg.time, midi.ticks_per_beat, tempo)
+        sec = beat_to_time(ticks / midi.ticks_per_beat) if beat_to_time else elapsed
         if msg.type == 'set_tempo':
             tempo = msg.tempo
         elif msg.type == 'program_change':

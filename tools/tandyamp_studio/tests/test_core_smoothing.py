@@ -166,7 +166,7 @@ class CoreSmoothingTests(unittest.TestCase):
             studio.convert('example.mid',Path('X'),
                            arrangement='core',core_smoothing='unknown')
 
-    def test_classic_build56_still_default_and_does_not_require_smoothing(self):
+    def test_midi_import_defaults_to_classic_without_smoothing(self):
         with patch('studio.convert',return_value=[Path('TEST.MID')]) as run:
             self.assertEqual(studio.main(['--cli','input.mid']),0)
         self.assertEqual(run.call_args.kwargs['arrangement'],'classic')

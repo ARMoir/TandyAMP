@@ -1,6 +1,6 @@
 # TandyAMP Studio — musical arrangement design rules
 
-**Status:** Design contract with experimental implementations: new strict **CORE** in `core_arranger.py` (`--arrangement core`) and a fuller first pass in `musical_arranger.py` (`--arrangement musical`). This does not change the default Build56 pipeline or DOS player. Advanced source-informed phrase recognition, genre adaptation and hardware audition optimization are **not implemented**.
+**Status.** Tuned is the default for audio. It applies conservative pitch repair and phrase voicing. Advanced genre adaptation is not implemented.
 
 ## The goal: the best *Tandy* MIDI, not the most complete MIDI
 
@@ -71,9 +71,9 @@ This MIDI contains deliberately interlocking string-ensemble, violin and harpsic
 
 Only 96 notes in 16 seconds, with three coordinated pitched roles and no drums. It is intentionally simple and directly suited to the SN76489's three tones. It demonstrates that an effective Tandy arrangement need not be dense or use every optional hardware feature. **Don't copy DEMO's fixed half-second rhythm and constant velocities into real compositions**; those are demo-specific simplifications.
 
-### Stable listening baseline: Paranoid SPK4 Build56
+### Paranoid hardware baseline
 
-The current [Build56 Studio recipe](README.md#default-sound-paranoid-spk4-build56-best-mix) remains the **default**. Its settings represent the preferred *audio-to-MIDI conversion sound*; SEVENT01, Brandenburg and DEMO represent the *arranging philosophy*. These are complementary, not interchangeable. Neither documentation nor benchmark scores should silently replace user-preferred defaults.
+The [PARATUNE hardware audition](benchmarks/PARATUNE_HARDWARE_BENCHMARK.md) defines the current audio profile. Seventh Son, Brandenburg and DEMO cover groove, counterpoint and hardware-native writing.
 
 ## Future Studio workflow — intentionally small
 
@@ -140,7 +140,7 @@ one guitar riff voice bridges that to one vocal lead; optional sustained
 support appears only in empty pitched slots**. It never adds filler to
 reach four pitched MIDI notes and never changes how TANDYAMP.EXE
 allocates sound channels. The original, fuller MUSICAL mode remains
-available for comparison. Build56 classic is still the default.
+available for comparison.
 
 CORE is not an AI genre classifier or complete source-aware melody
 reconstruction. Its rhythm relationship comes from **preserving real
@@ -152,7 +152,7 @@ before deciding if the tighter result is musically superior.
 ## Current status
 
 - The shared **MUSICAL** selection rules have an opt-in deterministic laptop implementation in [`musical_arranger.py`](musical_arranger.py), connected through the GUI/CLI and tested with synthetic rock, classical and hardware-native MIDI patterns. Advanced phrase/source confidence analysis is not implemented.
-- The Build56 Studio defaults, classic arrangement path, DOS player and MAX RAW remain untouched.
+- Audio uses Tuned by default. Classic with SPK4 Adapt reproduces the Build 56 settings. MAX RAW remains available.
 - User-supplied reference MIDI files are **not committed**. Store only measurements and methods.
 - Changes to processing should be separate, opt-in, testable and reversible until hardware listening establishes an improvement.
 

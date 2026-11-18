@@ -42,6 +42,21 @@ class Score:
     drums: tuple[Note, ...]
     phrases: tuple[Phrase, ...]
 
+    def pitched_notes(self) -> list[Note]:
+        return [n for phrase in self.phrases for n in phrase.notes]
+
+    def with_pitches(self, notes: list[Note]) -> Score:
+        """Apply pitch changes in phrase order without changing boundaries."""
+        if len(notes) != sum(len(phrase.notes) for phrase in self.phrases):
+            raise ValueError('Pitch changes require one note per score note')
+        cursor = 0
+        phrases = []
+        for phrase in self.phrases:
+            stop = cursor + len(phrase.notes)
+            phrases.append(replace(phrase, notes=tuple(notes[cursor:stop])))
+            cursor = stop
+        return replace(self, phrases=tuple(phrases))
+
     def summary(self) -> str:
         counts = Counter(p.function for p in self.phrases)
         return (

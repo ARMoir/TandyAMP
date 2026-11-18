@@ -110,11 +110,12 @@ class CommandLineTests(unittest.TestCase):
 
     def test_url_conversion_uses_temporary_mp3(self):
         captured = {}
-        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, drum_style='auto', note_preservation='full', guitar_separation=False, accompaniment='off', transcription='standard', voice_selection='legacy'):
+        def check_local(audio, output, name, preset, spk4, stems, preview, saved_mp3=None, **options):
             self.assertEqual(audio.read_bytes(), b'ID3example')
             self.assertTrue(name.startswith('My_Song'))
             self.assertEqual(spk4, 'adapt')
             self.assertEqual(saved_mp3, audio)
+            self.assertEqual(options['arrangement'], 'tuned')
             captured['source'] = audio
             return [Path(output) / 'MYSONG01.MID']
         with tempfile.TemporaryDirectory() as td, patch('studio.download_youtube_mp3', side_effect=self.fake_download), patch('studio._convert_local', side_effect=check_local):

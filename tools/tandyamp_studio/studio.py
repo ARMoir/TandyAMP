@@ -6,11 +6,26 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+from typing import TYPE_CHECKING
 
 from arranger import PRESETS, export, load_midi, prepare, voice_coverage
-from defaults import BUILD56_DEFAULTS as DEFAULTS
+from defaults import STUDIO_DEFAULTS as DEFAULTS
 from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
 from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, safe_name
+
+if TYPE_CHECKING:
+    from pitch_arranger import Reference
+
+ARRANGEMENTS = {
+    'tuned': '_TUNED', 'classic': '_TANDY', 'musical': '_MUSIC', 'core': '_CORE',
+}
+
+
+def _default_arrangement(source: str, max_raw: bool = False) -> str:
+    if max_raw or (not is_youtube_url(source)
+                   and Path(source).suffix.lower() in ('.mid', '.midi')):
+        return 'classic'
+    return DEFAULTS['arrangement']
 
 
 def _convert_local(input_file: Path, output_dir: Path, target_name: str,
@@ -23,14 +38,18 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
                    transcription: str = DEFAULTS['transcription'],
                    voice_selection: str = DEFAULTS['voice_selection'],
                    max_raw: bool = DEFAULTS['max_raw'],
-                   arrangement: str = 'classic',
-                   core_smoothing: str = 'auto') -> list[Path]:
+                   arrangement: str = DEFAULTS['arrangement'],
+                   core_smoothing: str = DEFAULTS['core_smoothing'],
+                   reference: Reference | None = None) -> list[Path]:
     audio_input = input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg')
     phrase_score = None
     evidence = None
+    pitch_report = None
     if input_file.suffix.lower() in ('.mid', '.midi'):
         if max_raw:
             raise ValueError('MAX RAW is for YouTube/audio transcription, not existing MIDI files')
+        if reference is not None:
+            raise ValueError('A reference MIDI guides an audio or YouTube input')
         print(f'Loading MIDI: {input_file}', flush=True)
         notes = load_midi(input_file)
     elif audio_input:
@@ -44,7 +63,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
             transcribe_kwargs['raw_mode'] = True
             print('MAX RAW: high-recall six-stem transcription including piano; '
                   'no note filtering or automatic leveling.', flush=True)
-        elif arrangement == 'core':
+        elif arrangement in ('core', 'tuned'):
             from phrase_score import ScoreEvidence
             evidence = ScoreEvidence()
             transcribe_kwargs['score_evidence'] = evidence
@@ -52,12 +71,6 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
-    if arrangement not in ('classic', 'musical', 'core'):
-        raise ValueError('Arrangement must be classic, musical or core')
-    if max_raw and arrangement != 'classic':
-        raise ValueError('MAX RAW and arranged modes are alternative output modes')
-    if core_smoothing not in ('auto', 'on', 'off'):
-        raise ValueError('CORE smoothing must be auto, on or off')
     keep_candidates = (not max_raw and arrangement == 'classic' and
                        note_preservation == 'full' and
                        (audio_input or voice_selection == 'smart'))
@@ -68,7 +81,12 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         from phrase_score import arrange_score, reconstruct_score
         phrase_score = reconstruct_score(notes, evidence,
                                          connect=core_smoothing != 'off')
-        arranged = arrange_score(phrase_score, preset)
+        if arrangement == 'tuned':
+            from pitch_arranger import arrange_tuned
+            arranged, pitch_report = arrange_tuned(phrase_score, notes, preset, reference)
+            print(pitch_report.as_text(), end='', flush=True)
+        else:
+            arranged = arrange_score(phrase_score, preset)
     elif arrangement in ('musical', 'core'):
         from arranger import normalize
         from musical_arranger import arrange_musically
@@ -98,7 +116,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
               'unaltered. No voice cap, velocity floor or pitch folding.',
               flush=True)
     elif phrase_score is not None:
-        print(f'CORE: built {len(phrase_score.phrases)} phrases before '
+        print(f'{arrangement.upper()}: built {len(phrase_score.phrases)} phrases before '
               f'PSG allocation ({len(arranged)} output events).', flush=True)
     elif music_report is not None:
         print('{}: selected {} original pitched notes, produced {} '
@@ -116,7 +134,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
               'Requires the latest TANDYAMP.EXE build for real DOS playback.',
               flush=True)
     inferred = [n for n in arranged if n.part == 'accomp']
-    if audio_input:
+    if audio_input and reference is None:
         print('  Original/AI pitched notes: {}; inferred accompaniment: {}'.format(
             sum(n.part not in ('drums', 'accomp') for n in arranged),
             len(inferred)), flush=True)
@@ -145,7 +163,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         print('  Bass: {} notes, velocity range {}..{}, {} distinct levels'.format(
             len(bass_velocities), min(bass_velocities), max(bass_velocities),
             len(set(bass_velocities))), flush=True)
-    folder_suffix = {'classic':'_TANDY','musical':'_MUSIC','core':'_CORE'}[arrangement]
+    folder_suffix = ARRANGEMENTS[arrangement]
     target = output_dir / (target_name + folder_suffix)
     if saved_mp3 is not None and (target / 'SOURCE.MP3').exists():
         raise FileExistsError(f'Refusing to overwrite existing SOURCE.MP3 in {target}')
@@ -163,11 +181,13 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
             from diagnostics import write_json
             write_json(target / 'SCORE.json', asdict(phrase_score))
             (target / 'CORE.TXT').write_text(phrase_score.summary(), encoding='ascii')
+        if pitch_report is not None:
+            (target / 'PITCH.TXT').write_text(pitch_report.as_text(), encoding='ascii')
         elif music_report is not None:
             report_name = 'CORE.TXT' if arrangement == 'core' else 'MUSIC.TXT'
             (target / report_name).write_text(music_report.as_text(),
                                               encoding='ascii')
-    if audio_input and accompaniment != 'off' and not max_raw:
+    if audio_input and accompaniment != 'off' and not max_raw and reference is None:
         report = ('TandyAMP Studio accompaniment provenance\n'
                   'Separation: {}\nAccompaniment: {}\n'
                   'Inferred support events: {}\n'
@@ -214,14 +234,16 @@ def convert(input_file: str | Path, output_dir: Path,
             note_preservation: str = DEFAULTS['note_preservation'],
             guitar_separation: bool = DEFAULTS['guitar_separation'],
             accompaniment: str = DEFAULTS['accompaniment'],
-                   transcription: str = DEFAULTS['transcription'],
-                   voice_selection: str = DEFAULTS['voice_selection'],
-                   max_raw: bool = DEFAULTS['max_raw'],
-                   arrangement: str = 'classic',
-                   core_smoothing: str = 'auto') -> list[Path]:
-    """Noninteractive pipeline; a validated YouTube MP3 is reused from
-    the persistent OS temp cache whenever possible. Outputs are unchanged.
-    """
+            transcription: str = DEFAULTS['transcription'],
+            voice_selection: str = DEFAULTS['voice_selection'],
+            max_raw: bool = DEFAULTS['max_raw'],
+            arrangement: str | None = DEFAULTS['arrangement'],
+            core_smoothing: str = DEFAULTS['core_smoothing'],
+            reference_midi: Path | None = None,
+            reference_channels: str | None = None,
+            reference_alignment: str | None = None,
+            reference_end: float | None = None) -> list[Path]:
+    """Convert audio with Tuned by default and reuse a cached YouTube MP3."""
     if preset not in PRESETS:
         raise ValueError(f'Unknown preset: {preset}')
     if spk4 not in ('off', 'bass', 'adapt'):
@@ -236,18 +258,39 @@ def convert(input_file: str | Path, output_dir: Path,
         raise ValueError('Unknown transcription profile: ' + transcription)
     if voice_selection not in ('legacy', 'smart'):
         raise ValueError('Voice selection must be legacy or smart')
-    if arrangement not in ('classic', 'musical', 'core'):
-        raise ValueError('Arrangement must be classic, musical or core')
-    if max_raw and arrangement != 'classic':
+    if arrangement is not None and arrangement not in ARRANGEMENTS:
+        raise ValueError(f'Unknown arrangement: {arrangement}')
+    if max_raw and arrangement not in (None, 'classic', DEFAULTS['arrangement']):
         raise ValueError('MAX RAW and arranged modes are alternative output modes')
     if core_smoothing not in ('auto', 'on', 'off'):
         raise ValueError('CORE smoothing must be auto, on or off')
     if max_raw and mp3_only:
         raise ValueError('MAX RAW creates MIDI, so it cannot be combined with --mp3-only')
+    arrangement = 'classic' if max_raw else arrangement or DEFAULTS['arrangement']
+    reference = None
+    if reference_midi is not None:
+        if arrangement != 'tuned' or mp3_only:
+            raise ValueError('A reference MIDI requires the Tuned audio arrangement')
+        from pitch_arranger import BeatGrid, Reference
+        grid = BeatGrid.parse(reference_alignment) if reference_alignment else None
+        reference = Reference.load(Path(reference_midi).expanduser(), reference_channels,
+                                   grid, reference_end)
+    elif any(v is not None for v in (reference_channels, reference_alignment, reference_end)):
+        raise ValueError('Reference settings require --reference-midi')
     source = str(input_file).strip()
     if not source:
         raise ValueError('Provide a music file or YouTube video URL')
     output_dir = Path(output_dir).expanduser().resolve()
+    options = dict(drum_style=drum_style, note_preservation=note_preservation,
+                   guitar_separation=guitar_separation, accompaniment=accompaniment,
+                   transcription=transcription, voice_selection=voice_selection,
+                   arrangement=arrangement)
+    if max_raw:
+        options['max_raw'] = True
+    if core_smoothing != DEFAULTS['core_smoothing']:
+        options['core_smoothing'] = core_smoothing
+    if reference is not None:
+        options['reference'] = reference
     if is_youtube_url(source):
         with tempfile.TemporaryDirectory(prefix='tandyamp-youtube-') as temp:
             downloaded = download_youtube_mp3(source, Path(temp), mp3_quality)
@@ -263,14 +306,7 @@ def convert(input_file: str | Path, output_dir: Path,
             return _convert_local(downloaded.audio_path, output_dir, name,
                                   preset, spk4, stems, preview,
                                   saved_mp3=downloaded.audio_path if keep_mp3 else None,
-                                  drum_style=drum_style,
-                                  note_preservation=note_preservation,
-                                  guitar_separation=guitar_separation,
-                                  accompaniment=accompaniment, transcription=transcription,
-                                  voice_selection=voice_selection,
-                                  **({'max_raw': True} if max_raw else {}),
-                                  **({'arrangement': arrangement} if arrangement != 'classic' else {}),
-                          **({'core_smoothing': core_smoothing} if core_smoothing != 'auto' else {}))
+                                  **options)
     if source.lower().startswith(('http://', 'https://')):
         raise ValueError('Only single-video YouTube links are supported (https://youtu.be/... or youtube.com/watch?v=...)')
     if keep_mp3 or mp3_only:
@@ -278,15 +314,13 @@ def convert(input_file: str | Path, output_dir: Path,
     path = Path(source).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
-    return _convert_local(path, output_dir, path.stem, preset, spk4, stems,
-                          preview, drum_style=drum_style,
-                          note_preservation=note_preservation,
-                          guitar_separation=guitar_separation,
-                          accompaniment=accompaniment, transcription=transcription,
-                          voice_selection=voice_selection,
-                          **({'max_raw': True} if max_raw else {}),
-                          **({'arrangement': arrangement} if arrangement != 'classic' else {}),
-                                   **({'core_smoothing': core_smoothing} if core_smoothing != 'auto' else {}))
+    if path.suffix.lower() in ('.mid', '.midi') and not max_raw and arrangement == 'tuned':
+        # An authored MIDI already specifies its intended pitches.
+        if reference is not None:
+            raise ValueError('A reference MIDI guides an audio or YouTube input')
+        options['arrangement'] = 'classic'
+    return _convert_local(path, output_dir, path.stem, preset, spk4, stems, preview,
+                          **options)
 
 
 def gui(initial_input: str = '') -> None:
@@ -314,8 +348,8 @@ def gui(initial_input: str = '') -> None:
     accompaniment = tk.StringVar(value=DEFAULTS['accompaniment'])
     transcription = tk.StringVar(value=DEFAULTS['transcription'])
     voice_selection = tk.StringVar(value=DEFAULTS['voice_selection'])
-    arrangement = tk.StringVar(value='classic')
-    core_smoothing = tk.StringVar(value='auto')
+    arrangement = tk.StringVar(value=DEFAULTS['arrangement'])
+    core_smoothing = tk.StringVar(value=DEFAULTS['core_smoothing'])
     max_raw = tk.BooleanVar(value=DEFAULTS['max_raw'])
     stems = tk.BooleanVar(value=DEFAULTS['stems'])
     preview = tk.BooleanVar(value=DEFAULTS['preview'])
@@ -348,10 +382,13 @@ def gui(initial_input: str = '') -> None:
     ttk.Label(outer, text='Voices').grid(row=10, column=0, sticky='w', pady=6)
     ttk.Combobox(outer, textvariable=voice_selection, values=['legacy', 'smart'], state='readonly', width=19).grid(row=10, column=1, sticky='w', padx=8)
     ttk.Label(outer, text='Arrangement').grid(row=11, column=0, sticky='w', pady=6)
-    ttk.Combobox(outer, textvariable=arrangement, values=['classic', 'musical', 'core'], state='readonly', width=19).grid(row=11, column=1, sticky='w', padx=8)
+    ttk.Combobox(outer, textvariable=arrangement, values=list(ARRANGEMENTS), state='readonly', width=19).grid(row=11, column=1, sticky='w', padx=8)
     ttk.Label(outer, text='CORE smoothing').grid(row=12, column=0, sticky='w', pady=6)
     ttk.Combobox(outer, textvariable=core_smoothing, values=['auto', 'on', 'off'], state='readonly', width=19).grid(row=12, column=1, sticky='w', padx=8)
-    ttk.Checkbutton(outer, text='MAX RAW (YouTube/audio: all six stems, all detected notes, no leveling)', variable=max_raw).grid(row=13, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='MAX RAW (YouTube/audio: all six stems, all detected notes, no leveling)',
+                    variable=max_raw,
+                    command=lambda: arrangement.set('classic' if max_raw.get()
+                                                    else DEFAULTS['arrangement'])).grid(row=13, column=0, columnspan=3, sticky='w', pady=2)
     ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=14, column=0, columnspan=3, sticky='w', pady=2)
     ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=15, column=0, columnspan=3, sticky='w', pady=2)
     ttk.Checkbutton(outer, text='MP3 only: download audio, skip MIDI transcription', variable=mp3_only).grid(row=16, column=0, columnspan=3, sticky='w', pady=2)
@@ -464,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
                         default=DEFAULTS['note_preservation'], help='Fuller transcription or legacy cleanup; audio input only')
     parser.add_argument('--guitar-separation', dest='guitar_separation',
                         action='store_true', default=DEFAULTS['guitar_separation'],
-                        help='Isolate guitar with Demucs htdemucs_6s; implies --stems (Build56 default)')
+                        help='Isolate guitar with Demucs htdemucs_6s; implies stem separation')
     parser.add_argument('--no-guitar-separation', dest='guitar_separation',
                         action='store_false',
                         help='Disable default guitar separation (use --stems for four-stem audio)')
@@ -475,21 +512,28 @@ def main(argv: list[str] | None = None) -> int:
                         help='Sensitive is experimental separated guitar/harmony decoding')
     parser.add_argument('--voice-selection', choices=['legacy', 'smart'],
                         default=DEFAULTS['voice_selection'],
-                        help='Smart opt-in: guitar-riff priority, attack-aware smooth voice selection (requires new DOS player)')
-    parser.add_argument('--arrangement', choices=['classic', 'musical', 'core'],
-                        default='classic',
-                        help='Core: phrase score for audio or sparse arrangement for MIDI; '
-                             'Musical: fuller arrangement; Classic: Build56 default')
+                        help='Smart: protect riff attacks and bass on current DOS builds')
+    parser.add_argument('--arrangement', choices=ARRANGEMENTS,
+                        help='Tuned (default for audio): pitch correction and phrase voicing; '
+                             'Core: sparse phrase score; Musical: fuller; Classic: legacy')
     parser.add_argument('--core-smoothing', choices=['auto', 'on', 'off'],
-                        default='auto',
-                        help='Auto connects decoder gaps in CORE audio; on also smooths '
+                        default=DEFAULTS['core_smoothing'],
+                        help='Auto connects decoder gaps in Tuned/CORE audio; on also smooths '
                              'imported CORE MIDI; off skips those joins')
+    parser.add_argument('--reference-midi', type=Path,
+                        help='Optional MIDI guide for Tuned audio conversion')
+    parser.add_argument('--reference-channels',
+                        help='Guide channels as guitar=1,melody=2,bass=3,drums=10')
+    parser.add_argument('--reference-alignment',
+                        help='Guide alignment as comma-separated beat=seconds pairs')
+    parser.add_argument('--reference-end', type=float,
+                        help='End a guided excerpt at this audio time in seconds')
     parser.add_argument('--max-raw', action='store_true',
                         default=DEFAULTS['max_raw'],
                         help='YouTube/audio: six stems, high-recall decoding, no note/velocity/voice pruning; split DOS MIDI by size only')
     parser.add_argument('--preview', dest='preview', action='store_true',
                         default=DEFAULTS['preview'],
-                        help='Write approximate 30-second WAV preview (Build56 default)')
+                        help='Write an approximate 30-second WAV preview')
     parser.add_argument('--no-preview', dest='preview', action='store_false',
                         help='Skip WAV preview')
     parser.add_argument('--keep-mp3', action='store_true',
@@ -508,6 +552,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.input is None:
         parser.error('a file or single-video YouTube URL is required in --cli mode')
+    if args.max_raw and args.arrangement not in (None, 'classic'):
+        print('TandyAMP Studio error: MAX RAW and arranged modes are alternative outputs',
+              file=sys.stderr)
+        return 1
+    arrangement = args.arrangement or _default_arrangement(args.input, args.max_raw)
+    reference_options = {
+        key: value for key, value in (
+            ('reference_midi', args.reference_midi),
+            ('reference_channels', args.reference_channels),
+            ('reference_alignment', args.reference_alignment),
+            ('reference_end', args.reference_end),
+        ) if value is not None
+    }
     try:
         convert(args.input, args.output, args.preset, args.spk4,
                 args.stems, args.preview, keep_mp3=args.keep_mp3,
@@ -517,9 +574,10 @@ def main(argv: list[str] | None = None) -> int:
                 guitar_separation=args.guitar_separation,
                 accompaniment=args.accompaniment, transcription=args.transcription,
                 voice_selection=args.voice_selection, max_raw=args.max_raw,
-                arrangement=args.arrangement,
+                arrangement=arrangement,
                 **({'core_smoothing': args.core_smoothing}
-                   if args.core_smoothing != 'auto' else {}))
+                   if args.core_smoothing != DEFAULTS['core_smoothing'] else {}),
+                **reference_options)
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError, OSError, ImportError) as exc:
         print(f'TandyAMP Studio error: {exc}', file=sys.stderr)
         return 1

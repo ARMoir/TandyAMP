@@ -178,7 +178,7 @@ class MinimalMusicTests(unittest.TestCase):
                          prepare(notes, 'balanced', 'adapt',
                                  preserve=True, voice_selection='smart'))
 
-    def test_cli_opt_in_and_default_remains_classic(self):
+    def test_cli_opt_in_and_classic_midi_default(self):
         with patch('studio.convert', return_value=[Path('ONE.MID')]) as run:
             self.assertEqual(studio.main(['--cli','demo.mid']), 0)
         self.assertEqual(run.call_args.kwargs['arrangement'], 'classic')

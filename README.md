@@ -1,10 +1,9 @@
 # TandyAMP — Winamp-inspired MIDI player for Tandy 1000 DOS
 
-**CORE phrase smoothing:** TandyAMP Studio now holds fragmented notes, connects very small lead gaps, and removes narrowly identified pitch blips, protecting real attacks and bass/drum groove. It runs automatically for CORE audio inputs, not for imported MIDI; see [Studio documentation](tools/tandyamp_studio/README.md#core-smoothing--hold-connect-or-remove-opt-in-via-core). The DOS player and Build56 defaults are unchanged.
+**Tuned Studio default.** Audio and YouTube conversions now use pitch correction, a shared harmony check, and phrase voicing based on the hardware-approved Paranoid audition. See the [Studio defaults](tools/tandyamp_studio/README.md#tuned-the-hardware-approved-audio-default) and [PARATUNE benchmark](tools/tandyamp_studio/benchmarks/PARATUNE_HARDWARE_BENCHMARK.md).
 
-**New KISS CORE mode:** `--arrangement core` produces a deliberately sparse Tandy arrangement: drums and bass establish the groove; one guitar riff connects it to one vocal melody. Additional harmony enters only where meaningful. This is opt-in; [Studio instructions](tools/tandyamp_studio/README.md#core-the-kiss-four-part-tandy-arrangement-new-opt-in). Build56 remains the default, and no DOS code changes are required.
 
-**New optional musical arranger:** The laptop Studio now supports `--arrangement musical`, an experimental offline **foundation / identity / support** simplifier. See [Studio usage](tools/tandyamp_studio/README.md#new-experiment-musical--the-simplest-tandy-arrangement) and [implementation](tools/tandyamp_studio/musical_arranger.py). Build56 stays the default and MAX RAW stays separate.
+Studio also offers `--arrangement core` and `--arrangement musical` for comparison. Existing MIDI imports use Classic by default. MAX RAW is available for transcription diagnostics.
 
 **Musical design philosophy:** [The TandyAMP Studio arrangement design rules](tools/tandyamp_studio/DESIGN_RULES.md). **The goal is the simplest MIDI that still sounds like the song on the Tandy**, not the most complete note dump.
 
@@ -12,7 +11,7 @@
 For rock, **drums and bass establish the groove, and guitar bridges it
 to the vocals**; for classical music, independent melodic lines matter
 more. The final Tandy MIDI should be simple without losing the core.
-Studio's preferred Build56 Paranoid recipe remains the conversion default. The benchmark is documented guidance for future
+The Seventh Son benchmark documents guidance for future
 optional Groove Clean work, not a new note-removal setting or DOS
 player change.
 

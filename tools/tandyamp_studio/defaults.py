@@ -1,16 +1,4 @@
-"""Verified default Studio recipe from Paranoid_SPK4_Build56.zip.
-
-The package's PARANOID.MID has MIDI channel 0 CC119=77, proving it
-requests SMART voice selection. The original conversion command used:
-  --preset balanced --guitar-separation --transcription sensitive
-  --note-preservation full --voice-selection smart --spk4 adapt
-  --drum-style rock --accompaniment off --preview
-The missing --stems flag is intentional: guitar_separation implies
-six-stem Demucs in transcribe_audio(). The WAV preview flag only affects
-the optional diagnostic audio; it does not alter generated MIDI notes.
-Do not confuse these options with the DOS Build56 PLAY.BAT /SPK4:ADAPT.
-MAX RAW stays a separately selected override, not the default.
-"""
+"""The hardware-approved pitch-arrangement profile and the Build 56 recipe."""
 from types import MappingProxyType
 
 BUILD56_DEFAULTS = MappingProxyType({
@@ -30,4 +18,15 @@ BUILD56_DEFAULTS = MappingProxyType({
 
 BUILD56_REFERENCE_MIDI_SHA256 = (
     'c8f9c342a7632ac50df52f8eb6f4c26e0dc56e42c001ef52a5b7b9a1a606ad5f'
+)
+
+STUDIO_DEFAULTS = MappingProxyType({
+    **BUILD56_DEFAULTS,
+    'arrangement': 'tuned',
+    'core_smoothing': 'auto',
+    'spk4': 'off',
+})
+
+PARATUNE_REFERENCE_MIDI_SHA256 = (
+    'b805d921db12b81f2575921fb49b29adb173997a52ac16e9c82bb50f42742b65'
 )

@@ -1,0 +1,29 @@
+{
+  "name": "Paranoid - PARATUNE.MID hardware audition",
+  "approval": "2026-11-18",
+  "hardware": "Tandy 1000 EX",
+  "seconds": 23.79,
+  "midi_sha256": "b805d921db12b81f2575921fb49b29adb173997a52ac16e9c82bb50f42742b65",
+  "transcription_sha256": "93df561198d9b423bff8077b4ec2f69a9bbb2167a5ebf7b218a406c4e5f5b247",
+  "hardware_recording_sha256": "676ffca9c3db1d7ec87e6fb4e351c3d874cc32234303e0d7da8568a74caba216",
+  "settings": {
+    "arrangement": "tuned",
+    "preset": "balanced",
+    "spk4": "off",
+    "voice_selection": "smart",
+    "drum_style": "rock",
+    "note_preservation": "full",
+    "guitar_separation": true,
+    "transcription": "sensitive",
+    "accompaniment": "off",
+    "core_smoothing": "auto"
+  },
+  "guide": {
+    "sha256": "d01119fe9d4b4f4bf8bdf10ff73655e8f3db2becec568f2725dfe921125ff669",
+    "midi_tempo_us": 352941,
+    "midi_ticks_per_beat": 480,
+    "channels": "guitar=1,melody=2,bass=3,drums=10",
+    "beats": [0, 8, 16, 24, 32, 48, 64, 72],
+    "seconds": [0.244, 3.313, 6.327, 9.253, 12.167, 18.007, 23.86, 26.80]
+  }
+}
