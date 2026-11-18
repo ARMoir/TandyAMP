@@ -1,5 +1,8 @@
 # TandyAMP Studio (laptop-side tools)
 
+**Latest AutoTune tuning/benchmark review:** [measured held-note context issue, fix and guide-free evaluation plan](benchmarks/AUTOTUNE_EVALUATION.md). This records a real earlier Paranoid transcription benchmark and distinguishes the approved **guide-based** PARATUNE take from ordinary guide-free YouTube conversion.
+
+
 ## Tuned: the hardware-approved audio default
 
 Studio uses **Tuned** for MP3, WAV, FLAC, OGG and YouTube. It first corrects

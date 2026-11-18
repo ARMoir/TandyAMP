@@ -125,9 +125,19 @@ def _by_part(notes: list[Note]) -> dict[str, list[Note]]:
 
 
 def _near_note(notes: list[Note], starts: list[float], time: float) -> Note | None:
+    """Find a note *still sounding*, not merely the latest note-on.
+
+    Guitar and harmony estimates can overlap: a short decoration may end
+    while an older root continues. Looking only at the last attack then
+    misreports silence, causing the ensemble tuner/backing arranger to
+    lose real harmonic context. Search backwards to the latest live note.
+    On reconstructed phrase lines this is normally one or two notes.
+    """
     i = bisect_right(starts, time) - 1
-    if i >= 0 and time < notes[i].end:
-        return notes[i]
+    while i >= 0:
+        if notes[i].end > time:
+            return notes[i]
+        i -= 1
     return None
 
 
