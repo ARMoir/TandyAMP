@@ -1,6 +1,6 @@
 {
   "schema": "tandyamp-musical-design-rules-v1",
-  "status": "design_only_not_implemented",
+  "status": "opt_in_first_pass_implemented",
   "goal": "Make the simplest MIDI that still sounds like the song on the Tandy",
   "use_one_arranger": true,
   "permanent_genre_specific_engines": false,
@@ -105,5 +105,13 @@
     "physical_tandy_test",
     "user_acceptance"
   ],
-  "no_audio_or_commercial_midi_committed": true
+  "no_audio_or_commercial_midi_committed": true,
+  "implementation": {
+    "module": "../musical_arranger.py",
+    "cli": "--arrangement musical",
+    "default": false,
+    "algorithm": "foundation_identity_support_note_boundary_sweep",
+    "limits": "No genre classifier, source-aware motif model or hardware-accurate audition",
+    "report": "MUSIC.TXT"
+  }
 }

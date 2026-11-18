@@ -1,5 +1,74 @@
 # TandyAMP Studio (laptop-side tools)
 
+## New experiment: MUSICAL — the simplest Tandy arrangement
+
+Studio now has an **opt-in working implementation** of the
+[unified musical design rules](DESIGN_RULES.md). In the GUI select
+**Arrangement → musical**, or use `--arrangement musical`. The default
+remains **classic**, reproducing the preferred Build56 recipe.
+
+MUSICAL is **not** an extra transcription model or a one-size-fits-all
+genre filter. It uses the existing transcription/MIDI input, then makes
+three small musical decisions at each note boundary:
+
+1. **Foundation:** preserve a real bass line (on SPK4 only when eligible;
+   otherwise through a PSG tone), or keep a genuine lower musical part.
+2. **Identity:** prioritize a continuing guitar riff, vocal melody or
+   classical melodic line. Protect the phrase from weak competing notes;
+   preserve strong new attacks and meaningful counter-lines.
+3. **Support:** assign the remaining PSG tone slot(s) to genuine chord or
+   response notes that add something rather than duplicate a pitch.
+
+The output carries at most **three effective PSG pitches and one
+eligible SPK4 bass**, plus non-invented drums on the single PSG noise
+channel. Drum conflicts within ~38 ms are resolved, but offbeat accents
+and hats remain. There is no forced beat grid, generic harmonic filler,
+genre classifier, or wholesale removal of chromatic notes.
+
+This *deliberately simplified* version is separate from MAX RAW and
+from the six-candidate **classic** arrangement. It writes to an
+independent `<SOURCE>_MUSIC` directory, including DOS 8.3 type-0 MIDI
+segments, `PLAY.BAT`, `INPUT.json`, `METRICS.json`, and
+`MUSIC.TXT` describing input/retained notes, drums and suspected
+artifacts. The original input and standard Build56 output are not
+overwritten.
+
+**Use the same YouTube source with new MUSICAL selection:**
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement musical -o "C:\Users\alexr\Music\TANDY_MUSICAL_A_B"
+```
+
+**Compare the classic Build56 arrangement** (same MP3 cache, default
+transcription/model settings) using a separate output directory:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement classic -o "C:\Users\alexr\Music\TANDY_CLASSIC_A_B"
+```
+
+**For a quick, no-AI test**, supply an already converted MIDI:
+
+```bat
+py -3.11 studio.py --cli "C:\Music\SEVENT01.MID" --arrangement musical --spk4 adapt -o "C:\Music\MUSICAL_TEST"
+```
+
+When using a MIDI that has already been reduced for Tandy, the arranger
+**cannot restore missing source notes**. It still demonstrates whether
+further simplified PSG selection improves continuity.
+
+**MAX RAW is independent** and intentionally incompatible with the
+MUSICAL selection switch. MAX RAW is a diagnostic high-recall note dump,
+not the best-sounding final Tandy arrangement.
+
+**Limitations / honesty:** this is the first deterministic implementation
+of foundation/identity/support scoring, not complete formal motif
+recognition, spectral artifact verification, perfect counterpoint
+analysis, or automatic genre understanding. The 30-second preview is
+approximate. Test on the physical Tandy before promoting it as a new
+default. The DOS player and Build56 settings are unchanged.
+
+
+
 ## Design rules: musical simplification for the actual Tandy
 
 **[Read the unified arrangement design rules](DESIGN_RULES.md)** ·

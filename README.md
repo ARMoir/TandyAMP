@@ -1,5 +1,7 @@
 # TandyAMP — Winamp-inspired MIDI player for Tandy 1000 DOS
 
+**New optional musical arranger:** The laptop Studio now supports `--arrangement musical`, an experimental offline **foundation / identity / support** simplifier. See [Studio usage](tools/tandyamp_studio/README.md#new-experiment-musical--the-simplest-tandy-arrangement) and [implementation](tools/tandyamp_studio/musical_arranger.py). Build56 stays the default and MAX RAW stays separate.
+
 **Musical design philosophy:** [The TandyAMP Studio arrangement design rules](tools/tandyamp_studio/DESIGN_RULES.md). **The goal is the simplest MIDI that still sounds like the song on the Tandy**, not the most complete note dump.
 
 **Musical-quality references:** [SEVENT01 (rock/groove)](tools/tandyamp_studio/benchmarks/SEVENT01_MUSICAL_BENCHMARK.md), [Brandenburg (counterpoint)](tools/tandyamp_studio/benchmarks/BRANDENBURG_CLASSICAL_BENCHMARK.md), and [DEMO.MID (hardware-native)](tools/tandyamp_studio/benchmarks/DEMO_HARDWARE_BENCHMARK.md).

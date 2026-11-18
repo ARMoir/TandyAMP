@@ -1,6 +1,6 @@
 # TandyAMP Studio — musical arrangement design rules
 
-**Status:** Design specification for future Studio changes. It does **not** claim these rules are implemented, alter the DOS player, or change current Studio conversion defaults.
+**Status:** Design contract with an **opt-in first implementation** in `musical_arranger.py` (`--arrangement musical`). This does not change the default Build56 pipeline or DOS player. Advanced source-informed phrase recognition, genre adaptation and hardware audition optimization are **not implemented**.
 
 ## The goal: the best *Tandy* MIDI, not the most complete MIDI
 
@@ -98,7 +98,7 @@ Choose coherent PSG roles; optional real SPK4 bass / noise percussion
 
 Avoid a huge rules-and-exceptions system. A few explainable priorities should guide selection: **importance to the song, continuity of the line, genuine rhythmic/harmonic support, and confidence that a note is real**. Select a strong new attack when it matters, but do not endlessly switch voices because a weak note briefly appears.
 
-A future optional **Groove Clean** stage may apply this logic at light/balanced/aggressive strengths, but **does not exist merely because these documents were committed**. Its job is to *remove noise while preserving the core*, not to maximize the fidelity of a giant GM note stream. Keep the original, cleaned and final arranged files available for A/B tests; record why candidate notes were suppressed.
+The opt-in **MUSICAL** arranger now implements one deterministic foundation/identity/support selection pass with conservative weak-high-note rejection and single-noise-channel drum collision handling. Full **Groove Clean** confidence scoring and light/balanced/aggressive strengths remain a **future experiment**, not implemented by this first pass. Its job is to *remove noise while preserving the core*, not to maximize the fidelity of a giant GM note stream. Keep the original, cleaned and final arranged files available for A/B tests; record why candidate notes were suppressed.
 
 ## Implementation and regression gates
 
@@ -118,8 +118,8 @@ Document the input/source SHA-256, command/options, Studio commit, model version
 
 ## Current status
 
-- This file and [machine-readable design constraints](benchmarks/design_rules.json) are **documentation and prospective evaluation contracts**, not implemented audio algorithms.
-- The Build56 Studio defaults, DOS player, current arrangement code and MAX RAW remain untouched.
+- The shared **MUSICAL** selection rules have an opt-in deterministic laptop implementation in [`musical_arranger.py`](musical_arranger.py), connected through the GUI/CLI and tested with synthetic rock, classical and hardware-native MIDI patterns. Advanced phrase/source confidence analysis is not implemented.
+- The Build56 Studio defaults, classic arrangement path, DOS player and MAX RAW remain untouched.
 - User-supplied reference MIDI files are **not committed**. Store only measurements and methods.
 - Changes to processing should be separate, opt-in, testable and reversible until hardware listening establishes an improvement.
 

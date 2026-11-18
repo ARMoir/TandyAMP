@@ -17,7 +17,9 @@ class MusicalDesignDocsTests(unittest.TestCase):
         cls.spec = json.loads((DATA/'design_rules.json').read_text(encoding='utf-8'))
 
     def test_spec_is_explicitly_design_only_and_minimal(self):
-        self.assertEqual(self.spec['status'], 'design_only_not_implemented')
+        self.assertEqual(self.spec['status'], 'opt_in_first_pass_implemented')
+        self.assertEqual(self.spec['implementation']['cli'], '--arrangement musical')
+        self.assertFalse(self.spec['implementation']['default'])
         self.assertTrue(self.spec['use_one_arranger'])
         self.assertFalse(self.spec['permanent_genre_specific_engines'])
         self.assertEqual(self.spec['roles'],
