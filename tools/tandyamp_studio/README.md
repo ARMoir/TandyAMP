@@ -1,5 +1,62 @@
 # TandyAMP Studio (laptop-side tools)
 
+## MAX RAW: high-recall YouTube-to-MIDI with DOS-only splitting
+
+Use the **MAX RAW** checkbox in the GUI, or `--max-raw` on the CLI, to
+make the **most complete high-recall estimated MIDI** Studio can extract
+from the YouTube audio without prearranging for Tandy hardware. This is
+an **override**: it forces Demucs' six-stem model and transcribes **all
+five pitched sources** (vocals, bass, guitar, other, piano), plus
+onset-derived drum events. It uses Basic Pitch's `raw` decoder profile,
+with lower onset, frame and minimum note-length thresholds, then exports
+*every detected note* from every source. More notes can include false
+harmonics, bleed, duplicate pitches and incorrect drum classifications:
+raw means **maximum retention**, not guaranteed transcription accuracy.
+
+MAX RAW does **not** apply stem cleanup, octave folding, pitch-range
+limits, bass velocity floors, automatic leveling, guitar-bleed
+deduplication, chord generation, PSG voice selection, six-candidate caps
+or drum debouncing. It preserves the **model's estimated** MIDI note
+pitch, original decoded start/end time, and estimated velocity. Source
+audio does not contain an embedded GM MIDI file; perfect original
+instrument velocities, continuous pitch bends, programs and performance
+control data are therefore **not recoverable exactly**.
+
+Output is still compatible with the TandyAMP file loader:
+
+- **Standard MIDI File format 0**, one track with separate source
+  channels: vocals 1, bass 2, other 3, guitar 5, piano 6, drums 10
+- **DOS 8.3 filenames** like `BLACKS01.MID`, `BLACKS02.MID`, etc.
+- **Automatic split by file size only** (target ≤42,000 bytes, safely
+  below TandyAMP's 45,056-byte input limit). No arbitrary 180-second cut.
+- Notes sustained over a split are re-triggered at the beginning of the
+  next MIDI file, so neither their pitch nor their estimated velocity is
+  lost. Exact continuous hold across physically separate files cannot
+  be maintained.
+- `MAXRAW.TXT` in the output folder reports event counts and clarifies
+  that pitches and velocities were estimated from audio.
+- The source MP3 cache is reused whenever available.
+
+Run with an existing YouTube URL:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --max-raw --preview -o "C:\Users\alexr\Music\TANDY_MAX_RAW"
+```
+
+The new flag **overrides**, rather than combines with, the existing
+presets, smart/legacy voice selection, accompaniment, stem options and
+transcription profile. It does not require or change any TANDYAMP.EXE
+build. The optional WAV preview still approximates what its limited
+physical PSG/SPK4 hardware can sound simultaneously; **it is not** a
+rendering of every raw MIDI note at once.
+
+This is also intentionally different from **MAX** or **Full** in the
+DOS player. MAX RAW is only a **laptop-side source MIDI creation mode**.
+TandyAMP's three PSG tones, noise generator and optional SPK4 speaker
+remain unchanged.
+
+
+
 ## Stable SPK4 bass during backing changes
 
 Smart-marked MIDI now keeps an established SPK4 bass through a one-tone

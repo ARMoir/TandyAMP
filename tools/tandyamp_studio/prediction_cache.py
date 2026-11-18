@@ -9,8 +9,13 @@ from diagnostics import file_digest, write_json
 
 
 def decoder_settings(part: str | None, profile: str) -> dict:
-    if profile not in ('standard', 'sensitive'):
-        raise ValueError('Transcription profile must be standard or sensitive')
+    if profile not in ('standard', 'sensitive', 'raw'):
+        raise ValueError('Transcription profile must be standard, sensitive or raw')
+    if profile == 'raw':
+        # Maximum recall: inspect all six Demucs stems. Low thresholds
+        # intentionally retain weak/short candidates and also false positives.
+        # None of these decoded note candidates are filtered later.
+        return dict(onset_thresh=.28, frame_thresh=.16, min_note_len=4)
     # Only separated guitar/other get the experimental decoder. Never lower
     # thresholds on a full mix or on vocals/bass just to increase density.
     if profile == 'sensitive' and part in ('guitar', 'harmony'):

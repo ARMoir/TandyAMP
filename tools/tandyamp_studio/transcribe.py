@@ -62,11 +62,13 @@ def _predict(path: Path, part: str | None, profile: str = 'standard',
             role = part or ('bass' if n.pitch <= 54 else 'melody' if n.pitch >= 68 else 'harmony')
             notes.append(Note(float(n.start), float(n.end), int(n.pitch), int(n.velocity), role,
                               33 if role == 'bass' else 80 if role == 'melody'
-                              else 30 if role == 'guitar' else 48))
+                              else 30 if role == 'guitar'
+                              else 0 if role == 'piano' else 48))
     return notes
 
 
-def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
+def _drum_onsets(path: Path, style: str = 'auto',
+                 raw_mode: bool = False) -> list[Note]:
     """Recover three rock drum classes without manufacturing rhythmic notes.
 
     Two onset detectors run on the *separated drum stem*:
@@ -206,6 +208,31 @@ def _drum_onsets(path: Path, style: str = 'auto') -> list[Note]:
         candidates, style=style
     )
     combined = candidates + recovered
+    if raw_mode:
+        # MAX RAW preserves every detected drum transient on its own MIDI
+        # event, without debouncing, velocity leveling or noise-voice caps.
+        # Spectrally ambiguous broad onsets use a best-guess classification.
+        # These are estimates, NOT the original drum-score MIDI notes.
+        all_drums = []
+        for (at, _l, _m, _h, _hint, strength), bands3 in zip(raw, calibrated):
+            kind = classify_drum_transient(*bands3)
+            if kind is None:
+                kind = (36, 38, 42)[max(range(3),
+                                      key=lambda i: bands3[i])]
+            all_drums.append(Note(at, at + .07, kind,
+                                  drum_velocity(strength, float(quiet),
+                                                float(loud)), 'drums', 0))
+        for (at, _l, _m, _h), strength in high_raw:
+            # Do not discard a detected hat merely because a kick overlaps.
+            all_drums.append(Note(at, at + .045, 42,
+                                  drum_velocity(strength, float(quiet),
+                                                float(high_envelope.max())
+                                                if high_envelope.max() > 0 else 1.0),
+                                  'drums', 0))
+        print('MAX RAW drums: {} detected broad attacks + {} high-frequency '
+              'attacks, no drum pruning'.format(len(raw), len(high_raw)),
+              flush=True)
+        return sorted(all_drums, key=lambda n: (n.start, n.pitch))
     result = refine_drum_hits(combined, beats, style=style)
     before = dict(Counter(n.pitch for n in combined))
     after = dict(Counter(n.pitch for n in result))
@@ -258,7 +285,8 @@ def transcribe_audio(path: Path, stems: bool = False,
                      preservation: str = 'full',
                      guitar_separation: bool = False,
                      accompaniment: str = 'off',
-                     profile: str = 'standard') -> list[Note]:
+                     profile: str = 'standard',
+                     raw_mode: bool = False) -> list[Note]:
     """Transcribe guitar/vocals/bass and optionally infer sustained harmony.
 
     The 6-stem guitar model is opt-in: its first use downloads more weights
@@ -271,6 +299,13 @@ def transcribe_audio(path: Path, stems: bool = False,
         raise ValueError('Note preservation must be full or clean')
     if accompaniment not in ('off', 'recover', 'harmonize'):
         raise ValueError('Accompaniment must be off, recover, or harmonize')
+    if raw_mode:
+        # Force the richest *source separation*, not an early three-voice
+        # composition. No generated chord notes masquerade as source data.
+        stems = True
+        guitar_separation = True
+        accompaniment = 'off'
+        profile = 'raw'
     stems = stems or guitar_separation
     if accompaniment != 'off' and not stems:
         raise ValueError('Chord accompaniment requires --stems or '
@@ -303,14 +338,16 @@ def transcribe_audio(path: Path, stems: bool = False,
         root = output / model / path.stem
         return transcribe_stems(root, guitar_separation=guitar_separation,
                                 drum_style=drum_style, preservation=preservation,
-                                accompaniment=accompaniment, profile=profile)
+                                accompaniment=accompaniment, profile=profile,
+                                raw_mode=raw_mode)
 
 
 def transcribe_stems(root: Path, *, guitar_separation: bool = True,
                      drum_style: str = 'rock', preservation: str = 'full',
                      accompaniment: str = 'off', profile: str = 'standard',
                      cache_dir: Path | None = None,
-                     diagnostics_dir: Path | None = None) -> list[Note]:
+                     diagnostics_dir: Path | None = None,
+                     raw_mode: bool = False) -> list[Note]:
     """Shared Studio/benchmark pipeline, with optional inspectable checkpoints."""
     from postprocess import clean_stem_notes
     from diagnostics import save_stage
@@ -319,6 +356,10 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
             ('bass', 'bass'), ('vocals', 'melody'), ('guitar', 'guitar'),
             ('other', 'harmony')
         ]
+        if raw_mode:
+            # The six-stem model exposes piano as a separate fifth pitched
+            # stem. Unlike the arranged pipeline, MAX RAW does not omit it.
+            stems_to_transcribe.append(('piano', 'piano'))
     else:
         stems_to_transcribe = [
             ('bass', 'bass'), ('vocals', 'melody'), ('other', 'harmony')
@@ -334,14 +375,16 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
                else _predict(wav, part, profile=profile, cache_dir=cache_dir))
         if diagnostics_dir is not None:
             save_stage(diagnostics_dir, name + '-raw', raw)
-        kept = clean_stem_notes(raw, part, preservation=preservation)
-        print(f'  {name}: {len(raw)} -> {len(kept)} notes after cleanup',
+        kept = raw if raw_mode else clean_stem_notes(
+            raw, part, preservation=preservation)
+        print(f'  {name}: {len(raw)} -> {len(kept)} notes '
+              f'{"without pruning" if raw_mode else "after cleanup"}',
               flush=True)
         groups[name] = kept
         if diagnostics_dir is not None:
             save_stage(diagnostics_dir, name + '-clean', kept)
 
-    if guitar_separation:
+    if guitar_separation and not raw_mode:
         before = len(groups['other'])
         groups['other'] = remove_guitar_bleed(groups['guitar'],
                                              groups['other'])
@@ -367,5 +410,7 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
     drums = root / 'drums.wav'
     if drums.exists():
         print('Estimating beat-aware kick/snare/hat onsets...', flush=True)
-        notes.extend(_drum_onsets(drums, style=drum_style))
+        notes.extend(_drum_onsets(drums, style=drum_style,
+                                  raw_mode=raw_mode) if raw_mode
+                     else _drum_onsets(drums, style=drum_style))
     return notes

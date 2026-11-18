@@ -20,33 +20,46 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
                    guitar_separation: bool = False,
                    accompaniment: str = 'off',
                    transcription: str = 'standard',
-                   voice_selection: str = 'legacy') -> list[Path]:
+                   voice_selection: str = 'legacy',
+                   max_raw: bool = False) -> list[Path]:
     audio_input = input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg')
     if input_file.suffix.lower() in ('.mid', '.midi'):
+        if max_raw:
+            raise ValueError('MAX RAW is for YouTube/audio transcription, not existing MIDI files')
         print(f'Loading MIDI: {input_file}', flush=True)
         notes = load_midi(input_file)
     elif input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg'):
         from transcribe import transcribe_audio
         print(f'Transcribing audio: {input_file}', flush=True)
-        notes = transcribe_audio(input_file, stems=stems,
-                                 drum_style=drum_style,
+        transcribe_kwargs = dict(stems=stems, drum_style=drum_style,
                                  preservation=note_preservation,
                                  guitar_separation=guitar_separation,
                                  accompaniment=accompaniment, profile=transcription)
+        if max_raw:
+            transcribe_kwargs['raw_mode'] = True
+            print('MAX RAW: high-recall six-stem transcription including piano; '
+                  'no note filtering or automatic leveling.', flush=True)
+        notes = transcribe_audio(input_file, **transcribe_kwargs)
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
-    keep_candidates = (note_preservation == 'full' and
+    keep_candidates = (not max_raw and note_preservation == 'full' and
                        (audio_input or voice_selection == 'smart'))
-    arranged = prepare(notes, preset, spk4,
-                       preserve=keep_candidates,
-                       voice_selection=voice_selection)
+    arranged = (list(notes) if max_raw else
+                prepare(notes, preset, spk4,
+                        preserve=keep_candidates,
+                        voice_selection=voice_selection))
     if keep_candidates:
         print('Full mode preserves up to six MIDI candidates at once; '
               'TandyAMP still plays at most three PSG tones plus '
               'an eligible SPK4 bass.', flush=True)
-    print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
-    if voice_selection == 'smart':
+    if max_raw:
+        print(f'MAX RAW: exporting all {len(arranged)} detected events, '
+              'unaltered. No voice cap, velocity floor or pitch folding.',
+              flush=True)
+    else:
+        print(f'Arranged {len(arranged)} events for Tandy PSG + SPK4 {spk4}', flush=True)
+    if voice_selection == 'smart' and not max_raw:
         print('Smart riff-protected voice selection enabled in MIDI (CC119=77). '
               'Requires the latest TANDYAMP.EXE build for real DOS playback.',
               flush=True)
@@ -55,8 +68,9 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         print('  Original/AI pitched notes: {}; inferred accompaniment: {}'.format(
             sum(n.part not in ('drums', 'accomp') for n in arranged),
             len(inferred)), flush=True)
-    for title, sample in (('Input after transcription', notes),
-                          ('MIDI candidate output', arranged)):
+    for title, sample in (() if max_raw else
+                          (('Input after transcription', notes),
+                           ('MIDI candidate output', arranged))):
         cov = voice_coverage(sample)
         print('  {}: silent {:.1f}s, one tone {:.1f}s, two {:.1f}s, '
               'three+ {:.1f}s, four+ {:.1f}s, bass only {:.1f}s; '
@@ -82,11 +96,16 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     target = output_dir / (target_name + '_TANDY')
     if saved_mp3 is not None and (target / 'SOURCE.MP3').exists():
         raise FileExistsError(f'Refusing to overwrite existing SOURCE.MP3 in {target}')
-    files = export(arranged, target, voice_selection=voice_selection)
-    from diagnostics import save_stage
-    save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
-    save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
-    if audio_input and accompaniment != 'off':
+    if max_raw:
+        from max_raw import export_raw, raw_summary
+        files = export_raw(arranged, target)
+        (target / 'MAXRAW.TXT').write_text(raw_summary(arranged), encoding='ascii')
+    else:
+        files = export(arranged, target, voice_selection=voice_selection)
+        from diagnostics import save_stage
+        save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
+        save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
+    if audio_input and accompaniment != 'off' and not max_raw:
         report = ('TandyAMP Studio accompaniment provenance\n'
                   'Separation: {}\nAccompaniment: {}\n'
                   'Inferred support events: {}\n'
@@ -104,7 +123,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     if preview:
         from preview import preview_wav
         wav = preview_wav(arranged, target / 'PREVIEW.WAV', spk4=spk4,
-                          voice_selection=voice_selection)
+                          voice_selection='legacy' if max_raw else voice_selection)
         print(f'Approximate 30-second square-wave preview: {wav}', flush=True)
     if saved_mp3 is not None:
         shutil.copyfile(saved_mp3, target / 'SOURCE.MP3')
@@ -121,7 +140,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
             guitar_separation: bool = False,
             accompaniment: str = 'off',
                    transcription: str = 'standard',
-                   voice_selection: str = 'legacy') -> list[Path]:
+                   voice_selection: str = 'legacy',
+                   max_raw: bool = False) -> list[Path]:
     """Noninteractive pipeline; a validated YouTube MP3 is reused from
     the persistent OS temp cache whenever possible. Outputs are unchanged.
     """
@@ -139,6 +159,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
         raise ValueError('Unknown transcription profile: ' + transcription)
     if voice_selection not in ('legacy', 'smart'):
         raise ValueError('Voice selection must be legacy or smart')
+    if max_raw and mp3_only:
+        raise ValueError('MAX RAW creates MIDI, so it cannot be combined with --mp3-only')
     source = str(input_file).strip()
     if not source:
         raise ValueError('Provide a music file or YouTube video URL')
@@ -162,7 +184,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
                                   note_preservation=note_preservation,
                                   guitar_separation=guitar_separation,
                                   accompaniment=accompaniment, transcription=transcription,
-                                  voice_selection=voice_selection)
+                                  voice_selection=voice_selection,
+                                  **({'max_raw': True} if max_raw else {}))
     if source.lower().startswith(('http://', 'https://')):
         raise ValueError('Only single-video YouTube links are supported (https://youtu.be/... or youtube.com/watch?v=...)')
     if keep_mp3 or mp3_only:
@@ -175,7 +198,8 @@ def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
                           note_preservation=note_preservation,
                           guitar_separation=guitar_separation,
                           accompaniment=accompaniment, transcription=transcription,
-                          voice_selection=voice_selection)
+                          voice_selection=voice_selection,
+                          **({'max_raw': True} if max_raw else {}))
 
 
 def gui(initial_input: str = '') -> None:
@@ -191,8 +215,8 @@ def gui(initial_input: str = '') -> None:
         DND_FILES = None
 
     root.title('TandyAMP Studio - YouTube / MP3 / MIDI to Tandy DOS')
-    root.geometry('710x625')
-    root.minsize(625, 575)
+    root.geometry('710x660')
+    root.minsize(625, 610)
     path = tk.StringVar(value=initial_input)
     output = tk.StringVar(value=str(Path.home() / 'Music'))
     preset = tk.StringVar(value='balanced')
@@ -203,6 +227,7 @@ def gui(initial_input: str = '') -> None:
     accompaniment = tk.StringVar(value='off')
     transcription = tk.StringVar(value='standard')
     voice_selection = tk.StringVar(value='legacy')
+    max_raw = tk.BooleanVar(value=False)
     stems = tk.BooleanVar(value=False)
     preview = tk.BooleanVar(value=True)
     keep_mp3 = tk.BooleanVar(value=False)
@@ -233,11 +258,12 @@ def gui(initial_input: str = '') -> None:
     ttk.Combobox(outer, textvariable=transcription, values=['standard', 'sensitive'], state='readonly', width=19).grid(row=9, column=1, sticky='w', padx=8)
     ttk.Label(outer, text='Voices').grid(row=10, column=0, sticky='w', pady=6)
     ttk.Combobox(outer, textvariable=voice_selection, values=['legacy', 'smart'], state='readonly', width=19).grid(row=10, column=1, sticky='w', padx=8)
-    ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=11, column=0, columnspan=3, sticky='w', pady=2)
-    ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=12, column=0, columnspan=3, sticky='w', pady=2)
-    ttk.Checkbutton(outer, text='MP3 only: download audio, skip MIDI transcription', variable=mp3_only).grid(row=13, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='MAX RAW (YouTube/audio: all six stems, all detected notes, no leveling)', variable=max_raw).grid(row=11, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='Generate approximate WAV preview', variable=preview).grid(row=12, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='Keep downloaded YouTube MP3 alongside MIDI', variable=keep_mp3).grid(row=13, column=0, columnspan=3, sticky='w', pady=2)
+    ttk.Checkbutton(outer, text='MP3 only: download audio, skip MIDI transcription', variable=mp3_only).grid(row=14, column=0, columnspan=3, sticky='w', pady=2)
     status = ttk.Label(outer, textvariable=message, wraplength=660)
-    status.grid(row=15, column=0, columnspan=3, sticky='w', pady=8)
+    status.grid(row=16, column=0, columnspan=3, sticky='w', pady=8)
     if DND_FILES:
         root.drop_target_register(DND_FILES)
         root.dnd_bind('<<Drop>>', lambda event: path.set(root.tk.splitlist(event.data)[0]))
@@ -301,7 +327,7 @@ def gui(initial_input: str = '') -> None:
             note_preservation=note_preservation.get(),
             guitar_separation=guitar_separation.get(),
             accompaniment=accompaniment.get(), transcription=transcription.get(),
-            voice_selection=voice_selection.get())
+            voice_selection=voice_selection.get(), max_raw=max_raw.get())
         def poll() -> None:
             if not future.done():
                 root.after(200, poll)
@@ -316,9 +342,9 @@ def gui(initial_input: str = '') -> None:
         root.after(200, poll)
 
     run_button = ttk.Button(outer, text='Convert / Download', command=launch)
-    run_button.grid(row=14, column=0, columnspan=2, sticky='ew', pady=8, padx=(0, 8))
+    run_button.grid(row=15, column=0, columnspan=2, sticky='ew', pady=8, padx=(0, 8))
     check_button = ttk.Button(outer, text='Check / Install FFmpeg', command=offer_ffmpeg_install)
-    check_button.grid(row=14, column=2, sticky='ew', pady=8)
+    check_button.grid(row=15, column=2, sticky='ew', pady=8)
     root.protocol('WM_DELETE_WINDOW', lambda: (pool.shutdown(wait=False, cancel_futures=True), root.destroy()))
     root.mainloop()
 
@@ -344,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
                         help='Sensitive is experimental separated guitar/harmony decoding')
     parser.add_argument('--voice-selection', choices=['legacy', 'smart'], default='legacy',
                         help='Smart opt-in: guitar-riff priority, attack-aware smooth voice selection (requires new DOS player)')
+    parser.add_argument('--max-raw', action='store_true',
+                        help='YouTube/audio: six stems, high-recall decoding, no note/velocity/voice pruning; split DOS MIDI by size only')
     parser.add_argument('--preview', action='store_true', help='Approximate 30-second WAV preview')
     parser.add_argument('--keep-mp3', action='store_true',
                         help='Keep downloaded YouTube source MP3 in generated MIDI folder')
@@ -368,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
                 note_preservation=args.note_preservation,
                 guitar_separation=args.guitar_separation,
                 accompaniment=args.accompaniment, transcription=args.transcription,
-                voice_selection=args.voice_selection)
+                voice_selection=args.voice_selection, max_raw=args.max_raw)
     except (FileNotFoundError, FileExistsError, ValueError, RuntimeError, OSError, ImportError) as exc:
         print(f'TandyAMP Studio error: {exc}', file=sys.stderr)
         return 1
