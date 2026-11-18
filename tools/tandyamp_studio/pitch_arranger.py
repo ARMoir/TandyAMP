@@ -32,6 +32,7 @@ class PitchReport:
     stem_offsets: dict[str, float] = field(default_factory=dict)
     stem_repairs: dict[str, int] = field(default_factory=dict)
     ensemble_repairs: dict[str, int] = field(default_factory=dict)
+    support_admission: dict[str, int] = field(default_factory=dict)
 
     def as_text(self) -> str:
         mode = 'aligned MIDI guide' if self.reference_mix else 'audio phrase score'
@@ -39,7 +40,8 @@ class PitchReport:
         if not self.reference_mix:
             stages = (f'Pass 1 stem offsets in cents: {self.stem_offsets}\n'
                       f'Pass 1 stem repairs: {dict(sorted(self.stem_repairs.items()))}\n'
-                      f'Pass 2 ensemble repairs: {dict(sorted(self.ensemble_repairs.items()))}\n')
+                      f'Pass 2 ensemble repairs: {dict(sorted(self.ensemble_repairs.items()))}\n'
+                      f'Pass 3 whole-note support admission: {dict(sorted(self.support_admission.items()))}\n')
         return (f'Pitch evidence: {self.context}\n'
                 f'Arrangement source: {mode}\n'
                 f'{stages}'
@@ -554,7 +556,8 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
 
 def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
                   reference: Reference | None = None, *,
-                  evidence: ScoreEvidence | None = None) -> tuple[list[Note], PitchReport]:
+                  evidence: ScoreEvidence | None = None,
+                  spk4: str = 'off') -> tuple[list[Note], PitchReport]:
     """Apply small pitch repairs, then build a single hardware-ready mix."""
     if reference is not None:
         notes = sorted(arrange_score(score, preset), key=lambda n: (n.start, n.part, n.pitch))
@@ -571,5 +574,15 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
     report = replace(ensemble, corrected=dict(stem_repairs + Counter(ensemble.corrected)),
                      stem_offsets=stem_offsets, stem_repairs=dict(stem_repairs),
                      ensemble_repairs=ensemble.corrected)
-    return _automatic_mix(tuned, arrange_score(tuned, preset), proposals, preset,
-                          evidence), report
+    mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
+                           preset, evidence)
+    from ensemble_roles import arrange_ensemble
+    arranged, voice_report = arrange_ensemble(mixed, spk4=spk4)
+    report = replace(report, support_admission={
+        'protected': voice_report.protected_notes,
+        'offered': voice_report.offered_support,
+        'admitted': voice_report.accepted_support,
+        'declined_short_or_weak': voice_report.rejected_short_or_weak,
+        'declined_competition': voice_report.rejected_competition,
+    })
+    return arranged, report

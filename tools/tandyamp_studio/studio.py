@@ -87,7 +87,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         if arrangement == 'tuned':
             from pitch_arranger import arrange_tuned
             arranged, pitch_report = arrange_tuned(phrase_score, notes, preset, reference,
-                                                 evidence=evidence)
+                                                 evidence=evidence, spk4=spk4)
             print(pitch_report.as_text(), end='', flush=True)
         else:
             arranged = arrange_score(phrase_score, preset)

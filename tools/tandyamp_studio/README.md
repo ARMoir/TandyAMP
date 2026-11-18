@@ -1,5 +1,30 @@
 # TandyAMP Studio (laptop-side tools)
 
+### Universal phrase-to-hardware ensemble check (guide-free AutoTune)
+
+The default `tuned` audio/YouTube conversion now preserves **whole,
+recognized musical lines** and considers extra harmony only if its
+entire original note can fit the actual Tandy voice budget. It does
+not continuously switch notes at every attack to fill channels.
+It works in **musical roles**, not a hard-coded rock template: a
+classical counterline or a synth sequence can take the companion slot
+when there is no guitar/vocal/drum part.
+
+This check preserves all genuine lead, bass, primary companion and
+drum notes coming from the phrase score, without shifting pitch,
+quantizing time, or creating new chords. It is a conservative
+**last-stage cleanup of optional support**, not a replacement for
+Demucs/Basic Pitch or a way to repair missing transcription notes.
+
+`PITCH.TXT` records how many support candidates were considered,
+kept and declined. Source-independent regression tests cover
+rock, classical, electronic and three-voice music; results and
+limitations are in [the AutoTune evaluation](benchmarks/AUTOTUNE_EVALUATION.md).
+Existing MIDI input via `classic`, MAX RAW, the DOS player and the
+approved guided PARATUNE export remain unchanged.
+
+
+
 **Latest AutoTune tuning/benchmark review:** [measured held-note context issue, fix and guide-free evaluation plan](benchmarks/AUTOTUNE_EVALUATION.md). This records a real earlier Paranoid transcription benchmark and distinguishes the approved **guide-based** PARATUNE take from ordinary guide-free YouTube conversion.
 
 

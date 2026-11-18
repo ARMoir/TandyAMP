@@ -168,6 +168,55 @@ GitHub Actions now runs it after the 201+ unit tests and the isolated
 stem-fundamental benchmark. The hardware-approved PARATUNE recipe and
 default Studio settings remain unchanged.
 
+## Reusable musical roles: whole-note ensemble admission
+
+**Goal:** A complete score for real Tandy sound hardware, not a battle
+between arbitrary extra harmonics. Following phrase reconstruction, the
+guide-free AutoTune path now checks each **whole** optional support note
+against the *already protected* foundation, lead and companion parts.
+
+- Protect original bass, lead, principal accompaniment and percussion
+  note onsets, ends, pitches and velocities. Never truncate or retune
+  a lead to make space for a weak chord.
+- Admit a genuine extra accompaniment **only when its entire note**
+  fits the currently available sound channels. Skip a competing whole
+  note rather than chopping it into several unattractive fragments.
+- Ensure there are **at most three PSG pitches** when the PC speaker is
+  unavailable. With optional SPK4, allow a fourth pitched candidate only
+  when a low bass and enough other distinct pitches *could* qualify under
+  the existing TandyAMP BASS/ADAPT gating. Actual hardware loudness and
+  eligibility still depend on the player.
+- Avoid a duplicate PSG pitch consuming another “voice”, and don't
+  invent a chord, drum pattern, or lead to use spare capacity.
+- No genre-specific scales, preset riff notes, song titles, tempos or
+  fixed music-channel assignments. These are **musical roles**; an
+  instrumental melody, electronic sequence or classical counterline
+  can occupy the same role that a vocal or rock guitar uses elsewhere.
+- The existing **MIDI-guided PARATUNE** arrangement bypasses this new
+  admission stage; its approved bytes/reference remain the unchanged
+  regression target.
+
+The shared implementation is
+[`ensemble_roles.py`](../ensemble_roles.py), with
+[13 focused tests](../tests/test_ensemble_roles.py) and a
+[reproducible four-style synthetic benchmark](ensemble_multistyle.py).
+It covers a rhythm-led rock passage, classical counterpoint with no
+drums, an electronic bass-and-melody sequence and the compact
+three-tone hardware-native case. Unlike the Paranoid-specific audible
+reference, these scenarios prove **invariants** that should carry
+across source material.
+
+The summary of protected and admitted parts is included in the
+`PITCH.TXT` output for a guide-free `--arrangement tuned` conversion.
+Neither original audio, AI stem weights nor note estimates are altered
+in this final-stage check.
+
+**Limitations:** The arranger cannot recover a missing guitar phrase,
+a mistaken vocal note or a wrong chord from poor stem transcription.
+The four synthetic styles do not prove musical quality of full
+mixed-audio tracks. A source-constant, full-song A/B audition on the
+Tandy remains necessary before declaring the result better.
+
 ## Regression / acceptance checks
 
 - A long guitar or bass note must remain visible to the harmony checker even after a shorter overlapping note has ended.
