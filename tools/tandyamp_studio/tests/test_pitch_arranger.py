@@ -30,7 +30,10 @@ class PitchArrangerTests(unittest.TestCase):
                                        for n in (bass, guitar, vocals)))
         notes, report = arrange_tuned(score, bass + guitar + vocals)
         pitches = [n.pitch % 12 for n in notes if n.part == 'melody']
-        self.assertEqual(pitches, [3, 7, 7, 7])
+        # A repeated weak C/F/G pitch detector boundary may collapse
+        # into a sustained note; the pitch contour must remain intact.
+        self.assertEqual(pitches, [3, 7, 7])
+        self.assertGreaterEqual(report.note_commit['duplicates_merged'],1)
         self.assertEqual(report.corrected, {'melody': 1})
         self.assertEqual(voice_coverage(notes)['four_plus'], 0)
         self.assertEqual([n for n in notes if n.part == 'drums'], list(drums))

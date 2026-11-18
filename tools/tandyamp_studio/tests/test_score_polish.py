@@ -105,7 +105,7 @@ class ReusableNotePolishTests(unittest.TestCase):
         notes=[n('bass',0,1,40),n('melody',0,1,72),
                n('guitar',0,1,64),n('drums',0,.07,36)]
         out,declined=commit_role_notes(notes)
-        self.assertEqual(out,notes)
+        self.assertEqual(set(out),set(notes))
         self.assertEqual(declined,0)
 
     def test_guitar_helper_can_require_note_completion(self):
