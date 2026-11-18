@@ -125,7 +125,8 @@ def _has_signal(notes: list[Note], role: str,
     return result
 
 
-def _line(notes: list[Note], role: str, groove: _Groove) -> list[Note]:
+def _line(notes: list[Note], role: str, groove: _Groove, *,
+          finish_notes: bool = False) -> list[Note]:
     """Find a maximum-scoring attack path through complete note proposals.
 
     Each edge considers the gap, interval, and overlap with the previous
@@ -186,7 +187,8 @@ def _line(notes: list[Note], role: str, groove: _Groove) -> list[Note]:
                     # A credible change with enough time on the old pitch
                     # can finish that note once, at the new attack.
                     tail = .28
-                if played < minimum_spacing or gap < -tail:
+                if (played < minimum_spacing or gap < -tail or
+                        finish_notes and gap < -1e-7):
                     continue
                 motion = (.15 - .052 * min(16, max(0, interval - 4)))
                 continuity = motion * (1 - max(0., gap) / link)
@@ -205,6 +207,12 @@ def _line(notes: list[Note], role: str, groove: _Groove) -> list[Note]:
     while best != -1:
         n = notes[best]
         if result and n.end > result[-1].start:
+            if finish_notes:
+                # Never export a note truncated merely because a later
+                # candidate took its voice. The DP edges normally make
+                # this unreachable when finish_notes is enabled.
+                best = predecessors[best]
+                continue
             n = replace(n, end=result[-1].start)
         result.append(n)
         best = predecessors[best]
@@ -290,7 +298,8 @@ def _guitar_bed(notes: list[Note], vocal: Phrase, groove: _Groove,
 
 
 def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
-                      *, connect: bool = True, recover_riff: bool = False) -> Score:
+                      *, connect: bool = True, recover_riff: bool = False,
+                      finish_notes: bool = False) -> Score:
     """Write the rhythm section, vocal and riff as independent musical lines."""
     evidence = evidence or ScoreEvidence()
     source: dict[str, list[Note]] = defaultdict(list)
@@ -308,7 +317,8 @@ def reconstruct_score(notes: list[Note], evidence: ScoreEvidence | None = None,
     rest = max(.34, 1.06 * groove.period)
 
     def line(role: str) -> list[Note]:
-        chosen = _line(_has_signal(source[role], role, evidence), role, groove)
+        chosen = _line(_has_signal(source[role], role, evidence), role, groove,
+                       finish_notes=finish_notes)
         return _connect(chosen, groove) if connect else chosen
 
     bass = line('bass')

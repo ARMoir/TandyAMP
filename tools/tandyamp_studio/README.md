@@ -1,5 +1,8 @@
 # TandyAMP Studio (laptop-side tools)
 
+**New guide-free Note Completion and context cleanup:** [source-relative register filtering, adjacent attack merging, full-note commitment and real-ZIP benchmarks](benchmarks/NOTE_COMPLETION.md). Existing guided PARATUNE and player are unchanged.
+
+
 ### Universal phrase-to-hardware ensemble check (guide-free AutoTune)
 
 The default `tuned` audio/YouTube conversion now preserves **whole,

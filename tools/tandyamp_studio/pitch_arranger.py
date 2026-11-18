@@ -33,6 +33,7 @@ class PitchReport:
     stem_repairs: dict[str, int] = field(default_factory=dict)
     ensemble_repairs: dict[str, int] = field(default_factory=dict)
     support_admission: dict[str, int] = field(default_factory=dict)
+    note_commit: dict[str, int] = field(default_factory=dict)
 
     def as_text(self) -> str:
         mode = 'aligned MIDI guide' if self.reference_mix else 'audio phrase score'
@@ -41,7 +42,8 @@ class PitchReport:
             stages = (f'Pass 1 stem offsets in cents: {self.stem_offsets}\n'
                       f'Pass 1 stem repairs: {dict(sorted(self.stem_repairs.items()))}\n'
                       f'Pass 2 ensemble repairs: {dict(sorted(self.ensemble_repairs.items()))}\n'
-                      f'Pass 3 whole-note support admission: {dict(sorted(self.support_admission.items()))}\n')
+                      f'Pass 3 whole-note support admission: {dict(sorted(self.support_admission.items()))}\n'
+                      f'Pass 4 note completion/duplicate merging: {dict(sorted(self.note_commit.items()))}\n')
         return (f'Pitch evidence: {self.context}\n'
                 f'Arrangement source: {mode}\n'
                 f'{stages}'
@@ -270,7 +272,8 @@ def _monophonic(notes: list[Note], gap: float = .004) -> list[Note]:
 
 
 
-def _coherent_guitar_line(notes: list[Note], gap: float = .004) -> list[Note]:
+def _coherent_guitar_line(notes: list[Note], gap: float = .004, *,
+                          commit_full: bool = False) -> list[Note]:
     """Guard a guide-free guitar phrase against competing note fragments.
 
     Source-separated guitars can report an overtone over a still-ringing
@@ -316,6 +319,10 @@ def _coherent_guitar_line(notes: list[Note], gap: float = .004) -> list[Note]:
             if (n.pitch != old.pitch and duration <= .13
                     and n.velocity <= old.velocity + 10
                     and old.end >= n.end + .055):
+                continue
+            if n.start < old.end and commit_full:
+                # The first credible guitar note owns its entire duration;
+                # a later overlap may not steal that PSG part mid-note.
                 continue
             if n.start <= old.end:
                 # A legitimate new attack replaces the previous pitch,
@@ -548,7 +555,8 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
         i = bisect_left(other_times, n.end)
         if i == 0 or other[i - 1].end <= n.start:
             groups['harmony'].append(n)
-    groups['guitar'] = _coherent_guitar_line(supporting, .006)
+    groups['guitar'] = _coherent_guitar_line(supporting, .006,
+                                            commit_full=True)
     groups['melody'] = [_vocal_level(n) for n in vocals]
     groups['bass'] = [replace(n, velocity=min(86, max(56, n.velocity))) for n in bass]
     return normalize((n for group in groups.values() for n in group), preset, preserve=True)
@@ -576,9 +584,15 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
                      ensemble_repairs=ensemble.corrected)
     mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
                            preset, evidence)
+    from score_polish import merge_duplicate_attacks, commit_role_notes
+    merged, merged_count = merge_duplicate_attacks(mixed)
+    committed, declined_count = commit_role_notes(merged)
     from ensemble_roles import arrange_ensemble
-    arranged, voice_report = arrange_ensemble(mixed, spk4=spk4)
-    report = replace(report, support_admission={
+    arranged, voice_report = arrange_ensemble(committed, spk4=spk4)
+    report = replace(report, note_commit={
+        'duplicates_merged': merged_count,
+        'competing_notes_declined': declined_count,
+    }, support_admission={
         'protected': voice_report.protected_notes,
         'offered': voice_report.offered_support,
         'admitted': voice_report.accepted_support,

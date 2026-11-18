@@ -73,6 +73,14 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
     print(f'Extracted {len(notes)} note events', flush=True)
+    raw_transcribed_notes = list(notes)
+    cleanup_report = None
+    if evidence is not None and arrangement == 'tuned' and reference is None:
+        from score_polish import reject_register_spikes
+        notes, cleanup_report = reject_register_spikes(notes)
+        print('Guide-free local-register cleanup: removed {} unsupported '
+              'isolated extreme notes ({} retained).'.format(
+                  cleanup_report.removed_register_spikes, len(notes)), flush=True)
     keep_candidates = (not max_raw and arrangement == 'classic' and
                        note_preservation == 'full' and
                        (audio_input or voice_selection == 'smart'))
@@ -83,7 +91,8 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         from phrase_score import arrange_score, reconstruct_score
         phrase_score = reconstruct_score(notes, evidence,
                                          connect=core_smoothing != 'off',
-                                         recover_riff=arrangement == 'tuned' and reference is None)
+                                         recover_riff=arrangement == 'tuned' and reference is None,
+                                         finish_notes=arrangement == 'tuned' and reference is None)
         if arrangement == 'tuned':
             from pitch_arranger import arrange_tuned
             arranged, pitch_report = arrange_tuned(phrase_score, notes, preset, reference,
@@ -178,8 +187,15 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     else:
         files = export(arranged, target, voice_selection=voice_selection)
         from diagnostics import save_stage
-        save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
-        save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
+        save_stage(target, 'INPUT', raw_transcribed_notes, spk4=spk4,
+                   voice_selection=voice_selection)
+        if cleanup_report is not None:
+            save_stage(target, 'CLEAN', notes, spk4=spk4,
+                       voice_selection=voice_selection)
+            (target / 'POLISH.TXT').write_text(
+                cleanup_report.summary(), encoding='ascii')
+        save_stage(target, 'METRICS', arranged, spk4=spk4,
+                   voice_selection=voice_selection)
         if phrase_score is not None:
             from dataclasses import asdict
             from diagnostics import write_json
