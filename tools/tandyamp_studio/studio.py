@@ -76,11 +76,19 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     raw_transcribed_notes = list(notes)
     cleanup_report = None
     if evidence is not None and arrangement == 'tuned' and reference is None:
-        from score_polish import reject_register_spikes
+        from dataclasses import replace as replace_report
+        from score_polish import (reject_register_spikes,
+                                  stabilize_audio_candidates)
         notes, cleanup_report = reject_register_spikes(notes)
-        print('Guide-free local-register cleanup: removed {} unsupported '
-              'isolated extreme notes ({} retained).'.format(
-                  cleanup_report.removed_register_spikes, len(notes)), flush=True)
+        notes, stable = stabilize_audio_candidates(notes)
+        cleanup_report = replace_report(cleanup_report, **stable)
+        print('Guide-free score stabilization: {} isolated register spikes '
+              'removed, {} repeated source fragments combined '
+              '({} vocal/guitar pitch wobbles); {} candidate notes remain.'
+              .format(cleanup_report.removed_register_spikes,
+                      stable['merged_source_fragments'],
+                      stable['removed_pitch_jitter'], len(notes)),
+              flush=True)
     keep_candidates = (not max_raw and arrangement == 'classic' and
                        note_preservation == 'full' and
                        (audio_input or voice_selection == 'smart'))

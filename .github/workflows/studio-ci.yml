@@ -39,3 +39,5 @@ jobs:
         run: python tools/tandyamp_studio/benchmarks/ensemble_multistyle.py
       - name: Benchmark duplicate merge, register outliers and note completion
         run: python tools/tandyamp_studio/benchmarks/score_polish_ab.py
+      - name: Benchmark stronger cross-style phrase stabilization A/B
+        run: python tools/tandyamp_studio/benchmarks/phrase_stability_ab.py

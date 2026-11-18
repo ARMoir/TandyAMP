@@ -584,14 +584,17 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
                      ensemble_repairs=ensemble.corrected)
     mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
                            preset, evidence)
-    from score_polish import merge_duplicate_attacks, commit_role_notes
+    from score_polish import (merge_duplicate_attacks, commit_role_notes,
+                              connect_legato_gaps)
     merged, merged_count = merge_duplicate_attacks(mixed)
     committed, declined_count = commit_role_notes(merged)
+    connected, legato_count = connect_legato_gaps(committed)
     from ensemble_roles import arrange_ensemble
-    arranged, voice_report = arrange_ensemble(committed, spk4=spk4)
+    arranged, voice_report = arrange_ensemble(connected, spk4=spk4)
     report = replace(report, note_commit={
         'duplicates_merged': merged_count,
         'competing_notes_declined': declined_count,
+        'legato_micro_gaps_connected': legato_count,
     }, support_admission={
         'protected': voice_report.protected_notes,
         'offered': voice_report.offered_support,

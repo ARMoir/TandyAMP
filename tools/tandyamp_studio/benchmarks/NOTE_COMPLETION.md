@@ -1,5 +1,62 @@
 # Guide-free AutoTune: do not interrupt completed notes
 
+## Stronger phrase continuity (new default for guide-free Tuned audio)
+
+The first filter corrected isolated register glitches, but the rebuilt
+lead and guitar still sounded like disconnected detector *fragments*.
+The new stage works **both before and after phrase reconstruction**:
+
+**Before selecting phrases:** Consecutive same-pitch detections are
+combined *per musical role and pitch*, even when an unrelated harmonic
+candidate is interspersed in the transcription. The role-specific
+maximum gap is **95 ms for melody, 75 ms for guitar and 50 ms for
+bass**. Strong new attacks, drum-aligned guitar/bass pick attacks, and
+clearly intentional long repeated vocal syllables remain separate.
+A very brief, distinctly weaker **1–2 semitone vocal/guitar pitch
+wobble** inside an otherwise consistent note can be removed.
+
+**Guitar beep reduction:** A short, isolated note at least **12
+semitones above** the locally established guitar register is now
+eligible for rejection, *even when its decoder velocity appears
+high*. It must also be unsupported by surrounding similar pitches.
+A sustained or repeated high-register guitar passage is protected.
+Lower outliers and other roles retain the more conservative
+19-semitone threshold.
+
+**After selecting phrases:** Confirmed guitar and vocal notes can be
+held across accidental gaps of up to **65 ms (guitar)** or
+**85 ms (vocal melody)** by ending the old pitch at the next
+original note-on. The algorithm does not change that next attack,
+extend bass rests, alter percussion timing, add notes or create
+polyphony. A gap larger than the threshold is treated as a real rest.
+
+This is *not* turning every pair of notes into a sustain. Music needs
+breathing space, rhythmic rests, and repeated attacks. These are
+source-relative cleanup rules that apply to vocals, violins, synth
+leads, guitars, keyboards and other melodic roles, not a template
+for any artist, song, key or genre.
+
+The enhanced `POLISH.TXT` now reports **source fragments combined**
+and **weak pitch wobbles removed**; `PITCH.TXT` includes
+**legato micro-gaps connected**. The original `INPUT.json` stays
+untouched; `CLEAN.json` contains the exact candidates that enter
+phrase reconstruction.
+
+### Repeatable A/B coverage
+
+```bat
+py -3.11 benchmarks\phrase_stability_ab.py
+```
+
+This tests known artificial vocal double detections, a high guitar
+harmonic, bass/drum attacks and micro-gaps. The regression suite
+additionally covers chromatic ornaments, classical instrument lines,
+strong repeated vocal syllables, real high guitar solos and deliberate
+rests. A full YouTube conversion still requires a fresh run; these
+synthetic cases are **not** a claim about hardware audio quality.
+
+
+
 **Status:** Implemented in the **guide-free audio `--arrangement tuned` path**.
 The approved **MIDI-guided PARATUNE** take, imported MIDI/classic,
 MAX RAW and the DOS player are left untouched.

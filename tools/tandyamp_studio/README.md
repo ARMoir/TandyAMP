@@ -1,5 +1,13 @@
 # TandyAMP Studio (laptop-side tools)
 
+**Stronger automatic phrase smoothing:** Guide-free `--arrangement tuned` now
+combines same-pitch source fragments *before* note selection, rejects
+unsupported short high guitar beeps, and connects tiny lead/riff gaps
+*after* full-note commitment. Strong rhythmic re-attacks, chromatic
+ornaments, true rests, and the approved MIDI-guided PARATUNE take
+remain protected. [Rules and benchmarks](benchmarks/NOTE_COMPLETION.md).
+
+
 **New guide-free Note Completion and context cleanup:** [source-relative register filtering, adjacent attack merging, full-note commitment and real-ZIP benchmarks](benchmarks/NOTE_COMPLETION.md). Existing guided PARATUNE and player are unchanged.
 
 
