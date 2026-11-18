@@ -1,5 +1,7 @@
 # SEVENT01.MID — musical-quality benchmark
 
+**Use with the [unified minimalist arrangement design](../DESIGN_RULES.md):** SEVENT01 illustrates rhythmic organization, not an instruction to play as many simultaneous notes as possible.
+
 **Status:** Reference established November 2026.  
 **Subject:** User-supplied DOS-friendly MIDI conversion of *Seventh Son of a Seventh Son*.  
 **Benchmark role:** A positive example of a *musically coordinated arrangement*, **not** a template whose exact note counts, tempo, or chord density must be copied into other songs.  

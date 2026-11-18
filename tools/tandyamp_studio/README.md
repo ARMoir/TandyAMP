@@ -1,5 +1,27 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Design rules: musical simplification for the actual Tandy
+
+**[Read the unified arrangement design rules](DESIGN_RULES.md)** ·
+[Rock groove reference](benchmarks/SEVENT01_MUSICAL_BENCHMARK.md) ·
+[Classical voice-leading reference](benchmarks/BRANDENBURG_CLASSICAL_BENCHMARK.md) ·
+[Native three-voice reference](benchmarks/DEMO_HARDWARE_BENCHMARK.md) ·
+[Machine-readable constraints](benchmarks/design_rules.json)
+
+**Make the simplest MIDI that still sounds like the song on the Tandy.**
+A comprehensive note dump may be a useful transcription reference, but it
+usually isn't a good finished arrangement for three PSG tone oscillators,
+a single noise channel and optional SPK4 bass. Use **one small musical
+arranger**: identify the **foundation**, protect the **song's identity**,
+select **useful support**, then fit those notes to real hardware. Different
+styles inform those roles; they do not require separate complicated engines.
+
+This is a documented **future design/acceptance contract**, not a newly
+implemented cleanup algorithm. The preferred Build56 Studio conversion
+settings remain the default and MAX RAW stays opt-in.
+
+
+
 ## Musical-quality benchmark: SEVENT01 (Seventh Son)
 
 **[SEVENT01 full benchmark and arranging guidance](benchmarks/SEVENT01_MUSICAL_BENCHMARK.md)** ·

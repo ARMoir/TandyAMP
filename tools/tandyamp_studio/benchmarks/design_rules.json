@@ -1,0 +1,109 @@
+{
+  "schema": "tandyamp-musical-design-rules-v1",
+  "status": "design_only_not_implemented",
+  "goal": "Make the simplest MIDI that still sounds like the song on the Tandy",
+  "use_one_arranger": true,
+  "permanent_genre_specific_engines": false,
+  "roles": [
+    "foundation",
+    "identity",
+    "useful_support"
+  ],
+  "processing_order": [
+    "retain_source_candidates",
+    "identify_foundation_identity_support",
+    "suppress_only_evidenced_artifacts",
+    "allocate_tandy_voices",
+    "export_and_a_b_listen"
+  ],
+  "preserve": [
+    "recognizable_melody_and_riffs",
+    "drum_bass_groove_when_present",
+    "counterpoint_and_voice_continuity",
+    "true_chromatic_notes",
+    "expressive_onsets_durations_rests",
+    "intentionally_doubled_lines_as_salience",
+    "pitch_timing_velocity_evidence"
+  ],
+  "avoid": [
+    "force_all_notes_audible",
+    "maximize_note_density",
+    "mandatory_four_voice_use",
+    "rigid_quantization",
+    "automatic_in_key_filter",
+    "invent_percussion",
+    "generic_chord_padding",
+    "confuse_doubling_with_artifact",
+    "silently_change_defaults"
+  ],
+  "hardware": {
+    "psg_pitched_voices": 3,
+    "psg_noise_voices": 1,
+    "optional_spk4_bass_voices": 1,
+    "dos_max_input_bytes": 45056,
+    "studio_target_max_bytes": 42000,
+    "dos_filename": "8.3",
+    "format_type": 0
+  },
+  "musical_context_examples": {
+    "rock": {
+      "foundation": "drums_plus_bass_when_present",
+      "identity": "riff_and_vocal_phrase",
+      "support": "chord_or_response"
+    },
+    "classical": {
+      "foundation": "lower_line_or_harmonic_motion",
+      "identity": "leading_phrase_and_counterline",
+      "support": "essential_inner_line"
+    },
+    "hardware_native": {
+      "foundation": "simple_bass_or_lower_harmony",
+      "identity": "clear_melody",
+      "support": "one_meaningful_harmony"
+    }
+  },
+  "benchmarks": [
+    {
+      "name": "seventh_son",
+      "path": "SEVENT01_MUSICAL_BENCHMARK.md",
+      "sha256": "82c53291a4918ea1c62191b9a702ca02fee43aa073b8d8208f79e8efb04f0303",
+      "purpose": "coordinated_drums_bass_riff_roles",
+      "notes": 3810,
+      "duration_seconds": 180
+    },
+    {
+      "name": "brandenburg",
+      "path": "BRANDENBURG_CLASSICAL_BENCHMARK.md",
+      "sha256": "ea1b3eb9f744f4d60d8283f2d5083d827d864c3a7a1da7dc78e53b2d2529e464",
+      "purpose": "independent_melodic_lines_and_purposeful_doubling",
+      "notes": 1445,
+      "duration_seconds": 51
+    },
+    {
+      "name": "demo",
+      "path": "DEMO_HARDWARE_BENCHMARK.md",
+      "sha256": "267fb5847ea8466680fd8d0e01eca1f3308180b6036263cdb62289096c9c3138",
+      "purpose": "minimal_three_psg_voice_composition",
+      "notes": 96,
+      "duration_seconds": 16
+    }
+  ],
+  "baseline": {
+    "studio_default": "Paranoid SPK4 Build56 recipe",
+    "file": "../defaults.py",
+    "must_remain_unchanged": true
+  },
+  "max_raw": {
+    "default": false,
+    "role": "raw_transcription_reference_not_optimized_musical_arrangement"
+  },
+  "promotion": [
+    "compare_original_and_tandy_candidates_same_source",
+    "confirm_identity_and_groove_by_listening",
+    "check_continuity_and_silent_gaps",
+    "check_hardware_limits_and_split",
+    "physical_tandy_test",
+    "user_acceptance"
+  ],
+  "no_audio_or_commercial_midi_committed": true
+}
