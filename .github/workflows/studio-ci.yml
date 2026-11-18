@@ -29,3 +29,7 @@ jobs:
         run: python -m compileall -q tools/tandyamp_studio
       - name: Test TandyAMP Studio MIDI optimization
         run: python -m unittest discover -s tools/tandyamp_studio/tests -v
+      - name: Install offline stem-analysis dependencies
+        run: python -m pip install 'numpy>=1.24,<3' 'scipy>=1.10,<2' 'soundfile>=0.12,<1'
+      - name: Benchmark real stem pitch detector on known synthetic audio
+        run: python tools/tandyamp_studio/benchmarks/autotune_stem_synthetic.py
