@@ -49,6 +49,40 @@ py -3.11 benchmarks\autotune_context.py
 
 The benchmark prints **legacy_misses vs tuned_misses**, number of active frames and processing time for each part. It requires only the Studio's lightweight `mido` dependency.
 
+## New direct spectral-stem benchmark (passed)
+
+[Executable synthetic audio benchmark](autotune_stem_synthetic.py) is run by
+[Studio CI](../../../.github/workflows/studio-ci.yml) on every Studio change.
+It synthesizes known isolated audio at **22,050 samples/second** and measures
+the *real* `measure_stem_pitch` / `StemPitch.retune` functions with NumPy,
+SciPy and SoundFile. No Demucs/Basic Pitch weights, YouTube download, or
+commercial sound recordings are necessary.
+
+**Results on the November 18, 2026 Linux GitHub Actions runner:**
+
+| Stem | Known actual MIDI note | Strongest measured | Repaired one-semitone error to | Tuning offset (true → estimated) | CPU analysis time |
+| --- | ---: | ---: | ---: | --- | ---: |
+| Bass E2 | 40 | **40** | **40** | 0 → 0 cents | 0.591 s |
+| Guitar E3, **second harmonic louder than fundamental** | 52 | **52** | **52** | 0 → 0 cents | 0.008 s |
+| Vocal A4, **22 cents sharp** | 69 | **69** | **69** | +22 → +22 cents | 0.009 s |
+
+The bass timing includes first-use FFT/runtime warmup; do not compare the
+numbers as a speed ranking of instruments. These are **three generated
+two-second isolated tones**, not a polyphonic source recording. Accuracy
+here does **not** imply correct guitar chords, expressive vocals, drum
+classification, model source separation or a cohesive Tandy MIDI.
+
+To reproduce locally (requires `numpy`, `scipy`, `soundfile`):
+
+```bat
+py -3.11 benchmarks\autotune_stem_synthetic.py
+```
+
+The benchmark must fail if the strongest pitch, repaired pitch, or tuning
+estimate diverges from the known synthetic ground truth beyond its explicit
+tolerance. It exercises the actual stem-analysis code, not a rewritten
+stand-in.
+
 ## Regression / acceptance checks
 
 - A long guitar or bass note must remain visible to the harmony checker even after a shorter overlapping note has ended.
@@ -59,7 +93,7 @@ The benchmark prints **legacy_misses vs tuned_misses**, number of active frames 
 
 ## Next benchmark stages (not yet passed or claimed)
 
-1. **Separated-stem synthetic audio:** Known fundamentals, strong harmonics, mildly detuned instruments, overlapping guitar notes; score note-pitch accuracy and measured tuning offsets. No YouTube media needed.
+1. **Expanded synthetic audio:** The single-note bass, harmonic-rich guitar and detuned-vocal cases **passed** above. Next test deliberately **polyphonic guitar chords, pitch bends and mixed/stem-leakage audio**, because those are harder and have not been validated.
 2. **Guide-free song A/B:** Hold source MP3, Demucs weights and transcription model constant. Compare before/after `tuned` MIDI and actual PSG/SPK4 auditions. Report phrase dropouts, false notes, note lengths, drum/bass alignment and recognizable riff/vocal contour.
 3. **Reference-guided song A/B:** Use the identical recording with a known authored score, align time, and compare the guide-free arrangement against guide mode. Reference guidance should be reported as an additional input—not an automatic transcription win.
 4. **Actual Tandy listening:** Record the physical Tandy 1000 EX playback at fixed volume/mode. A smaller file or more corrected notes does not alone establish better music.
