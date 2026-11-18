@@ -83,6 +83,48 @@ estimate diverges from the known synthetic ground truth beyond its explicit
 tolerance. It exercises the actual stem-analysis code, not a rewritten
 stand-in.
 
+## Guide-free phrase contention: targeted revision
+
+**Change proposed for AutoTune `tuned` without a MIDI guide:** The
+automatic guitar part no longer promotes each new weak detected pitch to
+the foreground or keeps two guitar notes with the same onset.
+
+- A very brief, weak upper harmonic can be ignored when the existing
+  guitar fundamental is still audible.
+- Consecutive weak estimates of the **same** pitch can be held as one
+  note, but strong repeated picks remain separate attacks.
+- Genuine new pitches interrupt the held riff at a specific onset
+  rather than fighting over two simultaneous guitar voices.
+- Simultaneous pitch estimates choose one credible note for the single
+  Tandy guitar role, instead of being emitted as an accidental chord.
+- Weak semitone pitch corrections require **another sounding stem to
+  support the target pitch**. A supposedly “correct” key signature or
+  a chord root alone is not enough to overwrite an actual blues/chromatic
+  note. Independent observed pitch evidence can validate out-of-key
+  musical tones.
+
+These are small guide-free changes to `_automatic_mix` and its cross-stem
+tuner; **the authored-MIDI `_reference_mix` path is untouched**.
+
+The [reproducible A/B benchmark](autotune_phrase_ab.py) creates a
+known riff, a short false high harmonic, a false repeated E3 fragment,
+a simultaneous octave artifact, and a real repeated picked attack.
+It compares the previous `_monophonic` path with the new
+`_coherent_guitar_line` on **correct-pitch coverage, false-pitch frames,
+missing phrase frames and unintended guitar polyphony** using 10 ms
+samples. The fixture uses generated MIDI evidence, *not* copyrighted
+music or external source separation. This is a regression benchmark for
+a specific failure mode, not proof that an entire YouTube song sounds
+better.
+
+```bat
+py -3.11 benchmarks\autotune_phrase_ab.py
+```
+
+GitHub Actions now runs it after the 201+ unit tests and the isolated
+stem-fundamental benchmark. The hardware-approved PARATUNE recipe and
+default Studio settings remain unchanged.
+
 ## Regression / acceptance checks
 
 - A long guitar or bass note must remain visible to the harmony checker even after a shorter overlapping note has ended.

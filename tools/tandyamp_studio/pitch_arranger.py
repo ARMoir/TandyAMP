@@ -207,27 +207,20 @@ def _ensemble_correction(score: Score, counts: Counter[str]) -> tuple[Score, Pit
         neighbors = [_near_note(*line, middle) for part, line in sounding.items()
                      if part != n.part]
         evidence = {m.pitch % 12 for m in neighbors if m and m.velocity >= 47}
-        roots = {m.pitch % 12 for m in neighbors
-                 if m and m.part in ('bass', 'guitar') and m.velocity >= 56}
-        chord = {(root + interval) % 12 for root in roots for interval in (0, 7)}
-        on_target = n.pitch % 12 in evidence
-        if not on_target:
+        # Never tune a real blues/chromatic note to an *inferred* key,
+        # or invent a fifth merely because a bass root suggests it.
+        # A weak decoder error can be repaired only when another stem is
+        # ACTUALLY sounding the target pitch class at this instant.
+        # This also permits supported chromatic pitches outside the
+        # estimated key: observed music outranks a global-scale guess.
+        if n.pitch % 12 not in evidence and n.velocity < 80:
             candidates = [p for p in (n.pitch - 1, n.pitch + 1)
-                          if 0 <= p <= 127 and p % 12 in evidence
-                          and (key is None or p % 12 in key[1])]
-            if not candidates and key and n.part != 'bass' and n.pitch % 12 not in key[1]:
-                candidates = [p for p in (n.pitch - 1, n.pitch + 1)
-                              if 0 <= p <= 127 and p % 12 in key[1] and p % 12 in chord]
-            if (not candidates and n.part != 'bass' and key and n.pitch % 12 not in key[1]
-                    and n.velocity < 68):
-                candidates = [p for p in (n.pitch - 1, n.pitch + 1)
-                              if 0 <= p <= 127 and p % 12 in key[1]]
-            if (len(candidates) == 1 and n.velocity < 80 and
-                    (n.part != 'bass' or (key is not None and n.pitch % 12 not in key[1]))):
+                          if 0 <= p <= 127 and p % 12 in evidence]
+            if len(candidates) == 1 and n.part != 'bass':
                 counts[n.part] += 1
                 n = replace(n, pitch=candidates[0])
         corrected.append(n)
-    label = 'stem continuity and chord agreement'
+    label = 'stem continuity and observed cross-stem agreement'
     if global_key:
         label += f' ({global_key[0]})'
     return score.with_pitches(corrected), PitchReport(label, dict(counts))
@@ -270,6 +263,67 @@ def _monophonic(notes: list[Note], gap: float = .004) -> list[Note]:
                 continue
             if n.start - gap - previous.start >= .017:
                 result.append(replace(previous, end=n.start - gap))
+        result.append(n)
+    return result
+
+
+
+def _coherent_guitar_line(notes: list[Note], gap: float = .004) -> list[Note]:
+    """Guard a guide-free guitar phrase against competing note fragments.
+
+    Source-separated guitars can report an overtone over a still-ringing
+    fundamental, or several pitches at precisely the same timestamp.
+    The Tandy has one guitar *role* in this mix, not a polyphonic guitar
+    instrument. Keep intentional strong attacks; do not give a weak
+    transient priority just because it starts later.
+
+    This helper is used only for guide-free automatic mixing. The proven
+    PARATUNE MIDI-guide path keeps its historical voicing unchanged.
+    """
+    result: list[Note] = []
+
+    def quality(n: Note) -> float:
+        duration = n.end - n.start
+        return (n.velocity + 28 * min(duration, .50)
+                - .8 * max(0, n.pitch - 78))
+
+    for n in sorted(notes, key=lambda n: (n.start, -quality(n), n.pitch)):
+        if not result:
+            result.append(n)
+            continue
+        old = result[-1]
+        dt = n.start - old.start
+        if abs(dt) <= .012:
+            # Near-simultaneous pitch estimates are not two independent
+            # guitar voices. Prefer stronger, sustained source evidence.
+            if quality(n) > quality(old) + 4:
+                result[-1] = n
+            continue
+        rest = n.start - old.end
+        if rest <= .055 and n.pitch == old.pitch:
+            # Quiet repeated fragments without a strong pick attack should
+            # sound as one held tone. A strong re-attack remains a new note.
+            if ((n.end - n.start <= .18 or
+                     old.end - old.start <= .18) and
+                    (n.velocity <= old.velocity - 8 or n.velocity < 65)):
+                result[-1] = replace(old, end=max(old.end, n.end))
+                continue
+        if n.start < old.end + gap:
+            duration = n.end - n.start
+            # Very brief weak excursions should not steal the main riff.
+            if (n.pitch != old.pitch and duration <= .13
+                    and n.velocity <= old.velocity + 10
+                    and old.end >= n.end + .055):
+                continue
+            if n.start <= old.end:
+                # A legitimate new attack replaces the previous pitch,
+                # with no artificial rest before the new note.
+                clipped = n.start - old.start
+                if clipped < .018:
+                    if quality(n) > quality(old) + 6:
+                        result[-1] = n
+                    continue
+                result[-1] = replace(old, end=n.start)
         result.append(n)
     return result
 
@@ -480,7 +534,7 @@ def _automatic_mix(score: Score, notes: list[Note], proposals: list[Note],
         i = bisect_left(other_times, n.end)
         if i == 0 or other[i - 1].end <= n.start:
             groups['harmony'].append(n)
-    groups['guitar'] = _monophonic(supporting, .006)
+    groups['guitar'] = _coherent_guitar_line(supporting, .006)
     groups['melody'] = [_vocal_level(n) for n in vocals]
     groups['bass'] = [replace(n, velocity=min(86, max(56, n.velocity))) for n in bass]
     return normalize((n for group in groups.values() for n in group), preset, preserve=True)
