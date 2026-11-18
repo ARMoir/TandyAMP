@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 from arranger import PRESETS, export, load_midi, prepare, voice_coverage
+from defaults import BUILD56_DEFAULTS as DEFAULTS
 from dependencies import ffmpeg_help, install_ffmpeg_windows, missing_ffmpeg
 from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, safe_name
 
@@ -15,13 +16,13 @@ from youtube import cached_youtube_mp3, download_youtube_mp3, is_youtube_url, sa
 def _convert_local(input_file: Path, output_dir: Path, target_name: str,
                    preset: str, spk4: str, stems: bool, preview: bool,
                    saved_mp3: Path | None = None,
-                   drum_style: str = 'auto',
-                   note_preservation: str = 'full',
-                   guitar_separation: bool = False,
-                   accompaniment: str = 'off',
-                   transcription: str = 'standard',
-                   voice_selection: str = 'legacy',
-                   max_raw: bool = False) -> list[Path]:
+                   drum_style: str = DEFAULTS['drum_style'],
+                   note_preservation: str = DEFAULTS['note_preservation'],
+                   guitar_separation: bool = DEFAULTS['guitar_separation'],
+                   accompaniment: str = DEFAULTS['accompaniment'],
+                   transcription: str = DEFAULTS['transcription'],
+                   voice_selection: str = DEFAULTS['voice_selection'],
+                   max_raw: bool = DEFAULTS['max_raw']) -> list[Path]:
     audio_input = input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg')
     if input_file.suffix.lower() in ('.mid', '.midi'):
         if max_raw:
@@ -132,16 +133,20 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     return files
 
 
-def convert(input_file: str | Path, output_dir: Path, preset: str = 'balanced',
-            spk4: str = 'bass', stems: bool = False, preview: bool = False,
+def convert(input_file: str | Path, output_dir: Path,
+            preset: str = DEFAULTS['preset'],
+            spk4: str = DEFAULTS['spk4'],
+            stems: bool = DEFAULTS['stems'],
+            preview: bool = DEFAULTS['preview'],
             *, keep_mp3: bool = False, mp3_only: bool = False,
-            mp3_quality: str = '192', drum_style: str = 'auto',
-            note_preservation: str = 'full',
-            guitar_separation: bool = False,
-            accompaniment: str = 'off',
-                   transcription: str = 'standard',
-                   voice_selection: str = 'legacy',
-                   max_raw: bool = False) -> list[Path]:
+            mp3_quality: str = DEFAULTS['mp3_quality'],
+            drum_style: str = DEFAULTS['drum_style'],
+            note_preservation: str = DEFAULTS['note_preservation'],
+            guitar_separation: bool = DEFAULTS['guitar_separation'],
+            accompaniment: str = DEFAULTS['accompaniment'],
+                   transcription: str = DEFAULTS['transcription'],
+                   voice_selection: str = DEFAULTS['voice_selection'],
+                   max_raw: bool = DEFAULTS['max_raw']) -> list[Path]:
     """Noninteractive pipeline; a validated YouTube MP3 is reused from
     the persistent OS temp cache whenever possible. Outputs are unchanged.
     """
@@ -219,17 +224,17 @@ def gui(initial_input: str = '') -> None:
     root.minsize(625, 610)
     path = tk.StringVar(value=initial_input)
     output = tk.StringVar(value=str(Path.home() / 'Music'))
-    preset = tk.StringVar(value='balanced')
-    spk4 = tk.StringVar(value='bass')
-    drum_style = tk.StringVar(value='auto')
-    note_preservation = tk.StringVar(value='full')
-    guitar_separation = tk.BooleanVar(value=False)
-    accompaniment = tk.StringVar(value='off')
-    transcription = tk.StringVar(value='standard')
-    voice_selection = tk.StringVar(value='legacy')
-    max_raw = tk.BooleanVar(value=False)
-    stems = tk.BooleanVar(value=False)
-    preview = tk.BooleanVar(value=True)
+    preset = tk.StringVar(value=DEFAULTS['preset'])
+    spk4 = tk.StringVar(value=DEFAULTS['spk4'])
+    drum_style = tk.StringVar(value=DEFAULTS['drum_style'])
+    note_preservation = tk.StringVar(value=DEFAULTS['note_preservation'])
+    guitar_separation = tk.BooleanVar(value=DEFAULTS['guitar_separation'])
+    accompaniment = tk.StringVar(value=DEFAULTS['accompaniment'])
+    transcription = tk.StringVar(value=DEFAULTS['transcription'])
+    voice_selection = tk.StringVar(value=DEFAULTS['voice_selection'])
+    max_raw = tk.BooleanVar(value=DEFAULTS['max_raw'])
+    stems = tk.BooleanVar(value=DEFAULTS['stems'])
+    preview = tk.BooleanVar(value=DEFAULTS['preview'])
     keep_mp3 = tk.BooleanVar(value=False)
     mp3_only = tk.BooleanVar(value=False)
     message = tk.StringVar(value='Paste a single YouTube video URL or select a MIDI/audio file.')
@@ -355,29 +360,46 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('input', nargs='?', help='Local MIDI/audio path or quoted single-video YouTube URL')
     parser.add_argument('-o', '--output', type=Path, default=Path.cwd() / 'TANDY_OUT',
                         help='Parent directory for generated files')
-    parser.add_argument('--preset', choices=PRESETS, default='balanced')
-    parser.add_argument('--spk4', choices=['off', 'bass', 'adapt'], default='bass')
-    parser.add_argument('--stems', action='store_true', help='Demucs stem separation (audio input)')
-    parser.add_argument('--drum-style', choices=['auto', 'rock'], default='auto',
+    parser.add_argument('--preset', choices=PRESETS,
+                        default=DEFAULTS['preset'])
+    parser.add_argument('--spk4', choices=['off', 'bass', 'adapt'],
+                        default=DEFAULTS['spk4'])
+    parser.add_argument('--stems', action='store_true',
+                        default=DEFAULTS['stems'],
+                        help='Demucs stem separation (audio input)')
+    parser.add_argument('--drum-style', choices=['auto', 'rock'],
+                        default=DEFAULTS['drum_style'],
                         help='Drum cleanup: auto or rock (requires --stems for audio)')
     parser.add_argument('--note-preservation', choices=['full', 'clean'],
-                        default='full', help='Fuller transcription or legacy cleanup; audio input only')
-    parser.add_argument('--guitar-separation', action='store_true',
-                        help='Isolate guitar with Demucs htdemucs_6s; implies --stems')
+                        default=DEFAULTS['note_preservation'], help='Fuller transcription or legacy cleanup; audio input only')
+    parser.add_argument('--guitar-separation', dest='guitar_separation',
+                        action='store_true', default=DEFAULTS['guitar_separation'],
+                        help='Isolate guitar with Demucs htdemucs_6s; implies --stems (Build56 default)')
+    parser.add_argument('--no-guitar-separation', dest='guitar_separation',
+                        action='store_false',
+                        help='Disable default guitar separation (use --stems for four-stem audio)')
     parser.add_argument('--accompaniment', choices=['off', 'recover', 'harmonize'],
-                        default='off', help='Optional spectral chord recovery / inferred support (requires stems)')
-    parser.add_argument('--transcription', choices=['standard', 'sensitive'], default='standard',
+                        default=DEFAULTS['accompaniment'], help='Optional spectral chord recovery / inferred support (requires stems)')
+    parser.add_argument('--transcription', choices=['standard', 'sensitive'],
+                        default=DEFAULTS['transcription'],
                         help='Sensitive is experimental separated guitar/harmony decoding')
-    parser.add_argument('--voice-selection', choices=['legacy', 'smart'], default='legacy',
+    parser.add_argument('--voice-selection', choices=['legacy', 'smart'],
+                        default=DEFAULTS['voice_selection'],
                         help='Smart opt-in: guitar-riff priority, attack-aware smooth voice selection (requires new DOS player)')
     parser.add_argument('--max-raw', action='store_true',
+                        default=DEFAULTS['max_raw'],
                         help='YouTube/audio: six stems, high-recall decoding, no note/velocity/voice pruning; split DOS MIDI by size only')
-    parser.add_argument('--preview', action='store_true', help='Approximate 30-second WAV preview')
+    parser.add_argument('--preview', dest='preview', action='store_true',
+                        default=DEFAULTS['preview'],
+                        help='Write approximate 30-second WAV preview (Build56 default)')
+    parser.add_argument('--no-preview', dest='preview', action='store_false',
+                        help='Skip WAV preview')
     parser.add_argument('--keep-mp3', action='store_true',
                         help='Keep downloaded YouTube source MP3 in generated MIDI folder')
     parser.add_argument('--mp3-only', action='store_true',
                         help='Download YouTube MP3 only, without AI transcription or MIDI')
-    parser.add_argument('--mp3-quality', choices=['128', '192', '256', '320'], default='192',
+    parser.add_argument('--mp3-quality', choices=['128', '192', '256', '320'],
+                        default=DEFAULTS['mp3_quality'],
                         help='Extracted YouTube MP3 bitrate in kbps (default: 192)')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--cli', '--no-gui', action='store_true', help='Never open the GUI; require input')

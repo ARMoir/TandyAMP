@@ -1,5 +1,60 @@
 # TandyAMP Studio (laptop-side tools)
 
+## Default sound: Paranoid SPK4 Build56 best mix
+
+The **default Studio configuration** now reproduces the conversion
+**settings** used to create the preferred `PARANOID.MID` inside the archived
+`Paranoid_SPK4_Build56.zip`:
+
+| Setting | Default |
+| --- | --- |
+| Preset | `balanced` |
+| Source separation | `--guitar-separation` (Demucs `htdemucs_6s`; 6 stems) |
+| Transcription | `sensitive` |
+| Note preservation | `full` |
+| Voice selection | `smart` |
+| SPK4 MIDI arrangement | `adapt` |
+| Drums | `rock` |
+| Accompaniment | `off` (no inferred chord filling) |
+| WAV preview | Enabled (Studio's standard approximate 30-second preview) |
+| MAX RAW | Off, remains an optional override |
+| YouTube MP3 quality | 192 kbps unless overridden |
+
+Settings are defined once in `defaults.py` and shared by the GUI, CLI,
+and Python `convert()` entry point. The guitarist/vocal preset is not a
+six-note RAW dump: it uses **high-quality sensitive six-stem transcription
+plus musical voice selection**. The archived Build56 MIDI contains the
+`CC119=77` marker for the smart voice selector. Archived MIDI SHA-256:
+`c8f9c342a7632ac50df52f8eb6f4c26e0dc56e42c001ef52a5b7b9a1a606ad5f`.
+
+You can now run the original YouTube source **without specifying any
+conversion settings**:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" -o "C:\Users\alexr\Music\TANDY_BUILD56_STYLE"
+```
+
+Equivalent fully explicit invocation:
+
+```bat
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --preset balanced --guitar-separation --transcription sensitive --note-preservation full --voice-selection smart --spk4 adapt --drum-style rock --accompaniment off --preview -o "C:\Users\alexr\Music\TANDY_BUILD56_STYLE"
+```
+
+All existing individual choices still work. New CLI switches
+`--no-guitar-separation` and `--no-preview` can turn off the two
+default-on features; `--max-raw` bypasses this best-mix recipe entirely.
+
+**Provenance / reproducibility:** These are the verified conversion **option
+values**, not a promise of identical output bytes. The Build56 ZIP
+contains a 24,812-byte, 167.28-second format-0 MIDI and full-length
+reference preview; Studio's regular preview remains 30 seconds. Neural
+transcription models, source stream revisions, and subsequent code
+changes can produce differences even with the same flags. To hear the
+*exact* preferred result, use the archived `PARANOID.MID` itself.
+The DOS player is **unchanged** by these Studio default settings.
+
+
+
 ## MAX RAW: high-recall YouTube-to-MIDI with DOS-only splitting
 
 Use the **MAX RAW** checkbox in the GUI, or `--max-raw` on the CLI, to
