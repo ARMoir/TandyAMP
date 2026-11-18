@@ -1,126 +1,47 @@
 # TandyAMP Studio (laptop-side tools)
 
-## CORE smoothing — hold, connect or remove (opt-in via CORE)
+## CORE audio phrase arrangement
 
-A new **phrase smoother** addresses the abrupt staccato opening heard in
-the user-provided `TANDY_CORE.zip`. The original output repeatedly restarted
-**E3 / MIDI 52** between approximately **1.06 and 1.65 seconds**, even
-when consecutive same-pitch notes touched exactly. The result sounded more
-like disconnected transcription fragments than a held guitar line.
+Choose **core** under **Arrangement** in the GUI or use `--arrangement core`.
+For YouTube, MP3, WAV, FLAC and OGG sources, CORE builds a score before mapping
+it to the Tandy's three PSG tones and drum noise channel.
 
-Smoothing is **part of CORE only**; the existing Build56 **classic** and
-older **musical** arrangements are untouched. The default is
-`--core-smoothing auto`:
+1. Drum accents and the bass line establish the groove. Timing comes from
+   the source, including syncopation and rests.
+2. The arranger follows complete guitar and vocal lines through competing
+   transcription proposals. Signal levels help reject bleed on quiet stems.
+3. During a vocal phrase, a recurring guitar figure can continue. Other
+   guitar material is reduced to a backing line on the groove's accents.
+   Harmony can supply a line in passages without guitar.
+4. Whole phrases are placed in suitable octaves for the PSG. SPK4 remains
+   available through the playback setting.
 
-- **YouTube / MP3 / WAV / FLAC / OGG:** smoothing **on** in CORE.
-- **Imported MIDI:** smoothing **off** in CORE. Deliberately composed
-  re-attacks, such as in SEVENT01 or DEMO, must not be flattened.
-- **Manual override:** `--core-smoothing on` or `off`. In the GUI use
-  the **CORE smoothing** selector (auto / on / off).
+The `_CORE` folder includes `SCORE.json` with phrases and note times in
+seconds before hardware voicing, `CORE.TXT` with a summary, and the DOS
+MIDI files. When previews are enabled, listen in this order.
 
-The three carefully bounded operations are:
+1. `AUDITION/RHYTHM.WAV` gives you bass and drums.
+2. `AUDITION/RIFF.WAV` adds guitar or supporting harmony.
+3. `PREVIEW.WAV` adds the vocal line.
 
-| Decision | Rule | What is protected |
-| --- | --- | --- |
-| **HOLD** | Join same-pitch short fragments separated by **≤50 ms**, when one is ≤220 ms | Strong new note attacks and drum-aligned re-articulations remain separate |
-| **CONNECT** | Extend a genuine guitar/lead/harmony note across a gap of **≤45 ms** to the following different pitch | Bass rests, major pauses, weak pitch changes and the three-PSG-tone limit |
-| **REMOVE** | Suppress only a very short **≤65 ms**, weak **A–B–A** pitch excursion returning immediately to the original pitch | True ornamentation and sufficiently strong chromatic notes |
+These desktop previews cover the first 30 seconds. Test the complete MIDI
+with TandyAMP to hear the hardware mix.
 
-This isn't a general “delete all short notes” rule. The SN76489 does
-not have real crossfades; **CONNECT is legato**. Drum hit timestamps
-are unchanged. CORE still uses at most three PSG pitches, with the
-noise channel and existing optional SPK4 behavior.
+### Audio benchmarks
 
-Try the new smoother on the same YouTube recording:
-
-```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core --core-smoothing on -o "C:\Users\alexr\Music\CORE_SMOOTH"
-```
-
-To hear the same algorithm *without* smoothing, keeping the source,
-transcription and CORE priorities otherwise equal:
+Use Paranoid to hear the guitar intro, rhythm-section entrance, and first vocal
+phrase. Use the [Seventh Son remaster](https://www.youtube.com/watch?v=RF3GwVTDVSQ)
+to check the longer changes in texture. The authored Seventh Son MIDI is a
+separate reference for how the musical parts should fit together.
 
 ```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core --core-smoothing off -o "C:\Users\alexr\Music\CORE_UNSMOOTHED"
+py -3.11 studio.py --cli "Paranoid.mp3" --arrangement core --spk4 off -o "CORE_TEST"
+py -3.11 studio.py --cli "https://www.youtube.com/watch?v=RF3GwVTDVSQ" --arrangement core --spk4 off -o "CORE_TEST"
 ```
 
-The output `CORE.TXT` contains the **held-join, connected-gap and
-removed-pitch-blip counts**. The approximate preview still covers only
-30 seconds, including the opening. Listen to the real Tandy before
-considering the smoothed arrangement better; smoothing cannot recreate
-guitar notes that transcription never detected or reconstruct a full
-riff from an inaccurate stem.
-
-
-
-## CORE: the KISS four-part Tandy arrangement (new, opt-in)
-
-**Drums + bass make the groove. Guitar connects that groove to the
-vocals. Nothing else plays unless it's genuinely necessary.**
-
-CORE is deliberately **stricter than MUSICAL**. Instead of carrying a
-large candidate cloud or filling every PSG oscillator with chords, it
-keeps **one meaningful bass line, one guitar/riff voice and one
-vocal/lead voice** at a time, plus **one shared PSG noise drum part**.
-When guitar, vocal or bass is missing, one *sustained, credible*
-harmonic/counterpart line may fill the available pitched slot. No
-generic chords, no 4+ voice density target, no automatic beat grid.
-
-- **Bass:** Keep the true bass notes, rhythmic movement, offbeat timing
-  and pauses. It is not rebuilt from an arbitrary piano note.
-- **Drums:** Preserve kick/snare accents and useful hats. Remove very
-  closely repeated hats (~100 ms) and competing hits on the one noise
-  generator; never invent percussion or force all bass notes onto kicks.
-- **Guitar:** Select *one* recognizable riff pitch at a time; don't let
-  guitar harmonics/chord stacks monopolize three PSG channels.
-  A significant new riff attack can replace a held note.
-- **Vocals:** Keep one meaningful vocal melody, including natural
-  phrasing, so the guitar can support and link to it.
-- **Support:** Only enters when the core trio doesn't already occupy
-  the three pitched slots and the source note is credibly strong or a
-  continuing musical phrase. No additions merely to fill silence.
-
-CORE exports a **maximum of three different pitched PSG notes** plus
-the drum/noise channel. The optional PC speaker SPK4 remains controlled
-by TandyAMP's existing playback rules. **It is not forced to play a
-fourth pitched voice**: the DOS player's SPK4 eligibility gate can
-leave bass on PSG when three independent non-bass pitches are absent.
-That is deliberate: we will not add extra chords just to force SPK4.
-
-### Run the YouTube source with CORE
-
-```bat
-py -3.11 studio.py --cli "https://www.youtube.com/watch?v=Uq42HUUJFzU" --arrangement core -o "C:\Users\alexr\Music\TANDY_CORE"
-```
-
-Or choose **Arrangement → core** in the GUI. Studio uses the existing
-Build56 six-stem / sensitive transcription settings by default and
-then applies the much simpler CORE arrangement.
-
-A folder named `<VIDEO>_CORE` contains size-safe type-0 DOS MIDI,
-`PLAY.BAT`, the optional approximate `PREVIEW.WAV`, `INPUT.json`,
-`METRICS.json` and `CORE.TXT`. The report counts the pitched source
-notes retained, note fragments written, drums and selected roles.
-For a no-AI comparison, feed an already-transcribed MIDI directly.
-
-### A/B controls
-
-- `--arrangement classic` — original preferred Build56 baseline;
-  **still the default** and completely unchanged
-- `--arrangement musical` — previous, fuller experiment
-- `--arrangement core` — new stricter **bass + drums → guitar → vocal**
-  mode, output isolated under `_CORE`
-- `--max-raw` — original high-recall audio transcription, *not* a final
-  hardware arrangement; incompatible with the two arranger experiments
-
-**Limitations:** CORE uses stem role assignments as produced by the
-transcription model; if guitar or vocals are absent/misidentified in
-the source transcription, no downstream filter can recreate them.
-The laptop preview is not cycle-accurate and we have not established
-that CORE sounds better than Build56 without physical Tandy listening.
-The DOS executable and player settings have not been changed.
-
-
+Set `--core-smoothing off` to skip small timing repairs in the audio phrases.
+Imported MIDI in CORE uses the sparse MIDI arranger. Use `--core-smoothing on`
+to enable its optional smoothing.
 
 ## New experiment: MUSICAL — the simplest Tandy arrangement
 

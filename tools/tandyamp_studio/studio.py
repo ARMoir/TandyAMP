@@ -26,12 +26,14 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
                    arrangement: str = 'classic',
                    core_smoothing: str = 'auto') -> list[Path]:
     audio_input = input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg')
+    phrase_score = None
+    evidence = None
     if input_file.suffix.lower() in ('.mid', '.midi'):
         if max_raw:
             raise ValueError('MAX RAW is for YouTube/audio transcription, not existing MIDI files')
         print(f'Loading MIDI: {input_file}', flush=True)
         notes = load_midi(input_file)
-    elif input_file.suffix.lower() in ('.mp3', '.wav', '.flac', '.ogg'):
+    elif audio_input:
         from transcribe import transcribe_audio
         print(f'Transcribing audio: {input_file}', flush=True)
         transcribe_kwargs = dict(stems=stems, drum_style=drum_style,
@@ -42,6 +44,10 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
             transcribe_kwargs['raw_mode'] = True
             print('MAX RAW: high-recall six-stem transcription including piano; '
                   'no note filtering or automatic leveling.', flush=True)
+        elif arrangement == 'core':
+            from phrase_score import ScoreEvidence
+            evidence = ScoreEvidence()
+            transcribe_kwargs['score_evidence'] = evidence
         notes = transcribe_audio(input_file, **transcribe_kwargs)
     else:
         raise ValueError('Input must be MID, MIDI, MP3, WAV, FLAC, OGG, or a YouTube video URL')
@@ -58,6 +64,11 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
     music_report = None
     if max_raw:
         arranged = list(notes)
+    elif evidence is not None:
+        from phrase_score import arrange_score, reconstruct_score
+        phrase_score = reconstruct_score(notes, evidence,
+                                         connect=core_smoothing != 'off')
+        arranged = arrange_score(phrase_score, preset)
     elif arrangement in ('musical', 'core'):
         from arranger import normalize
         from musical_arranger import arrange_musically
@@ -66,8 +77,7 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         candidates = normalize(notes, preset, preserve=True)
         if arrangement == 'core':
             from core_arranger import arrange_core
-            smooth = (core_smoothing == 'on' or
-                      (core_smoothing == 'auto' and audio_input))
+            smooth = core_smoothing == 'on'
             arranged, music_report = arrange_core(candidates, spk4=spk4,
                                                  smooth=smooth)
             print('CORE smoothing: {} (same-pitch holds, small legato joins, '
@@ -87,6 +97,9 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         print(f'MAX RAW: exporting all {len(arranged)} detected events, '
               'unaltered. No voice cap, velocity floor or pitch folding.',
               flush=True)
+    elif phrase_score is not None:
+        print(f'CORE: built {len(phrase_score.phrases)} phrases before '
+              f'PSG allocation ({len(arranged)} output events).', flush=True)
     elif music_report is not None:
         print('{}: selected {} original pitched notes, produced {} '
               'pitched fragments and {} drum hits from {} source events.'
@@ -145,7 +158,12 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         from diagnostics import save_stage
         save_stage(target, 'INPUT', notes, spk4=spk4, voice_selection=voice_selection)
         save_stage(target, 'METRICS', arranged, spk4=spk4, voice_selection=voice_selection)
-        if music_report is not None:
+        if phrase_score is not None:
+            from dataclasses import asdict
+            from diagnostics import write_json
+            write_json(target / 'SCORE.json', asdict(phrase_score))
+            (target / 'CORE.TXT').write_text(phrase_score.summary(), encoding='ascii')
+        elif music_report is not None:
             report_name = 'CORE.TXT' if arrangement == 'core' else 'MUSIC.TXT'
             (target / report_name).write_text(music_report.as_text(),
                                               encoding='ascii')
@@ -169,6 +187,15 @@ def _convert_local(input_file: Path, output_dir: Path, target_name: str,
         wav = preview_wav(arranged, target / 'PREVIEW.WAV', spk4=spk4,
                           voice_selection='legacy' if max_raw else voice_selection)
         print(f'Approximate 30-second square-wave preview: {wav}', flush=True)
+        if phrase_score is not None:
+            for name, parts in (
+                ('RHYTHM', ('bass', 'drums')),
+                ('RIFF', ('bass', 'drums', 'guitar', 'harmony', 'accomp')),
+            ):
+                layer = [n for n in arranged if n.part in parts]
+                if layer:
+                    preview_wav(layer, target / 'AUDITION' / (name + '.WAV'),
+                                spk4=spk4, voice_selection=voice_selection)
     if saved_mp3 is not None:
         shutil.copyfile(saved_mp3, target / 'SOURCE.MP3')
         print(f'Kept original MP3: {target / "SOURCE.MP3"}', flush=True)
@@ -451,10 +478,12 @@ def main(argv: list[str] | None = None) -> int:
                         help='Smart opt-in: guitar-riff priority, attack-aware smooth voice selection (requires new DOS player)')
     parser.add_argument('--arrangement', choices=['classic', 'musical', 'core'],
                         default='classic',
-                        help='Core: sparse bass+drums/guitar/vocals, Musical: fuller experimental; classic remains Build56 default')
+                        help='Core: phrase score for audio or sparse arrangement for MIDI; '
+                             'Musical: fuller arrangement; Classic: Build56 default')
     parser.add_argument('--core-smoothing', choices=['auto', 'on', 'off'],
                         default='auto',
-                        help='Auto smooths CORE audio transcription only; on forces for MIDI; off preserves note attacks')
+                        help='Auto connects decoder gaps in CORE audio; on also smooths '
+                             'imported CORE MIDI; off skips those joins')
     parser.add_argument('--max-raw', action='store_true',
                         default=DEFAULTS['max_raw'],
                         help='YouTube/audio: six stems, high-recall decoding, no note/velocity/voice pruning; split DOS MIDI by size only')

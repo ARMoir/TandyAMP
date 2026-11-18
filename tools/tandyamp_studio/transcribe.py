@@ -5,8 +5,12 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from typing import TYPE_CHECKING
 
 from arranger import Note
+
+if TYPE_CHECKING:
+    from phrase_score import ScoreEvidence
 
 
 def _predict(path: Path, part: str | None, profile: str = 'standard',
@@ -68,7 +72,8 @@ def _predict(path: Path, part: str | None, profile: str = 'standard',
 
 
 def _drum_onsets(path: Path, style: str = 'auto',
-                 raw_mode: bool = False) -> list[Note]:
+                 raw_mode: bool = False,
+                 beat_times: list[float] | None = None) -> list[Note]:
     """Recover three rock drum classes without manufacturing rhythmic notes.
 
     Two onset detectors run on the *separated drum stem*:
@@ -116,6 +121,8 @@ def _drum_onsets(path: Path, style: str = 'auto',
         beats = list(librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop))
     except (ValueError, TypeError, RuntimeError):
         pass
+    if beat_times is not None:
+        beat_times.extend(float(t) for t in beats)
 
     fft_size = 1024
     taper = np.hanning(fft_size)
@@ -286,7 +293,8 @@ def transcribe_audio(path: Path, stems: bool = False,
                      guitar_separation: bool = False,
                      accompaniment: str = 'off',
                      profile: str = 'standard',
-                     raw_mode: bool = False) -> list[Note]:
+                     raw_mode: bool = False,
+                     score_evidence: ScoreEvidence | None = None) -> list[Note]:
     """Transcribe guitar/vocals/bass and optionally infer sustained harmony.
 
     The 6-stem guitar model is opt-in: its first use downloads more weights
@@ -312,6 +320,10 @@ def transcribe_audio(path: Path, stems: bool = False,
                          '--guitar-separation (a separated harmonic stem).')
 
     if not stems:
+        if score_evidence is not None:
+            # A mono mix still provides candidate pitches. It has no reliable
+            # per-instrument signal levels or separated drum beat evidence.
+            return _predict(path, None, profile=profile)
         notes = _predict(path, None)
         cleaned = []
         for part in ('bass', 'melody', 'harmony'):
@@ -339,7 +351,20 @@ def transcribe_audio(path: Path, stems: bool = False,
         return transcribe_stems(root, guitar_separation=guitar_separation,
                                 drum_style=drum_style, preservation=preservation,
                                 accompaniment=accompaniment, profile=profile,
-                                raw_mode=raw_mode)
+                                raw_mode=raw_mode,
+                                **({'score_evidence': score_evidence}
+                                   if score_evidence is not None else {}))
+
+
+def stem_levels(path: Path) -> list[float]:
+    """Measure pre-normalization stem RMS in blocks of 50 ms."""
+    import numpy as np
+    import soundfile as sf
+
+    with sf.SoundFile(path) as wav:
+        return [float(np.sqrt(np.mean(block ** 2)))
+                for block in wav.blocks(blocksize=round(wav.samplerate * .05),
+                                        dtype='float32')]
 
 
 def transcribe_stems(root: Path, *, guitar_separation: bool = True,
@@ -347,7 +372,8 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
                      accompaniment: str = 'off', profile: str = 'standard',
                      cache_dir: Path | None = None,
                      diagnostics_dir: Path | None = None,
-                     raw_mode: bool = False) -> list[Note]:
+                     raw_mode: bool = False,
+                     score_evidence: ScoreEvidence | None = None) -> list[Note]:
     """Shared Studio/benchmark pipeline, with optional inspectable checkpoints."""
     from postprocess import clean_stem_notes
     from diagnostics import save_stage
@@ -375,16 +401,19 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
                else _predict(wav, part, profile=profile, cache_dir=cache_dir))
         if diagnostics_dir is not None:
             save_stage(diagnostics_dir, name + '-raw', raw)
-        kept = raw if raw_mode else clean_stem_notes(
+        if score_evidence is not None:
+            score_evidence.levels[part] = stem_levels(wav)
+        keep_proposals = raw_mode or (score_evidence is not None and preservation == 'full')
+        kept = raw if keep_proposals else clean_stem_notes(
             raw, part, preservation=preservation)
         print(f'  {name}: {len(raw)} -> {len(kept)} notes '
-              f'{"without pruning" if raw_mode else "after cleanup"}',
+              f'{"without pruning" if keep_proposals else "after cleanup"}',
               flush=True)
         groups[name] = kept
         if diagnostics_dir is not None:
             save_stage(diagnostics_dir, name + '-clean', kept)
 
-    if guitar_separation and not raw_mode:
+    if guitar_separation and not raw_mode and score_evidence is None:
         before = len(groups['other'])
         groups['other'] = remove_guitar_bleed(groups['guitar'],
                                              groups['other'])
@@ -410,7 +439,10 @@ def transcribe_stems(root: Path, *, guitar_separation: bool = True,
     drums = root / 'drums.wav'
     if drums.exists():
         print('Estimating beat-aware kick/snare/hat onsets...', flush=True)
-        notes.extend(_drum_onsets(drums, style=drum_style,
-                                  raw_mode=raw_mode) if raw_mode
-                     else _drum_onsets(drums, style=drum_style))
+        drum_options = {}
+        if score_evidence is not None:
+            drum_options['beat_times'] = score_evidence.beats
+        if raw_mode:
+            drum_options['raw_mode'] = True
+        notes.extend(_drum_onsets(drums, style=drum_style, **drum_options))
     return notes
