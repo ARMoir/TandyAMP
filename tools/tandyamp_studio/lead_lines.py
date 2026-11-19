@@ -6,7 +6,7 @@ from dataclasses import replace
 from statistics import median
 from typing import TYPE_CHECKING
 
-from arranger import Note
+from arranger import Note, _psg_pitch
 
 if TYPE_CHECKING:
     from stem_pitch import StemPitch
@@ -62,6 +62,81 @@ def vocal_sections(spans: list[tuple[float, float]], beat: float
         else:
             sections.append((start, end))
     return sections
+
+
+def shared_tone_time(n: Note, other: Note) -> float:
+    """Duration of a unison, weighted by whether it obscures a fresh attack."""
+    overlap = min(n.end, other.end) - max(n.start, other.start)
+    if overlap <= 0:
+        return 0.
+    if abs(n.start - other.start) <= .035:
+        return .5 * overlap
+    return overlap + 2 * min(.12, overlap)
+
+
+def measured_vocal_register(notes: tuple[Note, ...], signal: StemPitch
+                            ) -> tuple[Note, ...] | None:
+    """Choose one sung octave from the stem, then fit the phrase to the PSG."""
+    total = sum(n.end - n.start for n in notes)
+    strengths = {}
+    for shift in (0, -12, 12):
+        strengths[shift] = sum(
+            (n.end - n.start) * (signal.sustain_strength(
+                replace(n, pitch=n.pitch + shift) if shift else n) or 0.)
+            for n in notes)
+    best = max(strengths, key=strengths.get)
+    if strengths[best] < .55 * total:
+        return None
+    # A singer's second harmonic can be loud. Keep the transcribed octave
+    # if its own fundamental is sustained across the phrase.
+    if strengths[0] >= max(.45 * total, .75 * strengths[best]):
+        best = 0
+    elif best:
+        runner_up = max(value for shift, value in strengths.items() if shift != best)
+        if strengths[best] - runner_up < .15 * total:
+            return None
+    low, high = min(n.pitch for n in notes), max(n.pitch for n in notes)
+    playable = [s for s in range(-120, 121, 12) if low + s >= 45 and high + s <= 92]
+    if not playable:
+        return None
+    shift = min(playable, key=lambda s: (abs(s - best), abs(s)))
+    return tuple(replace(n, pitch=n.pitch + shift) for n in notes) if shift else notes
+
+
+def place_vocal_line(notes: tuple[Note, ...], placed: list[Note], signal: StemPitch,
+                     bass: list[Note], guitar: list[Note]) -> list[Note]:
+    heard = measured_vocal_register(notes, signal)
+    if heard is None or all(n.pitch == m.pitch for n, m in zip(heard, placed)):
+        return placed
+
+    def competition(line: tuple[Note, ...] | list[Note],
+                    track: list[Note]) -> tuple[int, float]:
+        attacks = 0
+        seconds = 0.
+        for n in line:
+            i = bisect_right(track, n.start, key=lambda m: m.end)
+            while i < len(track) and track[i].start < n.end:
+                other = track[i]
+                if n.pitch == _psg_pitch(other):
+                    overlap = min(n.end, other.end) - max(n.start, other.start)
+                    seconds += overlap
+                    # An octave raised by the PSG merges two distinct
+                    # source pitches even when their attacks coincide.
+                    if overlap > .035 and (other.pitch != n.pitch or
+                                           abs(n.start - other.start) > .035):
+                        attacks += 1
+                i += 1
+        return attacks, seconds
+
+    total = sum(n.end - n.start for n in notes)
+    # Check each instrument: clearing the guitar cannot compensate for
+    # covering a new bass attack on its folded PSG pitch.
+    for track in (bass, guitar):
+        old_attacks, old_time = competition(placed, track)
+        new_attacks, new_time = competition(heard, track)
+        if new_attacks > old_attacks or new_time - old_time > .2 * total:
+            return placed
+    return list(heard)
 
 
 def instrumental_answers(line: list[Note], sections: list[tuple[float, float]],

@@ -6,7 +6,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from arranger import Note, voice_coverage
-from lead_lines import instrumental_answers
+from lead_lines import instrumental_answers, measured_vocal_register, place_vocal_line
 from phrase_score import Phrase, Score, ScoreEvidence, arrange_score, reconstruct_score
 from pitch_arranger import arrange_tuned
 
@@ -27,6 +27,33 @@ class MeasuredVoice:
 
 
 class LeadLineTests(unittest.TestCase):
+    def test_guide_free_mix_uses_the_singers_measured_octave(self):
+        voice = (note(0., .4, 55, 'melody'), note(.52, .8, 58, 'melody'))
+        score = Score((), (), (Phrase('melody', 'vocal', voice),))
+        evidence = ScoreEvidence()
+        evidence.pitches['melody'] = MeasuredVoice({55: .88, 58: .95, 67: 1., 70: .90})
+        arranged, _ = arrange_tuned(score, list(voice), evidence=evidence)
+        self.assertEqual([(n.start, n.end, n.pitch) for n in arranged],
+                         [(0., .4, 55), (.52, .8, 58)])
+
+    def test_clear_octave_error_moves_the_whole_contour_and_weak_evidence_defers(self):
+        phrase = (note(0., .4, 72, 'melody'), note(.4, .8, 74, 'melody'))
+        signal = MeasuredVoice({60: .96, 62: .9, 72: .18, 74: .2})
+        self.assertEqual(measured_vocal_register(phrase, signal),
+                         tuple(replace(n, pitch=n.pitch - 12) for n in phrase))
+        self.assertIsNone(measured_vocal_register(phrase, MeasuredVoice({72: .2})))
+
+    def test_moving_a_lead_clear_of_guitar_cannot_cover_a_folded_bass_attack(self):
+        sung = (note(0., .65, 55, 'melody'), note(.7, 1., 58, 'melody'))
+        placed = [replace(n, pitch=n.pitch + 12) for n in sung]
+        signal = MeasuredVoice({55: 1., 58: .9})
+        bass = [note(.1, .6, 43, 'bass')]
+        guitar = [note(.12, .55, 67, 'guitar')]
+        self.assertEqual(place_vocal_line(sung, placed, signal, bass, guitar), placed)
+        simultaneous = [replace(bass[0], start=sung[0].start)]
+        self.assertEqual(place_vocal_line(sung, placed, signal, simultaneous, guitar), placed)
+        self.assertEqual(place_vocal_line(sung, placed, signal, [], guitar), list(sung))
+
     def test_quiet_sung_turn_fits_between_accepted_notes(self):
         evidence = ScoreEvidence(beats=[0., .5, 1., 1.5])
         evidence.pitches['melody'] = MeasuredVoice({67: .9, 65: .85, 63: .88})

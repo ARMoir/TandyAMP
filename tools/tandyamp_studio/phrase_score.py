@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 
 from arranger import Note, _psg_pitch, normalize
 from core_arranger import _drums_core
-from lead_lines import instrumental_answers, vocal_candidates, vocal_sections
+from lead_lines import (instrumental_answers, place_vocal_line, shared_tone_time,
+                        vocal_candidates, vocal_sections)
 from riff import reconstruct_riff
 
 if TYPE_CHECKING:
@@ -480,8 +481,9 @@ def _register(notes: tuple[Note, ...], others: list[Note], center: int,
             return 92 - (92 - pitch) % 12
         return pitch
 
-    def cost(shift: int) -> float:
+    def cost(shift: int) -> tuple[float, float]:
         seconds = 0.
+        attacks = 0.
         first = 0
         for n in notes:
             raw = n.pitch + shift
@@ -498,27 +500,36 @@ def _register(notes: tuple[Note, ...], others: list[Note], center: int,
                 if other.start >= n.end:
                     break
                 if _psg_pitch(other) == pitch:
-                    seconds += 36 * max(0., min(n.end, other.end) -
-                                         max(n.start, other.start))
-        return seconds
+                    overlap = max(0., min(n.end, other.end) - max(n.start, other.start))
+                    seconds += 36 * overlap
+                    if preserve_register:
+                        attacks += 36 * (shared_tone_time(n, other) - overlap)
+        return seconds, seconds + attacks
 
-    shift = min(inside or octaves, key=lambda value: (cost(value), abs(value)))
+    options = {shift: cost(shift) for shift in inside or octaves}
+    shift = min(options, key=lambda s: (options[s][0], abs(s)))
+    if preserve_register:
+        # Keep the established upper register if the phrase is already
+        # high. Avoid creating a new piercing note to resolve a unison.
+        ceiling = max(79, max(fold(n.pitch + shift) for n in notes))
+        safe = (s for s in options if all(fold(n.pitch + s) <= ceiling for n in notes))
+        shift = min(safe, key=lambda s: (options[s][1], abs(s)))
     return [replace(n, pitch=fold(n.pitch + shift),
                     velocity=round(velocity * (min(92, max(62, n.velocity))
                                                if preserve_register else n.velocity)))
             for n in notes]
 
 
-def arrange_score(score: Score, preset: str = 'balanced') -> list[Note]:
+def arrange_score(score: Score, preset: str = 'balanced', *,
+                  vocal_pitch: StemPitch | None = None) -> list[Note]:
     """Map the finished score to bass, lead, one backing tone, and PSG noise."""
     bass = normalize((n for p in score.phrases if p.part == 'bass'
                       for n in p.notes), preset, preserve=True)
-    vocals: list[Note] = []
     lead_phrases = [p for p in score.phrases if p.function == 'instrumental lead']
     sung_phrases = [p for p in score.phrases
                    if p.part == 'melody' and p.function != 'instrumental lead']
-    for phrase in sung_phrases:
-        vocals.extend(_register(phrase.notes, _overlap(bass, phrase), 67))
+    sung_lines = [_register(p.notes, _overlap(bass, p), 67) for p in sung_phrases]
+    vocals = [n for line in sung_lines for n in line]
     periods = [b - a for a, b in zip(score.beats, score.beats[1:]) if .24 <= b - a <= 1.]
     sung_sections = vocal_sections([(p.start, p.end) for p in sung_phrases],
                                   median(periods) if periods else .5)
@@ -542,6 +553,11 @@ def arrange_score(score: Score, preset: str = 'balanced') -> list[Note]:
             backing.extend(_register(phrase.notes, neighbors, center, gain))
 
     guitar = [n for n in backing if n.part == 'guitar']
+    if vocal_pitch is not None:
+        vocals = []
+        for phrase, line in zip(sung_phrases, sung_lines):
+            vocals.extend(place_vocal_line(phrase.notes, line, vocal_pitch,
+                                           _overlap(bass, phrase), _overlap(guitar, phrase)))
     for phrase in lead_phrases:
         neighbors = _overlap(bass, phrase) + _overlap(guitar, phrase)
         vocals.extend(_register(phrase.notes, neighbors, 65, preserve_register=True))

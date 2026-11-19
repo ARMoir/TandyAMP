@@ -605,7 +605,7 @@ def arrange_tuned(score: Score, proposals: list[Note], preset: str = 'balanced',
     report = replace(ensemble, corrected=dict(stem_repairs + Counter(ensemble.corrected)),
                      stem_offsets=stem_offsets, stem_repairs=dict(stem_repairs),
                      ensemble_repairs=ensemble.corrected)
-    mixed = _automatic_mix(tuned, arrange_score(tuned, preset), proposals,
+    mixed = _automatic_mix(tuned, arrange_score(tuned, preset, vocal_pitch=vocal), proposals,
                            preset, evidence)
     # Completed instrumental phrases already own their attacks and releases.
     instrumental = {(p.part, n.start) for p in tuned.phrases if p.reconstructed

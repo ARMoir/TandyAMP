@@ -11,7 +11,9 @@ without a separate guitar.
 
 The lead voice follows the singer through a verse. Studio checks the vocal
 stem for quieter notes missing between accepted syllables, including sung
-passing tones. Across a short breath it keeps the guitar underneath the
+passing tones. It measures the singer's octave across each phrase and uses
+it wherever the guitar and bass can still articulate their own attacks on
+the PSG. Across a short breath it keeps the guitar underneath the
 vocal. In an instrumental break the guitar comes forward, and a distinct
 melody in the harmonic stem can take the free lead voice for its whole
 phrase. `SCORE.json` labels these passages `vocal`, `riff`, or
